@@ -9,7 +9,7 @@ const origin = 'https://niulai.raaay.art';
 const metadata = JSON.parse(fs.readFileSync(path.join(project, 'download-files.json'), 'utf8'));
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const report = { checkedAt: new Date().toISOString(), origin, assets: [], ranges: [], fullDownloads: [], feedback: null, passed: false };
-const output = path.resolve(project, '../outputs/desktop-1.5.0/site/publication-verification.json');
+const output = path.resolve(project, '../outputs/desktop-us-quotes-1.5.0/site/publication-verification.json');
 const files = [];
 function walk(directory) {
   for (const name of fs.readdirSync(directory)) {
@@ -57,7 +57,7 @@ try {
     }
   }
   console.log('Download headers and byte ranges verified: ' + report.ranges.length);
-  for (const name of ['Niulai-1.5.0-Setup-x64.exe', 'Niulai-1.5.0-portable-x64.exe', 'Niulai-1.5.0-mac-arm64.dmg', 'Niulai-1.5.0-mac-x64.dmg']) {
+  for (const name of ['Niulai-1.5.0-Setup-x64-20261112.exe', 'Niulai-1.5.0-portable-x64-20261112.exe', 'Niulai-1.5.0-mac-arm64-20261112.dmg', 'Niulai-1.5.0-mac-x64-20261112.dmg']) {
     const response = await fetch(origin + '/files/' + name, { signal: AbortSignal.timeout(240000) });
     assert.equal(response.status, 200, name);
     const digest = crypto.createHash('sha256');

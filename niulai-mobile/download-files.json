@@ -42,5 +42,29 @@
     "sha256": "5feeb031bbda2971d6a3513d72ce3fc9be912ce46e8319144346a2d24adb5115",
     "type": "application/x-apple-diskimage",
     "release": "v1.5.0"
+  },
+  "Niulai-1.5.0-Setup-x64-20261112.exe": {
+    "size": 82304639,
+    "sha256": "56cc2cdca9e8146446e13e025e42f62c90cdd0f59f4698ef1c0a50ca9ab0a16e",
+    "type": "application/vnd.microsoft.portable-executable",
+    "release": "v1.5.0"
+  },
+  "Niulai-1.5.0-portable-x64-20261112.exe": {
+    "size": 81771867,
+    "sha256": "afae1485e4e4ea4787f28743f758851542825755486f41440da76dfd082b9356",
+    "type": "application/vnd.microsoft.portable-executable",
+    "release": "v1.5.0"
+  },
+  "Niulai-1.5.0-mac-arm64-20261112.dmg": {
+    "size": 98756339,
+    "sha256": "a12a8a8e20b33a55e61a9a500328823c59f7aa9df3ad0f4cc5013945f239d028",
+    "type": "application/x-apple-diskimage",
+    "release": "v1.5.0"
+  },
+  "Niulai-1.5.0-mac-x64-20261112.dmg": {
+    "size": 102299562,
+    "sha256": "2350004177b9b02d81c85d0a89dfeca58ecca439b7937657877370eb12a35b4d",
+    "type": "application/x-apple-diskimage",
+    "release": "v1.5.0"
   }
 }

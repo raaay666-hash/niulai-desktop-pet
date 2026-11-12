@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('../../niulai-android/node_modules/playwright');
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(project, 'dist');
-const output = path.resolve(project, '../outputs/desktop-1.5.0/site');
+const output = path.resolve(project, '../outputs/desktop-us-quotes-1.5.0/site');
 await fs.mkdir(output, { recursive: true });
 const server = http.createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -29,8 +29,8 @@ try {
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/download/`);
-    assert.equal(await page.getByRole('link', { name: '下载 Windows 安装版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-Setup-x64.exe');
-    assert.equal(await page.getByRole('link', { name: '下载免安装版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-portable-x64.exe');
+    assert.equal(await page.getByRole('link', { name: '下载 Windows 安装版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-Setup-x64-20261112.exe');
+    assert.equal(await page.getByRole('link', { name: '下载免安装版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-portable-x64-20261112.exe');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.equal(await page.getByRole('link', { name: /过往版本/ }).count(), 1);
     await page.screenshot({ path: path.join(output, `download-${viewport.width}.png`), fullPage: true });

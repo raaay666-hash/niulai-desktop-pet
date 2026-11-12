@@ -134,3 +134,12 @@
 - 本轮匿名 HTTP 核验 30 个静态资源、24 项下载 HEAD/Range、四个 Windows/Mac 安装包完整大小与 SHA-256 全部通过。公开浏览器已核对共同功能文字及全部新版下载入口。反馈 GET 仍为 405、Allow POST。
 - 自动核验中的锁屏与下跌使用受控事件和报价，音频通过静音播放与播放替身核对。实体多屏、通知权限和扬声器人工验收待补充。安装包未签名，Mac 尚未 Apple 公证。
 - 核验报告位于 outputs/desktop-parity，发布后资源核验位于 outputs/desktop-1.5.0/site/publication-verification.json。官网发布包为 artifacts/niulai-public-parity-1.5.0-20261112.zip。
+
+### 2026-11-12 美股报价与自有行情源更新候选
+
+- 电脑版保持 1.5.0，修正美股盘前、常规与盘后价格选择、报价时间和盈亏基准，新增 HTTP JSON 自有行情源、字段映射、鉴权、连接测试及可选公共源回退。
+- Windows 安装版与免安装版、Mac Apple 芯片与 Intel 版均已发布至 GitHub v1.5.0，文件名带 20261112。三种桌面架构各 31 项应用与行情源流程通过，35 个包内文件一致。两种 Mac 构建运行记录为 GitHub Actions 43239132243。
+- 官网候选包为 artifacts/niulai-public-market-1.5.0-20261112.zip，SHA-256 为 6f8ad10e5c33ef5b873123baa02d89f55fe7fe7200159cfa85993b9f1e9b7b9c。候选目录 niulai-mobile/dist 含 33 个公开发布文件，下载与反馈单元检查 22 项通过，桌面及手机页面导航、链接和无横向溢出检查通过。
+- Cloudflare 正式部署尚未完成。本轮网页上传将 ZIP 作为普通文件并提示 25 MiB 限制，目录选择未导入文件，随后原生窗口接管因浏览器 URL 识别的自动安全检查停止。未点击 Save and deploy。现有本机配置和 GitHub Actions 均未发现可用于 Cloudflare Pages 的发布凭据。
+- 后续需恢复浏览器控制，向现有 niulai-muyu Production 上传 niulai-mobile/dist 目录，确认 33 个文件后部署，再运行 scripts/verify-version-publication.mjs 检查正式资源及四个新版安装文件的完整哈希。现有 D1 绑定和历史部署无需变更。
+- 本次软件与本地页面验证位于 outputs/desktop-us-quotes-1.5.0。Windows 安装包未签名，Mac 尚未 Apple 公证。
