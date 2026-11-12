@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="front_camera_label">牛来前摄交互</string>
+    <string name="front_camera_description">让牛来的灵动岛贴合前置摄像头，并响应轻触、滑动和长按。开启后请回到牛来设置打开前摄交互。此服务只显示牛来自己的顶部控件，无需读取屏幕内容。</string>
+</resources>

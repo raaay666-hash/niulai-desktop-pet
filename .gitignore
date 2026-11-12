@@ -12,3 +12,12 @@ artifacts/
 outputs/
 **/qa/
 **/.openai/
+
+**/.ops/
+**/.signing/
+**/local.properties
+**/.env
+*.apk
+*.p12
+*.jks
+*.keystore

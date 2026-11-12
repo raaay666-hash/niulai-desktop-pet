@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="theme-color" content="#f5f4f0">
+  <title>牛来盯盘</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><img src="assets/icon.png" alt=""><div><h1>牛来盯盘</h1></div></div>
+      <button id="settings-open" class="icon-button" aria-label="设置"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 3.8l.5-1.3h3.4l.5 1.3 1.7 1 1.5-.2 1.7 2.8-.9 1.2v2l.9 1.2-1.7 2.8-1.5-.2-1.7 1-.5 1.3h-3.4l-.5-1.3-1.7-1-1.5.2-1.7-2.8.9-1.2v-2l-.9-1.2 1.7-2.8 1.5.2z" transform="translate(0 2)"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button id="cover-exit" class="text-button cover-exit">退出预览</button>
+    </header>
+    <main>
+      <section id="view-home" class="view">
+
+        <div class="home-left">
+        <div class="section-line"><span class="eyebrow">正在盯盘</span><button id="refresh" class="text-button">↻ 刷新行情</button></div>
+        <div id="scene-tabs" class="scene-tabs" aria-label="叠放场景"><button data-scene="0" class="active">桌宠</button><button data-scene="1">行情</button><button data-scene="2">持仓</button><button data-scene="3">休息</button></div>
+        <article class="hero">
+          <div class="quote-top"><button id="select-stock" class="stock-title"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001</span><span class="chevron">⌄</span></button><span id="session" class="pill">等待行情</span></div>
+          <div id="quote-number" class="quote-number neutral"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div>
+          <div class="pet-scene"><span id="pet-state" class="pet-state">等待行情</span><div id="pet-bubble" class="bubble">点击牛来互动</div><button id="pet" class="pet" aria-label="摸摸牛来"><canvas id="bull" width="1254" height="1254"></canvas></button></div>
+          <section id="scene-market" class="scene-extra" hidden><span class="eyebrow">行情详情</span><h2 id="market-caption">行情连接中</h2><p id="market-details" class="subtext">正在获取报价</p><button id="next-stock" class="primary">下一只自选 →</button></section>
+          <section id="scene-position" class="scene-extra" hidden><span class="eyebrow">当前持仓</span><div id="stack-position"></div><button id="stack-edit" class="text-button">编辑持仓 ↗</button></section>
+          <section id="scene-calm" class="calm-extra" hidden><p id="calm-message">休息计时</p><button id="calm-start" class="text-button">开始 20 秒</button></section>
+          <div id="connection" class="connection" role="status"><span class="status-dot"></span><span id="connection-text">正在连接行情…</span></div>
+        </article>
+        <div class="pet-actions"><button data-action="wave"><span>⌁</span>招手</button><button data-action="nod"><span>⌄</span>点头</button><button data-action="gallery"><span>▦</span>动作预览</button></div>
+        
+        <section class="desktop-card"><div><h2 id="desktop-title">桌宠</h2><p id="desktop-description">悬浮显示当前行情</p></div><button id="desktop-start" class="primary">开启桌宠</button><div class="desktop-links"><button id="desktop-home" class="text-button" hidden>返回桌面</button><button id="desktop-stop" class="text-button" hidden>关闭桌宠</button><button id="widget-pin" class="text-button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="12" rx="3"/><path d="M5 18h14M7 21h10"/></svg>叠放卡片</button><button id="island-home" class="text-button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="5"/><circle cx="8" cy="12" r="1"/></svg>灵动岛</button><button id="device-help" class="text-button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg>手机适配</button></div></section>
+        </div><div class="home-right">
+        <article class="position-card"><div class="section-line"><h2>当前持仓</h2><button id="edit-position" class="text-button">设置持仓 ↗</button></div><div id="home-position" class="position-empty">尚未设置持仓</div></article>
+        <div class="section-line list-heading"><h2>我的自选 <span id="stock-count" class="count">3</span></h2><button class="text-button add-stock">＋ 添加</button></div>
+        <div id="home-stocks" class="stock-list"></div>
+        <p class="footnote">公开行情可能延迟，仅供参考。</p>
+        </div>
+      </section>
+      <section id="view-watchlist" class="view" hidden>
+        <div class="page-title"><div><h2>自选</h2></div><button class="round-add add-stock" aria-label="添加自选">＋</button></div>
+        <p class="subtext">A 股 · 港股 · 美股　最多 20 只</p>
+        <div id="watch-stocks" class="stock-list"></div><p class="footnote">点一只开始盯盘，右侧 × 移出自选。</p>
+      </section>
+      <section id="view-portfolio" class="view" hidden>
+        <div class="page-title"><div><h2>持仓</h2></div></div>
+        <p class="subtext">按标的原币展示，盈亏未计交易费用。</p>
+        <div id="portfolio-list"></div><button id="portfolio-edit" class="primary full">设置当前股票持仓</button>
+        <p class="footnote">今日盈亏按当前持股数估算，不反映日内买卖。<br>成本和股数仅保存在本机，卸载后会清除。</p>
+      </section>
+      <section id="view-muyu" class="view" hidden><div class="page-title"><h2>木鱼</h2><button id="muyu-settings" class="text-button" aria-label="木鱼设置">木鱼设置</button></div><div class="wood-card"><span class="eyebrow">本轮敲击</span><strong id="wood-count">0</strong><button id="wood-tap" class="wood-tap" aria-label="敲木鱼"><canvas id="wood-canvas" width="440" height="440"></canvas><span id="wood-feedback" class="wood-feedback" aria-hidden="true"></span></button><div class="wood-totals"><div><small>今日</small><b id="wood-today">0</b></div><div><small>累计</small><b id="wood-total">0</b></div></div></div><div class="wood-controls"><button id="wood-sound" class="text-button">音效关闭</button><button id="wood-round" class="text-button">新一轮</button><button id="wood-floating" class="text-button">悬浮木鱼</button></div></section>
+    </main>
+    <nav class="bottom-nav" aria-label="主导航"><button data-tab="home" class="active"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><rect x="14" y="14" width="6" height="6" rx="1.4"/></svg>盯盘</button><button data-tab="watchlist"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l5-5 4 3 7-9"/><path d="M15 6h5v5"/><path d="M4 21h16"/></svg>自选</button><button data-tab="portfolio"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="15" rx="2"/><path d="M9 6V3h6v3M4 12h16M10 12v3h4v-3"/></svg>持仓</button><button data-tab="muyu"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 16c0-4 3-7 8-7s8 3 8 7c0 3-16 3-16 0zM8 14l8-2M6 4l7 5"/></svg>木鱼</button></nav>
+  </div>
+  <dialog id="search-dialog"><div class="sheet-head"><div><h2>添加股票</h2></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><form id="search-form"><label class="sr-only" for="search-input">股票名称或代码</label><div class="search-field"><input id="search-input" type="search" placeholder="名称或代码，如 茅台 / 00700 / AAPL" maxlength="40" autocomplete="off"><button type="submit" aria-label="搜索">⌕</button></div></form><div class="quick-stocks"><button data-code="s_sh000001">上证指数</button><button data-code="rt_hk00700">腾讯控股</button><button data-code="gb_aapl">苹果</button></div><p id="search-message" class="subtext" role="status">支持 A 股、港股和美股。</p><div id="search-results"></div></dialog>
+  <dialog id="position-dialog"><div class="sheet-head"><div><h2 id="position-title">设置持仓</h2></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><form id="position-form"><label for="cost">每股成本 <span id="position-currency">CNY</span></label><input id="cost" type="number" inputmode="decimal" min="0.000001" max="1000000000" step="any" required placeholder="输入平均成本"><label for="shares">持有股数</label><input id="shares" type="number" inputmode="decimal" min="0.000001" max="1000000000000" step="any" required placeholder="输入股数，支持小数"><p class="subtext">数据只保存在这台手机，不连接券商账户。</p><button class="primary full" type="submit">保存持仓</button><button id="clear-position" class="text-button full" type="button">清除此持仓</button></form></dialog>
+  <dialog id="settings-dialog">
+  <div class="settings-header"><div class="sheet-head"><h2>设置</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><nav class="settings-nav" role="tablist" aria-label="设置分类"><button id="settings-tab-island" data-settings="island" role="tab" aria-controls="island-settings" aria-selected="true">灵动岛</button><button id="settings-tab-pet" data-settings="pet" role="tab" aria-controls="pet-settings" aria-selected="false">桌宠</button><button id="settings-tab-muyu" data-settings="muyu" role="tab" aria-controls="muyu-settings-panel" aria-selected="false">木鱼</button><button id="settings-tab-widget" data-settings="widget" role="tab" aria-controls="widget-settings" aria-selected="false">卡片</button><button id="settings-tab-general" data-settings="general" role="tab" aria-controls="general-settings" aria-selected="false">通用</button><button id="settings-tab-about" data-settings="about" role="tab" aria-controls="about-settings" aria-selected="false">关于</button></nav></div>
+  <section class="settings-section" id="island-settings" data-settings-panel="island" role="tabpanel" aria-labelledby="settings-tab-island"><h3>灵动岛</h3>
+    <div class="island-demo"><canvas id="island-mini" width="80" height="80" aria-label="微缩牛来"></canvas><div><small id="island-demo-name">牛来盯盘</small><strong id="island-demo-value">—</strong></div><b id="island-demo-percent">—</b></div>
+    <div class="setting-row"><label for="islandEnabled">开启灵动岛</label><input id="islandEnabled" type="checkbox" role="switch"></div>
+    <button id="preview-island" class="text-button full">预览悬浮灵动岛 · 10 秒</button>
+    <div class="setting-row"><label for="islandContent">显示内容</label><select id="islandContent"><option value="market">股票行情</option><option value="muyu">木鱼计数</option></select></div>
+    <div id="island-market-settings">
+      <div class="setting-row"><label for="islandSymbol">显示股票</label><select id="islandSymbol"><option value="">跟随当前自选</option></select></div>
+      <div class="setting-row"><label for="islandPrice">显示价格</label><input id="islandPrice" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandPercent">显示涨跌幅</label><input id="islandPercent" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandHoldings">展开时显示持仓</label><input id="islandHoldings" type="checkbox" role="switch"></div>
+    </div>
+    <div class="setting-row"><label for="islandCount">显示木鱼计数</label><input id="islandCount" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandBull">显示牛来</label><input id="islandBull" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandMotion">岛内动画</label><input id="islandMotion" type="checkbox" role="switch"></div>
+    <div class="setting-row"><label for="islandTheme">灵动岛外观</label><select id="islandTheme"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select></div>
+    <div class="setting-row"><label for="islandInterval">行情刷新</label><select id="islandInterval"><option value="5">每 5 秒</option><option value="10">每 10 秒</option><option value="30">每 30 秒</option></select></div>
+    <div class="setting-row"><label for="islandPlacement">前摄位置</label><select id="islandPlacement"><option value="auto">自动识别开孔</option><option value="manual">手动校准</option><option value="below">系统栏下方</option></select></div>
+    <div class="setting-row"><label for="islandCameraInteraction">前摄交互</label><input id="islandCameraInteraction" type="checkbox" role="switch"></div>
+    <p id="camera-status" class="subtext"></p><button id="camera-permission" class="text-button full">前往系统开启前摄交互</button>
+    <div id="camera-manual"><div class="setting-range"><label for="islandCameraX">前摄水平位置<span id="islandCameraX-value"></span></label><input id="islandCameraX" type="range" min="0" max="100" step="1"></div><div class="setting-range"><label for="islandCameraWidth">开孔宽度<span id="islandCameraWidth-value"></span></label><input id="islandCameraWidth" type="range" min="12" max="200" step="2"></div><div class="setting-range"><label for="islandCameraHeight">开孔高度<span id="islandCameraHeight-value"></span></label><input id="islandCameraHeight" type="range" min="12" max="80" step="2"></div></div>
+    <div class="setting-range"><label for="islandWidth">宽度<span id="islandWidth-value"></span></label><input id="islandWidth" type="range" min="200" max="360" step="8"></div><div class="setting-range"><label for="islandOffsetY">垂直微调<span id="islandOffsetY-value"></span></label><input id="islandOffsetY" type="range" min="-24" max="160" step="2"></div><div class="setting-range"><label for="islandOffsetX">水平微调<span id="islandOffsetX-value"></span></label><input id="islandOffsetX" type="range" min="-160" max="160" step="2"></div>
+    <div class="setting-row"><label for="islandAutoCollapse">展开后 10 秒自动收起</label><input id="islandAutoCollapse" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandHideInApp">打开牛来时隐藏</label><input id="islandHideInApp" type="checkbox" role="switch"></div>
+    <p class="subtext">轻触展开，横滑切换自选，下滑展开、上滑收起，长按打开牛来。木鱼岛轻触计数。前摄贴合使用黑色外观，按当前屏幕开孔重新排布。</p>
+  </section>
+  <section class="settings-section" id="pet-settings" data-settings-panel="pet" role="tabpanel" aria-labelledby="settings-tab-pet" hidden><h3>桌宠</h3>
+    <div class="setting-row"><label for="petEnabled">开启桌宠</label><input id="petEnabled" type="checkbox" role="switch"></div><div class="setting-row"><label for="petMode">桌宠模式</label><select id="petMode"><option value="market">盯盘桌宠</option><option value="muyu">牛来木鱼</option></select></div>
+    <div class="setting-row"><label for="petQuote">显示行情卡</label><input id="petQuote" type="checkbox" role="switch"></div><div class="setting-row"><label for="petHideInApp">打开牛来时隐藏</label><input id="petHideInApp" type="checkbox" role="switch"></div><div class="setting-row"><label for="autoActions">按行情切换动作</label><input id="autoActions" type="checkbox" role="switch"></div>
+    <div class="setting-row"><label for="motion">动画</label><input id="motion" type="checkbox" role="switch"></div><div class="setting-row"><label for="sound">桌宠点击音效</label><input id="sound" type="checkbox" role="switch"></div><div class="setting-row"><label for="haptic">点击轻震</label><input id="haptic" type="checkbox" role="switch"></div>
+    <button id="settings-motions" class="text-button full">查看动作与姿势</button>
+  </section>
+  <section class="settings-section" id="muyu-settings-panel" data-settings-panel="muyu" role="tabpanel" aria-labelledby="settings-tab-muyu" hidden><h3>木鱼</h3>
+    <div class="setting-row"><label for="muyuSound">敲击音效</label><input id="muyuSound" type="checkbox" role="switch"></div><div class="setting-row"><label for="muyuEffects">牛气＋1 动效</label><input id="muyuEffects" type="checkbox" role="switch"></div><div class="setting-row"><label for="muyuCount">显示悬浮计数</label><input id="muyuCount" type="checkbox" role="switch"></div>
+    <button id="settings-muyu" class="text-button full">打开木鱼</button>
+  </section>
+  <section class="settings-section" id="widget-settings" data-settings-panel="widget" role="tabpanel" aria-labelledby="settings-tab-widget" hidden><h3>桌面卡片</h3>
+    <div class="setting-row"><label for="widgetTheme">卡片外观</label><select id="widgetTheme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+    <div class="setting-row"><label for="widgetSparkline">显示最近报价曲线</label><input id="widgetSparkline" type="checkbox" role="switch"></div><div class="setting-row"><label for="widgetBull">显示牛来</label><input id="widgetBull" type="checkbox" role="switch"></div><div class="setting-row"><label for="private">隐藏持仓金额</label><input id="private" type="checkbox" role="switch"></div>
+    <button id="settings-widget" class="text-button full">添加桌面卡片</button>
+  </section>
+  <section class="settings-section" id="general-settings" data-settings-panel="general" role="tabpanel" aria-labelledby="settings-tab-general" hidden><h3>外观与行情</h3>
+    <div class="setting-row"><label for="theme">应用外观</label><select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+    <div class="setting-row"><label for="interval">桌宠行情刷新</label><select id="interval"><option value="5">每 5 秒</option><option value="10">每 10 秒</option><option value="30">每 30 秒</option></select></div>
+    <div class="setting-row"><label for="smartScene">首页跟随常规交易时段</label><input id="smartScene" type="checkbox" role="switch"></div>
+    <p class="eyebrow">使用模式</p><div class="quick-stocks"><button data-preset="office">静音</button><button data-preset="commute">通勤</button><button data-preset="home">标准</button><button data-preset="battery">省电</button></div>
+  </section>
+  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.3.2</strong><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛使用牛来的顶部悬浮窗。桌宠与灵动岛可分别开启，需要悬浮窗授权，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
+</dialog>
+  <dialog id="device-dialog"><div class="sheet-head"><div><h2>手机设置</h2></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="device-name" class="subtext"></p><div id="device-guide" class="about"></div><div class="quick-stocks"><button id="app-settings">应用设置 ↗</button><button id="battery-settings">电池设置 ↗</button><button id="cover-preview">外屏精简预览</button><button id="compat-open">使用兼容界面</button></div><p class="subtext">桌宠需要悬浮窗权限。后台持续显示可能受系统省电策略限制；设置项名称因手机系统版本而异。</p></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="motion-dialog"><div class="sheet-head"><div><h2>牛来动作</h2><p class="subtext">动作预览，不改变当前行情</p></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><div class="motion-stage"><canvas id="motion-canvas" width="440" height="320" aria-label="动作预览"></canvas><div><strong id="motion-name">等待行情</strong><span id="motion-action">抬头张望</span></div></div><button id="floating-preview" class="text-button full" hidden>在悬浮桌宠上预览 · 6 秒</button><div id="motion-list" class="motion-list"></div><p class="footnote">动作根据已获取报价和常规交易时段切换。涨跌幅只描述价格变化，不代表涨跌停或交易建议；节假日、停牌需另行确认。关闭设置中的「动画」可静止显示。</p></dialog>
+  <script src="compat.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

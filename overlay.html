@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>牛来悬浮窗</title>
+  <link rel="stylesheet" href="desktop.css">
+  <link rel="stylesheet" href="overlay.css">
+</head>
+<body class="overlay-body">
+  <article id="overlay" class="overlay-shell">
+    <header class="overlay-toolbar"><button id="drag-handle" aria-label="拖动窗口" title="拖动窗口">⠿</button><span id="overlay-title">牛来</span><div class="overlay-window-buttons"><button id="open-dashboard" aria-label="打开主面板" title="打开主面板">↗</button><button id="collapse-overlay" aria-label="收起或展开" title="收起或展开">−</button><button id="close-overlay" aria-label="关闭悬浮窗" title="关闭悬浮窗">×</button></div></header>
+    <button id="compact-island" class="compact-island" hidden><canvas id="mini-canvas" width="100" height="100"></canvas><div><small id="compact-name">牛来盯盘</small><strong id="compact-price">—</strong></div><b id="compact-percent">—</b></button>
+    <div id="overlay-content">
+      <div id="overlay-quote" class="overlay-quote"><div><strong id="overlay-name">上证指数</strong><small id="overlay-code">sh000001</small></div><div id="overlay-numbers"><strong id="overlay-price">—</strong><small id="overlay-percent">—</small></div></div>
+      <nav id="scene-tabs" class="scene-tabs" aria-label="卡片场景" hidden><button data-scene="0">桌宠</button><button data-scene="1">行情</button><button data-scene="2">持仓</button><button data-scene="3">休息</button></nav>
+      <button id="overlay-pet" class="overlay-pet" aria-label="摸摸牛来"><canvas id="pet-canvas" width="384" height="384"></canvas><span id="overlay-feedback"></span></button>
+      <section id="market-scene" hidden><canvas id="overlay-chart" width="600" height="140" aria-label="本次运行报价采样曲线"></canvas><p id="chart-description" class="footnote">等待采样</p></section>
+      <section id="position-scene" hidden><div id="overlay-position"></div><button id="edit-position" class="link-button">在主面板编辑 ↗</button></section>
+      <section id="calm-scene" hidden><p id="calm-time">20 秒</p><button id="calm-start" class="button secondary">开始休息</button></section>
+      <div id="overlay-count" class="overlay-count" hidden>本轮 <strong id="overlay-count-value">0</strong><span id="overlay-total"></span></div>
+      <div id="island-expanded" hidden><div id="island-position"></div><div class="island-navigation"><button id="previous-stock" aria-label="上一只自选">←</button><span id="island-stock-index">滚轮切换自选</span><button id="next-stock" aria-label="下一只自选">→</button></div></div>
+      <footer id="overlay-status" class="overlay-status">正在连接行情…</footer>
+    </div>
+  </article>
+  <script src="overlay.bundle.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+.overlay-body { background: transparent; overflow: hidden; user-select: none; padding: 6px; }
+.overlay-shell { width: 100%; height: calc(100vh - 12px); overflow: hidden; position: relative; border-radius: 16px; }
+.overlay-toolbar { height: 28px; display: flex; gap: 7px; align-items: center; padding: 0 7px; color: var(--muted); font-size: 10px; }
+.overlay-toolbar button { padding: 0; height: 24px; width: 23px; border-radius: 5px; font-size: 15px; }
+.overlay-toolbar button:hover { background: var(--soft); }
+#drag-handle { cursor: grab; font-size: 21px; touch-action: none; }
+#drag-handle:active { cursor: grabbing; }
+.overlay-window-buttons { margin-left: auto; display: flex; }
+.overlay-quote { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 14px; }
+.overlay-quote > div { min-width: 0; }
+.overlay-quote strong { font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overlay-quote small { font-size: 10px; display: block; margin-top: 4px; color: var(--muted); }
+#overlay-numbers { text-align: right; font-variant-numeric: tabular-nums; }
+#overlay-numbers small { color: inherit; }
+.overlay-pet { display: block; position: relative; padding: 0; width: 100%; }
+.overlay-pet canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+.overlay-status { font-size: 9px; color: var(--muted); text-align: center; padding: 7px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overlay-count { text-align: center; font-size: 10px; color: var(--muted); }
+.overlay-count strong { font-size: 16px; color: var(--text); margin-left: 5px; }
+.overlay-count > span { display: block; font-size: 9px; margin-top: 4px; }
+.overlay-shell[data-kind=pet] .overlay-toolbar { border-radius: 9px; background: var(--surface); opacity: 0; transition: opacity .15s; }
+.overlay-shell[data-kind=pet]:hover .overlay-toolbar, .overlay-shell[data-kind=pet]:focus-within .overlay-toolbar { opacity: 1; }
+.overlay-shell[data-kind=pet] .overlay-quote { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; margin-top: 3px; }
+.overlay-shell[data-kind=pet] .overlay-pet { height: calc(100vh - 126px); touch-action: none; }
+.overlay-shell[data-kind=pet] .overlay-status { background: var(--surface); border-radius: 7px; margin: 0 14px; }
+.overlay-shell[data-kind=pet].wood-mode .overlay-pet { height: calc(100vh - 90px); }
+.overlay-shell[data-kind=pet] .overlay-count { background: var(--surface); margin: 0 20px; padding: 5px; border-radius: 9px; }
+.overlay-shell[data-kind=pet].collapsed .overlay-toolbar { position: absolute; inset: 0 0 auto; z-index: 2; padding: 0; opacity: 1; height: 23px; }
+.overlay-shell[data-kind=pet].collapsed #overlay-title, .overlay-shell[data-kind=pet].collapsed #open-dashboard, .overlay-shell[data-kind=pet].collapsed #close-overlay { display: none; }
+.overlay-shell[data-kind=pet].collapsed .overlay-pet { margin-top: 9px; height: 66px; }
+.overlay-shell[data-kind=pet].collapsed .overlay-quote, .overlay-shell[data-kind=pet].collapsed .overlay-status, .overlay-shell[data-kind=pet].collapsed .overlay-count { display: none !important; }
+.overlay-shell[data-kind=island] { border-radius: 26px; background: #171a20; color: #f0f3f8; --muted: #a3acbb; --soft: #303642; --surface: #171a20; --line: #303642; }
+.overlay-shell[data-kind=island].light-island { background: #fdfefe; color: #242b36; --muted: #727d8b; --soft: #eef1f6; --surface: #fdfefe; --line: #e4e9f1; border: 1px solid #e2e7ef; }
+.overlay-shell[data-kind=island] .overlay-toolbar { position: absolute; inset: 0 auto auto 0; width: 30px; height: 54px; z-index: 2; padding-left: 5px; }
+.overlay-shell[data-kind=island] #overlay-title, .overlay-shell[data-kind=island].collapsed .overlay-window-buttons { display: none; }
+.overlay-shell[data-kind=island]:not(.collapsed) .overlay-toolbar { width: 100%; height: 24px; }
+.compact-island { width: 100%; height: 54px; padding: 0 21px 0 31px; display: flex; align-items: center; gap: 9px; text-align: left; }
+.compact-island canvas { width: 47px; height: 47px; }
+.compact-island > div { min-width: 0; }
+.compact-island small { display: block; font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.compact-island strong { font-size: 14px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.compact-island b { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.overlay-shell[data-kind=island]:not(.collapsed) .compact-island { margin-top: 19px; height: 55px; padding-left: 15px; }
+.overlay-shell[data-kind=island] .overlay-quote, .overlay-shell[data-kind=island] .overlay-pet { display: none; }
+.island-navigation { display: flex; justify-content: space-between; align-items: center; padding: 0 20px; color: var(--muted); font-size: 10px; }
+.island-navigation button { font-size: 17px; padding: 3px 15px; }
+#island-position { padding: 0 20px; text-align: center; font-size: 10px; min-height: 21px; color: var(--muted); }
+.overlay-shell[data-kind=widget] { background: var(--surface); border: 1px solid var(--line); }
+.overlay-shell[data-kind=widget] .overlay-toolbar { border-bottom: 1px solid var(--line); }
+.overlay-shell[data-kind=widget] #collapse-overlay { display: none; }
+.overlay-shell[data-kind=widget] .overlay-quote { padding-top: 13px; }
+.overlay-shell[data-kind=widget] .overlay-quote #overlay-price { font-size: 22px; letter-spacing: -.5px; }
+.scene-tabs { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--soft); border-radius: 8px; padding: 3px; gap: 3px; margin: 5px 14px 0; }
+.scene-tabs button { border-radius: 6px; font-size: 10px; padding: 6px 0; color: var(--muted); }
+.scene-tabs button.active { background: var(--surface); color: var(--blue); box-shadow: 0 1px 4px #0001; }
+.overlay-shell[data-kind=widget] .overlay-pet { height: 152px; }
+.overlay-shell[data-kind=widget] #overlay-content { position: relative; }
+.overlay-shell[data-kind=widget] .overlay-status { position: absolute; top: 278px; width: 100%; padding-top: 0; }
+#market-scene, #position-scene, #calm-scene { padding: 17px 18px 7px; height: 160px; }
+#market-scene canvas { width: 100%; height: 84px; display: block; }
+#market-scene p { font-size: 9px; margin-top: 9px; }
+#position-scene .pnl-grid { margin-top: 6px; }
+#position-scene .pnl-grid strong { font-size: 20px; }
+#position-scene .pnl-grid small { font-size: 10px; }
+#position-scene > button { margin-top: 18px; }
+#calm-scene { text-align: center; }
+#calm-time { font-size: 29px; font-weight: 400; margin: 8px 0 15px; }
+.overlay-shell .wood-pulse { font-size: 16px; }

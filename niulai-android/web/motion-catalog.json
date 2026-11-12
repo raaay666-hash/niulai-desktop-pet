@@ -1,0 +1,225 @@
+[
+  {
+    "id": "loading",
+    "label": "等待行情",
+    "action": "抬头张望",
+    "tone": "neutral",
+    "effect": "dots",
+    "sprite": 0
+  },
+  {
+    "id": "offline",
+    "label": "更新延迟",
+    "action": "托腮等候",
+    "tone": "neutral",
+    "effect": "dots",
+    "sprite": 0
+  },
+  {
+    "id": "preopen",
+    "label": "开盘前",
+    "action": "伸展前蹄",
+    "tone": "neutral",
+    "effect": "none",
+    "sprite": 4
+  },
+  {
+    "id": "opening",
+    "label": "开盘时段",
+    "action": "探头看盘",
+    "tone": "neutral",
+    "effect": "spark",
+    "sprite": 4
+  },
+  {
+    "id": "rise",
+    "label": "上涨",
+    "action": "竖蹄点头",
+    "tone": "rise",
+    "effect": "up",
+    "sprite": 4
+  },
+  {
+    "id": "rally",
+    "label": "明显上涨",
+    "action": "举蹄庆祝",
+    "tone": "rise",
+    "effect": "spark",
+    "sprite": 2
+  },
+  {
+    "id": "fall",
+    "label": "下跌",
+    "action": "托腮轻晃",
+    "tone": "fall",
+    "effect": "down",
+    "sprite": 5
+  },
+  {
+    "id": "slump",
+    "label": "明显下跌",
+    "action": "低头缓一缓",
+    "tone": "fall",
+    "effect": "none",
+    "sprite": 7
+  },
+  {
+    "id": "surge",
+    "label": "短时上行",
+    "action": "轻跃再站稳",
+    "tone": "rise",
+    "effect": "up",
+    "sprite": 2
+  },
+  {
+    "id": "drop",
+    "label": "短时回落",
+    "action": "抬蹄捂眼",
+    "tone": "fall",
+    "effect": "down",
+    "sprite": 6
+  },
+  {
+    "id": "rebound",
+    "label": "低位回升",
+    "action": "探头再看看",
+    "tone": "rise",
+    "effect": "up",
+    "sprite": 4
+  },
+  {
+    "id": "pullback",
+    "label": "高位回落",
+    "action": "低头看看",
+    "tone": "fall",
+    "effect": "down",
+    "sprite": 5
+  },
+  {
+    "id": "near",
+    "label": "昨收附近",
+    "action": "挠头看看",
+    "tone": "neutral",
+    "effect": "none",
+    "sprite": 0
+  },
+  {
+    "id": "flat",
+    "label": "窄幅波动",
+    "action": "左右看看",
+    "tone": "neutral",
+    "effect": "none",
+    "sprite": 0
+  },
+  {
+    "id": "lunch",
+    "label": "午间休市",
+    "action": "眯眼打盹",
+    "tone": "neutral",
+    "effect": "sleep",
+    "sprite": 7
+  },
+  {
+    "id": "closed",
+    "label": "常规时段外",
+    "action": "低头休息",
+    "tone": "neutral",
+    "effect": "none",
+    "sprite": 7
+  },
+  {
+    "id": "weekend",
+    "label": "周末休市",
+    "action": "趴低打盹",
+    "tone": "neutral",
+    "effect": "sleep",
+    "sprite": 7
+  },
+  {
+    "id": "wave",
+    "label": "招手",
+    "action": "抬起一只前蹄",
+    "tone": "neutral",
+    "effect": "spark",
+    "manual": true,
+    "sprite": 4
+  },
+  {
+    "id": "nod",
+    "label": "点头",
+    "action": "轻轻点两下",
+    "tone": "neutral",
+    "effect": "none",
+    "manual": true,
+    "sprite": 4
+  },
+  {
+    "id": "happy",
+    "label": "开心",
+    "action": "举蹄轻跃",
+    "tone": "rise",
+    "effect": "spark",
+    "manual": true,
+    "sprite": 2
+  },
+  {
+    "id": "annoyed",
+    "label": "别挠了",
+    "action": "转头躲一下",
+    "tone": "neutral",
+    "effect": "none",
+    "manual": true,
+    "sprite": 0
+  },
+  {
+    "id": "clap",
+    "label": "上涨",
+    "action": "拍蹄鼓掌",
+    "tone": "rise",
+    "effect": "spark",
+    "sprite": 3
+  },
+  {
+    "id": "incense",
+    "label": "下跌",
+    "action": "上香轻点头",
+    "tone": "fall",
+    "effect": "smoke",
+    "sprite": 1
+  },
+  {
+    "id": "cover",
+    "label": "明显下跌",
+    "action": "抬蹄捂眼",
+    "tone": "fall",
+    "effect": "none",
+    "sprite": 6
+  },
+  {
+    "id": "scratch",
+    "label": "挠头",
+    "action": "前蹄挠挠头",
+    "tone": "neutral",
+    "effect": "none",
+    "sprite": 0,
+    "manual": true
+  },
+  {
+    "id": "muyu",
+    "label": "敲木鱼",
+    "action": "木槌敲击",
+    "tone": "neutral",
+    "effect": "knock",
+    "sprite": 8,
+    "manual": true
+  },
+  {
+    "id": "idle",
+    "label": "牛来",
+    "action": "呼吸眨眼",
+    "tone": "neutral",
+    "effect": "none",
+    "sprite": 4,
+    "manual": true
+  }
+]

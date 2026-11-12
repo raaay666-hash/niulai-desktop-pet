@@ -1,0 +1,177 @@
+{
+  "columns": 6,
+  "rows": 4,
+  "count": 24,
+  "sheets": {
+    "muyu": {
+      "file": "muyu-v1.webp",
+      "duration": 400
+    },
+    "scratch": {
+      "file": "scratch-v1.webp",
+      "duration": 1000
+    },
+    "incense": {
+      "file": "incense-v1.webp",
+      "duration": 1600
+    },
+    "clap": {
+      "file": "clap-v1.webp",
+      "duration": 800
+    },
+    "celebrate": {
+      "file": "celebrate-v1.webp",
+      "duration": 1000
+    },
+    "thumb": {
+      "file": "thumb-v1.webp",
+      "duration": 1200
+    },
+    "cheek": {
+      "file": "cheek-v1.webp",
+      "duration": 1400
+    },
+    "cover": {
+      "file": "cover-v1.webp",
+      "duration": 1400
+    },
+    "sleep": {
+      "file": "sleep-v2.webp",
+      "duration": 2000
+    },
+    "look": {
+      "file": "look-v1.webp",
+      "duration": 1600
+    },
+    "wave": {
+      "file": "wave-v1.webp",
+      "duration": 1000
+    },
+    "nod": {
+      "file": "nod-v1.webp",
+      "duration": 1000
+    },
+    "stretch": {
+      "file": "stretch-v1.webp",
+      "duration": 1600
+    },
+    "lean": {
+      "file": "lean-v1.webp",
+      "duration": 1200
+    },
+    "idle": {
+      "file": "idle-v1.webp",
+      "duration": 2400
+    }
+  },
+  "clips": {
+    "loading": {
+      "sheet": "look",
+      "rest": 1200
+    },
+    "offline": {
+      "sheet": "cheek",
+      "rest": 1200
+    },
+    "preopen": {
+      "sheet": "stretch",
+      "rest": 1200
+    },
+    "opening": {
+      "sheet": "lean",
+      "rest": 1200
+    },
+    "rise": {
+      "sheet": "thumb",
+      "rest": 1200
+    },
+    "rally": {
+      "sheet": "celebrate",
+      "rest": 1200
+    },
+    "fall": {
+      "sheet": "cheek",
+      "rest": 1200
+    },
+    "slump": {
+      "sheet": "sleep",
+      "rest": 1200
+    },
+    "surge": {
+      "sheet": "celebrate",
+      "rest": 1200
+    },
+    "drop": {
+      "sheet": "cover",
+      "rest": 1200
+    },
+    "rebound": {
+      "sheet": "lean",
+      "rest": 1200
+    },
+    "pullback": {
+      "sheet": "nod",
+      "rest": 1200
+    },
+    "near": {
+      "sheet": "scratch",
+      "rest": 1200
+    },
+    "flat": {
+      "sheet": "look",
+      "rest": 1200
+    },
+    "lunch": {
+      "sheet": "sleep",
+      "rest": 1600
+    },
+    "closed": {
+      "sheet": "sleep",
+      "rest": 1600
+    },
+    "weekend": {
+      "sheet": "sleep",
+      "rest": 1600
+    },
+    "wave": {
+      "sheet": "wave",
+      "rest": 1200
+    },
+    "nod": {
+      "sheet": "nod",
+      "rest": 1200
+    },
+    "happy": {
+      "sheet": "celebrate",
+      "rest": 1200
+    },
+    "annoyed": {
+      "sheet": "look",
+      "rest": 1200
+    },
+    "clap": {
+      "sheet": "clap",
+      "rest": 1200
+    },
+    "incense": {
+      "sheet": "incense",
+      "rest": 1200
+    },
+    "cover": {
+      "sheet": "cover",
+      "rest": 1200
+    },
+    "scratch": {
+      "sheet": "scratch",
+      "rest": 1200
+    },
+    "muyu": {
+      "sheet": "muyu",
+      "rest": 0
+    },
+    "idle": {
+      "sheet": "idle",
+      "rest": 1600
+    }
+  }
+}

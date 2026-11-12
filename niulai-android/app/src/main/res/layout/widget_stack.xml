@@ -1,0 +1,27 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="14dp" android:background="@drawable/widget_background">
+  <LinearLayout android:layout_width="match_parent" android:layout_height="23dp" android:gravity="center_vertical">
+    <TextView android:id="@+id/widget_scene" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent"
+        android:text="牛来 · 桌宠" android:textColor="@color/widget_muted" android:textSize="10sp" android:gravity="center_vertical" android:maxLines="1" />
+    <TextView android:id="@+id/widget_prev" android:layout_width="30dp" android:layout_height="match_parent" android:gravity="center"
+        android:text="‹" android:textSize="22sp" android:textColor="@color/widget_ink" android:contentDescription="上一个场景" />
+    <TextView android:id="@+id/widget_next" android:layout_width="30dp" android:layout_height="match_parent" android:gravity="center"
+        android:text="›" android:textSize="22sp" android:textColor="@color/widget_ink" android:contentDescription="下一个场景" />
+  </LinearLayout>
+  <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center_vertical">
+    <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+      <TextView android:id="@+id/widget_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="上证指数"
+          android:textColor="@color/widget_ink" android:textSize="13sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+      <TextView android:id="@+id/widget_value" android:layout_width="match_parent" android:layout_height="32dp" android:text="—"
+          android:textColor="@color/widget_ink" android:textSize="28sp" android:textStyle="bold" android:maxLines="1"
+          android:autoSizeTextType="uniform" android:autoSizeMinTextSize="15sp" android:autoSizeMaxTextSize="30sp" android:autoSizeStepGranularity="1sp" />
+      <TextView android:id="@+id/widget_note" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="等待行情"
+          android:textColor="@color/widget_muted" android:textSize="10sp" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+    <ImageView android:id="@+id/widget_bull" android:layout_width="70dp" android:layout_height="72dp" android:scaleType="fitCenter" android:contentDescription="2D 牛来" />
+  </LinearLayout>
+  <ImageView android:id="@+id/widget_chart" android:layout_width="match_parent" android:layout_height="27dp" android:scaleType="fitXY" android:contentDescription="最近获取报价的变化" />
+  <TextView android:id="@+id/widget_time" android:layout_width="match_parent" android:layout_height="16dp" android:gravity="bottom"
+      android:text="快照 · 点开刷新" android:textColor="@color/widget_muted" android:textSize="9sp" android:maxLines="1" android:ellipsize="end" />
+</LinearLayout>

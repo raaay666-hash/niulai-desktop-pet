@@ -1,0 +1,61 @@
+name: Build macOS stable release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-stable-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run regressions
+        run: npm run test:regression
+      - name: Build DMG
+        run: >-
+          npm run build:renderer &&
+          npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
+          --config.mac.artifactName='Niulai-${version}-mac-${arch}.${ext}'
+          --config.dmg.artifactName='Niulai-${version}-mac-${arch}.${ext}'
+      - name: Install launch-test dependencies
+        run: npm ci --prefix niulai-android --ignore-scripts --no-audit --no-fund
+      - name: Verify native application launch
+        run: node scripts/verify-macos-release.mjs
+      - name: Compute checksums
+        run: |
+          cd release
+          shasum -a 256 Niulai-1.5.0-mac-${{ matrix.arch }}.dmg > Niulai-1.5.0-mac-${{ matrix.arch }}.dmg.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-1.5.0-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.sha256
+            outputs/macos-release/
+      - name: Upload verified packages to stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v1.5.0 release/Niulai-1.5.0-mac-${{ matrix.arch }}.dmg release/Niulai-1.5.0-mac-${{ matrix.arch }}.dmg.sha256

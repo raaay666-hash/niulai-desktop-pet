@@ -1,0 +1,9 @@
+<resources>
+  <color name="widget_surface">#FAFBF5</color>
+  <color name="widget_stroke">#E9E9E2</color>
+  <color name="widget_ink">#282925</color>
+  <color name="widget_muted">#74766F</color>
+  <color name="widget_rise">#CC4148</color>
+  <color name="widget_fall">#22836D</color>
+  <color name="widget_wood">#A67631</color>
+</resources>
