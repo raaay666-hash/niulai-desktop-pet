@@ -125,3 +125,12 @@
 - Cloudflare Production 上传 33/33，部署显示 Success。匿名 HTTP 核对 30 个静态资源、8 个代理文件的 HEAD 与首尾范围共 24 项，以及四个新版 Windows/Mac 安装包的完整大小和 SHA-256。全部通过，两个 DMG 的 UDIF 尾部标记有效。反馈 GET 返回 405、Allow POST。
 - 公开浏览器核对四个桌面端下载地址、版本文字与无横向溢出。缓存版本为 niulai-mobile-v18-stable150，旧版本下载入口保留。验证报告和截图位于 outputs/desktop-1.5.0/site。
 - Windows 和 Mac 安装包均未签名，Mac 尚未 Apple 公证。Mac 检查基于云端对应架构运行器，其他用户设备兼容性尚待反馈。
+
+### 2026-11-12 Windows 与 Mac 1.5.0 功能内容一致性确认
+
+- 两种 Mac DMG 在对应架构 macOS 运行器挂载后复制应用，运行与 Windows 相同的成品流程。GitHub Actions run 43221662754 成功，三端各 22 项功能检查及单实例检查通过。
+- 三端 40 个设置项相同，包内全部 33 个文件逐字节一致。app.asar SHA-256 均为 2da703b95d7c54835d3c21893d623f2e8ef711a61b5869a7b712b4246286e3a1。v1.5.0 Release 已补充核验说明和 Niulai-1.5.0-Desktop-Parity-20261112.zip 报告附件及校验文件。
+- 官网电脑版介绍补充共同具备的逐帧桌宠、共享木鱼计数、独立悬浮窗和四场景卡片。Cloudflare Production 上传 33/33，部署显示 Success，缓存升级为 niulai-mobile-v19-parity150。
+- 本轮匿名 HTTP 核验 30 个静态资源、24 项下载 HEAD/Range、四个 Windows/Mac 安装包完整大小与 SHA-256 全部通过。公开浏览器已核对共同功能文字及全部新版下载入口。反馈 GET 仍为 405、Allow POST。
+- 自动核验中的锁屏与下跌使用受控事件和报价，音频通过静音播放与播放替身核对。实体多屏、通知权限和扬声器人工验收待补充。安装包未签名，Mac 尚未 Apple 公证。
+- 核验报告位于 outputs/desktop-parity，发布后资源核验位于 outputs/desktop-1.5.0/site/publication-verification.json。官网发布包为 artifacts/niulai-public-parity-1.5.0-20261112.zip。
