@@ -21,6 +21,7 @@ const server = http.createServer(async (request, response) => {
   } catch { response.writeHead(404).end(); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const origin = process.env.NIULAI_PAGE_ORIGIN || `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--disable-gpu'] });
 const checks = [], errors = [];
 try {
@@ -28,12 +29,16 @@ try {
     const context = await browser.newContext({ viewport, colorScheme: 'light', serviceWorkers: 'block' });
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${server.address().port}/download/`);
+    await page.goto(origin + '/download/');
     assert.equal(await page.getByRole('link', { name: '下载 Windows 安装版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-Setup-x64-20261112.exe');
     assert.equal(await page.getByRole('link', { name: '下载免安装版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-portable-x64-20261112.exe');
+    assert.equal(await page.getByRole('link', { name: '下载 Apple 芯片版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-mac-arm64-20261112.dmg');
+    assert.equal(await page.getByRole('link', { name: '下载 Intel 芯片版', exact: true }).getAttribute('href'), '/files/Niulai-1.5.0-mac-x64-20261112.dmg');
+    assert.match(await page.locator('.version-update').textContent(), /1\.5\.0.*11 月 12 日/);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.equal(await page.getByRole('link', { name: /过往版本/ }).count(), 1);
     await page.screenshot({ path: path.join(output, `download-${viewport.width}.png`), fullPage: true });
+    await page.locator('#versions').screenshot({ path: path.join(output, `online-versions-${viewport.width}.png`) });
     await page.getByRole('link', { name: /过往版本/ }).click();
     await page.waitForURL('**/download/history/');
     assert.equal(await page.getByRole('heading', { name: '过往版本', exact: true }).count(), 1);
@@ -46,6 +51,6 @@ try {
     checks.push({ viewport, latestLinks: true, historyLinks: links, noHorizontalOverflow: true });
   }
   assert.deepEqual(errors, []);
-  await fs.writeFile(path.join(output, 'page-verification.json'), JSON.stringify({ passed: true, checks, errors }, null, 2));
+  await fs.writeFile(path.join(output, 'page-verification.json'), JSON.stringify({ passed: true, origin, checks, errors }, null, 2));
   console.log('Download and history pages pass desktop/mobile navigation, link and layout checks');
 } finally { await browser.close(); server.close(); }
