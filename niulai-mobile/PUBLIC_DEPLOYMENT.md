@@ -116,3 +116,12 @@
 - 正式浏览器已核对新版下载卡片、免安装入口和过往版本页面。手机与电脑布局、链接和导航检查通过。反馈仅执行 GET，返回 405、Allow POST，没有提交测试反馈或读取私有数据库。
 - 发布包为 artifacts/niulai-public-desktop-1.5.0-history-20261112-max.zip，使用标准 ZIP Deflate 压缩以满足浏览器上传 25 MiB 限制。Worker、路由及 D1 绑定沿用现有项目。缓存版本升级为 niulai-mobile-v16。
 - 证据位于 outputs/desktop-1.5.0/site/，最终程序元数据位于 outputs/desktop-1.5.0/delivery.json。安装包未签名。本轮没有新增实体手机、Mac 构建、大陆运营商线路或多显示器实体环境检查。
+
+### 2026-11-12 电脑版 1.5.0 与 Mac 正式更新
+
+- 正式下载入口 https://niulai.raaay.art/download/ 现提供 Windows 1.5.0 安装版与免安装版，以及 Mac 1.5.0 Apple 芯片与 Intel 芯片 DMG。Android 下载为 1.3.2。
+- GitHub 主分支已同步电脑版 1.5.0 源码。两个 Mac 包从提交 597040a07c7cf271cdcf750e09a24df2846a4f39 构建，分别在 macOS Apple Silicon 与 Intel 运行器通过回归、原生启动、帧图绘制和设置导航检查。对应源码附件为 Niulai-1.5.0-source.zip。
+- GitHub v1.5.0 Release 已提供两个 Mac DMG 及 SHA-256。Apple 芯片包为 98,689,599 字节，SHA-256 536fcd5f6426b65672a950af2c4561bcac815b0712da13fb3394a6188aea8843。Intel 包为 102,348,211 字节，SHA-256 5feeb031bbda2971d6a3513d72ce3fc9be912ce46e8319144346a2d24adb5115。
+- Cloudflare Production 上传 33/33，部署显示 Success。匿名 HTTP 核对 30 个静态资源、8 个代理文件的 HEAD 与首尾范围共 24 项，以及四个新版 Windows/Mac 安装包的完整大小和 SHA-256。全部通过，两个 DMG 的 UDIF 尾部标记有效。反馈 GET 返回 405、Allow POST。
+- 公开浏览器核对四个桌面端下载地址、版本文字与无横向溢出。缓存版本为 niulai-mobile-v18-stable150，旧版本下载入口保留。验证报告和截图位于 outputs/desktop-1.5.0/site。
+- Windows 和 Mac 安装包均未签名，Mac 尚未 Apple 公证。Mac 检查基于云端对应架构运行器，其他用户设备兼容性尚待反馈。
