@@ -1,0 +1,177 @@
+{
+  "version": "1.5.0",
+  "reference": {
+    "platform": "win32",
+    "arch": "x64",
+    "asarSha256": "2da703b95d7c54835d3c21893d623f2e8ef711a61b5869a7b712b4246286e3a1",
+    "installerSha256": "459846634db68b1677bc9d6e8fa4ca8156a67f0e18adbb762a41100d3ae72668",
+    "portableSha256": "22f652715f69d852560e8a617c9a7378bd2548e111bedaf2405010874e514543"
+  },
+  "files": [
+    {
+      "name": "assets\\2d\\frames\\webp\\celebrate-v1.webp",
+      "bytes": 429124,
+      "sha256": "b0e2394e4a818aa62d845df3c4492c1e964036616c162f7c57bdfade9b2302a7"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\cheek-v1.webp",
+      "bytes": 491174,
+      "sha256": "e65523a40923cf6c05d668d4d00197cb5277f8dd0d92791c9b68c9bda988f111"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\clap-v1.webp",
+      "bytes": 473034,
+      "sha256": "3a0e193c938b3b65dfb1370c510d7917a56bfb187473991c803b06f107d38c91"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\cover-v1.webp",
+      "bytes": 482122,
+      "sha256": "5a802c0cd8c55a81637bf63a7a5578da78ac825f2c129656456e1d35860633e7"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\idle-v1.webp",
+      "bytes": 402498,
+      "sha256": "72d5b43ec10c866c54531195d329bb84fbde768f8773c29d688bc2dddbfe5f15"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\incense-v1.webp",
+      "bytes": 459296,
+      "sha256": "81603d55db271fd6d7754474d1e216b9caf73cda7392d80861255ac08c0c03e3"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\lean-v1.webp",
+      "bytes": 499374,
+      "sha256": "ec487dcd25b29055a12562cd5fef764bd2cf90fbedd706db05f34e56d7bb4d1c"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\look-v1.webp",
+      "bytes": 428042,
+      "sha256": "5bc6b49e1a61adc0010270e2b053678f949f73422e2bcc9e0466b319eeddea16"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\muyu-v1.webp",
+      "bytes": 418300,
+      "sha256": "1802307826ad2b1ef86aa1d484a928ccaa7aab86a5fe409dc69ed7f22f438bc1"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\nod-v1.webp",
+      "bytes": 445770,
+      "sha256": "324a9ef0583558173d3b67855ff5ba0751a4a49f8449364a04f5684065703543"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\scratch-v1.webp",
+      "bytes": 454714,
+      "sha256": "b8c290633073235152b15c1fcbc454be21322bedcc39a971f57bded677b42fe5"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\sleep-v2.webp",
+      "bytes": 383210,
+      "sha256": "aea442cab83b3d63c762be8367bbb6481b2248bd89e9af45ca256b2b36e97711"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\stretch-v1.webp",
+      "bytes": 412418,
+      "sha256": "26894fc1459d240cb65680607f80fc4eeb23c48b01ca5405ef5c5505ff26fecd"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\thumb-v1.webp",
+      "bytes": 396830,
+      "sha256": "617ab3092f8e1529f933c7835fb17324900410f1a6fd10f628b0dc183dba4c58"
+    },
+    {
+      "name": "assets\\2d\\frames\\webp\\wave-v1.webp",
+      "bytes": 435800,
+      "sha256": "68482e1464450e5f7cc63c1d0da3f9f9f9cd108dbdc1d7a4268768bc0d0bab24"
+    },
+    {
+      "name": "assets\\audio\\mama.mp3",
+      "bytes": 151898,
+      "sha256": "af8f4582d852ca8574794f83b48c909d5d8e85576f573e416eb15c2f67ea2a93"
+    },
+    {
+      "name": "assets\\audio\\niulai-tap.wav",
+      "bytes": 71520,
+      "sha256": "6846ea935e5e3914321959207428ab308a2d2f97e98d4f32e86bc211b1b22e52"
+    },
+    {
+      "name": "assets\\audio\\niulai.mp3",
+      "bytes": 81681,
+      "sha256": "5e2acf9b7bb29b2868267982fac3cdbeda132d488b8f67323308384ed23d16f9"
+    },
+    {
+      "name": "build\\icon.png",
+      "bytes": 379715,
+      "sha256": "ca4f0da57c2bc22c7a33fb77d705df0e4cf36b1bcb56660347babf4db7b3fe70"
+    },
+    {
+      "name": "desktop.css",
+      "bytes": 16935,
+      "sha256": "ac430f16839246bf880a68fa9c9fdf8936e52084b87d66817b507da80e66a72c"
+    },
+    {
+      "name": "docs\\电脑版使用说明.md",
+      "bytes": 4125,
+      "sha256": "779c3ba84f5296eef8cb3108fd1b957244076564bfa910c67ab2d1be372ecdec"
+    },
+    {
+      "name": "index.html",
+      "bytes": 9869,
+      "sha256": "d0cc39b13113351e467ad8733efb5b33ae5a4949113e23510246ba300dd7dbd8"
+    },
+    {
+      "name": "main-modules\\crying-reaction.cjs",
+      "bytes": 4504,
+      "sha256": "1ce8687c0e005d544ed0a79e41cf646dc2163a35412332b6f67fef5ad4276d14"
+    },
+    {
+      "name": "main-modules\\desktop-state.cjs",
+      "bytes": 6206,
+      "sha256": "7d1382bc455da4a4f44ead702705021b165757343d54d95c83b84bad7fb20be0"
+    },
+    {
+      "name": "main-modules\\market-symbols.js",
+      "bytes": 4671,
+      "sha256": "6841eeeb7ab2834bff65b8a3563e9c9820b50f9ee19f25ed2bf90a58091190f6"
+    },
+    {
+      "name": "main-modules\\quote-parsers.js",
+      "bytes": 2683,
+      "sha256": "0f32903fbca0e1a6c504a43d4ab9d7a2e685b032d6d26b085035b37621a67f66"
+    },
+    {
+      "name": "main.js",
+      "bytes": 21712,
+      "sha256": "793d47a52c892edf638749c6a844737e141850097fd127515c2275a3ab867ba5"
+    },
+    {
+      "name": "overlay.bundle.js",
+      "bytes": 52514,
+      "sha256": "c81579a95e91171ecaa5068fc7d27b3e7b22995d30ed48534d5fd64e133b2e5d"
+    },
+    {
+      "name": "overlay.css",
+      "bytes": 6694,
+      "sha256": "4586378bee77e62dda0629d88c7ad479f82c19ad90e3e8f00efa7c67dc6b6e8b"
+    },
+    {
+      "name": "overlay.html",
+      "bytes": 3208,
+      "sha256": "52b413631d5e8ebb5b07ae1f16f0c951b9d6dc493a2a2459731ffcb1353f37eb"
+    },
+    {
+      "name": "package.json",
+      "bytes": 246,
+      "sha256": "bc07134c227cb582fd030caf2496a7e720d08b0abb93d41091ff9da29efa5785"
+    },
+    {
+      "name": "preload.js",
+      "bytes": 1515,
+      "sha256": "d5353208ce769b796bd9c38e78be5c4c26747382f85d67644930caeb383f1b4f"
+    },
+    {
+      "name": "renderer.bundle.js",
+      "bytes": 106261,
+      "sha256": "71ab035b0ddbd8018ea7ca738e56315228363e9e4755ed6cb5d0241d5d139ed8"
+    }
+  ]
+}

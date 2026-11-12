@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const { _electron } = require('../niulai-android/node_modules/playwright');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, 'outputs/desktop-1.5.0');
+const output = process.env.NIULAI_QA_OUTPUT || path.join(root, 'outputs/desktop-1.5.0');
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'niulai-desktop-150-'));
 await fs.mkdir(output, { recursive: true });
 const checks = [], errors = [];
 const executablePath = process.env.NIULAI_QA_EXECUTABLE || require('electron');
+const shortcutModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 const args = [...(process.env.NIULAI_QA_EXECUTABLE ? [] : [root]), '--qa-user-data-dir=' + profile];
 let app;
 const pass = name => { checks.push({ name, passed: true }); console.log('PASS ' + name); };
@@ -79,7 +80,7 @@ try {
   await page.screenshot({ path: path.join(output, 'home-light.png'), fullPage: true });
   await page.locator('[data-tab=portfolio]').click();
   await page.screenshot({ path: path.join(output, 'portfolio.png'), fullPage: true });
-  await page.keyboard.press('Control+k');
+  await page.keyboard.press(shortcutModifier + '+k');
   await page.locator('#search-input').fill('AAPL');
   await page.locator('#search-form').evaluate(form => form.requestSubmit());
   await page.locator('#search-results .search-result').first().waitFor();
@@ -87,7 +88,7 @@ try {
   await page.waitForFunction(() => !document.getElementById('search-dialog').open, { timeout: 25000 });
   assert.ok((await state(page)).state.stocks.some(stock => stock.code === 'gb_aapl'));
   pass('keyboard search verifies and adds a US stock through the normal provider flow');
-  await page.keyboard.press('Control+2');
+  await page.keyboard.press(shortcutModifier + '+2');
   await page.locator('.row-actions button[aria-label="移出 苹果"]').count().then(async count => {
     if (count) await page.locator('.row-actions button[aria-label="移出 苹果"]').click();
     else await page.locator('#watch-stocks .stock-row').last().locator('.row-actions button').last().click();
@@ -148,6 +149,44 @@ try {
   await page.screenshot({ path: path.join(output, 'motions.png') });
   await page.keyboard.press('Escape');
   pass('all 27 states are available from the motion gallery');
+  const media = await page.evaluate(async () => {
+    const results = [];
+    for (const source of ['assets/audio/niulai.mp3', 'assets/audio/mama.mp3', 'assets/audio/niulai-tap.wav']) {
+      const audio = new Audio(source);
+      audio.muted = true;
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Audio decode timed out ' + source)), 10000);
+        audio.addEventListener('loadeddata', () => { clearTimeout(timeout); resolve(); }, { once: true });
+        audio.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Audio decode failed ' + source)); }, { once: true });
+        audio.load();
+      });
+      await audio.play();
+      audio.pause();
+      results.push({ source, duration: audio.duration, readyState: audio.readyState });
+    }
+    return results;
+  });
+  assert.ok(media.every(item => item.duration > 0 && item.readyState >= 2));
+  pass('all three bundled audio files decode and support muted playback');
+  await page.locator('[data-tab=settings]').click();
+  await page.locator('[data-settings-panel=alerts]').click();
+  await page.locator('#settings-content [data-setting=emotionMemory]').check();
+  await page.locator('#settings-content [data-setting=closeSummary]').check();
+  await page.locator('#rule-type').selectOption('price');
+  await page.locator('#rule-value').fill('999999');
+  await page.getByRole('button', { name: '添加提醒', exact: true }).click();
+  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).state.alerts.length === 1);
+  assert.equal((await state(page)).state.alerts[0].value, 999999);
+  await page.locator('.alert-rule button').click();
+  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).state.alerts.length === 0);
+  assert.equal((await state(page)).state.settings.emotionMemory, true);
+  assert.equal((await state(page)).state.settings.closeSummary, true);
+  pass('emotion memory, closing summary and alert creation/removal are available');
+  await page.evaluate(() => window.desktopPet.window('hide'));
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => !window.overlayKind).isVisible()), false);
+  await pet.evaluate(() => window.desktopPet.window('dashboard'));
+  await page.waitForFunction(() => !document.hidden);
+  pass('the dashboard hides and reopens through the shared overlay entry');
   await page.locator('[data-tab=settings]').click();
   await page.locator('[data-settings-panel=general]').click();
   await page.locator('#settings-content [data-setting=theme]').selectOption('dark');
@@ -242,7 +281,8 @@ try {
   pass('restart preserves settings, fractional positions and shared counts');
   assert.deepEqual(errors, []);
   pass('no renderer JavaScript exceptions');
-  const report = { passed: true, executablePath, profile, checks, errors, realQuote, capturedAt: new Date().toISOString() };
+  const report = { passed: true, version: restored.version, platform: process.platform, arch: process.arch, executablePath, profile,
+    checks, errors, media, settings: Object.keys(restored.state.settings).sort(), realQuote, capturedAt: new Date().toISOString() };
   await fs.writeFile(path.join(output, process.env.NIULAI_QA_EXECUTABLE ? 'packaged-verification.json' : 'verification.json'), JSON.stringify(report, null, 2));
 } catch (error) {
   await fs.writeFile(path.join(output, 'failure.json'), JSON.stringify({ profile, checks, errors, error: error.stack }, null, 2));

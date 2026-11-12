@@ -7,12 +7,13 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const electron = require('electron');
+const electron = process.env.NIULAI_QA_EXECUTABLE || require('electron');
 let qaArgs = [];
 
 function launch() {
   return spawn(electron, qaArgs, {
     cwd: root,
+    env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),
     windowsHide: true,
     stdio: 'ignore'
   });
@@ -34,7 +35,7 @@ function exited(child, timeoutMs) {
 
 (async () => {
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'niulai-single-instance-'));
-  qaArgs = [root, `--qa-user-data-dir=${profile}`, '--qa-auto-quit=10000'];
+  qaArgs = [...(process.env.NIULAI_QA_EXECUTABLE ? [] : [root]), `--qa-user-data-dir=${profile}`, '--qa-auto-quit=10000'];
   const first = launch();
   await new Promise((resolve) => setTimeout(resolve, 2600));
   const second = launch();
@@ -57,9 +58,10 @@ function exited(child, timeoutMs) {
     secondInstanceEvent: true,
     residualChildProcesses: false
   };
-  await fs.mkdir(path.join(root, 'artifacts'), { recursive: true });
+  const output = process.env.NIULAI_QA_OUTPUT || path.join(root, 'artifacts');
+  await fs.mkdir(output, { recursive: true });
   await fs.writeFile(
-    path.join(root, 'artifacts', 'single-instance-validation.json'),
+    path.join(output, 'single-instance-validation.json'),
     `${JSON.stringify(report, null, 2)}\n`,
     'utf8'
   );

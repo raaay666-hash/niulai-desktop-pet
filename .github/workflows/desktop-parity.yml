@@ -1,0 +1,63 @@
+name: Verify desktop feature parity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      NIULAI_QA_OUTPUT: outputs/desktop-parity/${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install verification dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --prefix niulai-android --ignore-scripts --no-audit --no-fund
+      - name: Download the published Mac installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package_dir="$RUNNER_TEMP/niulai-published-release"
+          mkdir -p "$package_dir"
+          gh release download v1.5.0 --repo "$GITHUB_REPOSITORY" --dir "$package_dir" \
+            --pattern 'Niulai-1.5.0-mac-${{ matrix.arch }}.dmg' \
+            --pattern 'Niulai-1.5.0-mac-${{ matrix.arch }}.dmg.sha256'
+          cd "$package_dir"
+          shasum -a 256 -c 'Niulai-1.5.0-mac-${{ matrix.arch }}.dmg.sha256'
+          mount_dir=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" 'Niulai-1.5.0-mac-${{ matrix.arch }}.dmg'
+          mkdir -p "$RUNNER_TEMP/niulai-parity-app"
+          ditto "$mount_dir/牛来盯盘.app" "$RUNNER_TEMP/niulai-parity-app/牛来盯盘.app"
+          hdiutil detach "$mount_dir"
+          echo "NIULAI_QA_EXECUTABLE=$RUNNER_TEMP/niulai-parity-app/牛来盯盘.app/Contents/MacOS/牛来盯盘" >> "$GITHUB_ENV"
+          echo "NIULAI_QA_ARCHIVE=$RUNNER_TEMP/niulai-parity-app/牛来盯盘.app/Contents/Resources/app.asar" >> "$GITHUB_ENV"
+      - name: Compare all packaged content with Windows
+        run: node scripts/verify-release-payload.cjs "$NIULAI_QA_ARCHIVE" "$NIULAI_QA_OUTPUT/payload-verification.json"
+      - name: Run shared logic regressions
+        run: npm run test:regression
+      - name: Verify packaged single-instance behavior
+        run: node scripts/test-single-instance.cjs
+      - name: Run the complete packaged feature flow
+        run: node scripts/verify-desktop.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-parity-1.5.0-${{ matrix.arch }}
+          path: outputs/desktop-parity/
