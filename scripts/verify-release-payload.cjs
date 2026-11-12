@@ -8,12 +8,13 @@ const root = path.resolve(__dirname, '..');
 const [archive, reportPath] = process.argv.slice(2);
 assert.ok(archive && reportPath, 'Supply the packaged ASAR and output JSON paths');
 const expected = JSON.parse(fs.readFileSync(path.join(root, 'build/desktop-1.5.0-payload.json'), 'utf8'));
-const files = asar.listPackage(archive).map(file => file.replace(/^[\\/]/, '').replaceAll('\\', '/'))
-  .filter(file => !asar.statFile(archive, file).files).sort();
+const files = asar.listPackage(archive).map(file => file.replace(/^[\\/]/, ''))
+  .filter(file => !asar.statFile(archive, file).files)
+  .map(file => file.replaceAll('\\', '/')).sort();
 assert.deepEqual(files, expected.files.map(file => file.name).sort(), 'Packaged file inventory matches Windows');
 const differences = [];
 for (const file of expected.files) {
-  const bytes = asar.extractFile(archive, file.name);
+  const bytes = asar.extractFile(archive, path.normalize(file.name));
   const hash = crypto.createHash('sha256').update(bytes).digest('hex');
   if (bytes.length !== file.bytes || hash !== file.sha256) {
     differences.push({ name: file.name, expectedBytes: file.bytes, actualBytes: bytes.length, expectedSha256: file.sha256, actualSha256: hash });
