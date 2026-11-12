@@ -1,6 +1,8 @@
 import { catalog as sharedCatalog } from '../niulai-android/web/bull-motion.mjs';
 import { DesktopBullMotion } from './desktop-crying-motion.js';
 import { marketSession } from '../niulai-android/web/core.mjs';
+import quoteTime from '../main-modules/quote-time.js';
+export const { quoteHealth } = quoteTime;
 export const catalog = sharedCatalog.map(spec => ['cover', 'slump'].includes(spec.id) ? { ...spec, action: '捂眼哭泣' } : spec);
 export const $ = id => document.getElementById(id);
 export const api = window.desktopPet;
@@ -8,6 +10,31 @@ export const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocal
 export const signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? '+' : value < 0 ? '−' : ''}${fmt(Math.abs(value), digits)}` : '—';
 export const tone = value => value > 0 ? 'rise' : value < 0 ? 'fall' : 'neutral';
 export const time = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+export function quotePresentation(record, interval = 10, now = Date.now()) {
+  const quote = record?.quote;
+  const health = quoteHealth(record, interval, now);
+  if (!quote) return { ...health, session: '', label: '', summary: health.message, compact: health.message, detail: health.message, basis: '' };
+  const us = quote.market === 'us' || quote.code.startsWith('gb_');
+  const clock = quoteTime.marketClock(quote.code, now);
+  const label = us ? { pre: '盘前', regular: '常规', post: '盘后' }[quote.session] || '常规' : '';
+  const provider = quote.source === 'custom' ? quote.sourceName || '自有源' : (quote.source === 'tencent' ? '腾讯' : '新浪') + (quote.fallbackFrom ? '（自有源回退）' : '');
+  const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString('zh-CN', {
+    timeZone: us ? 'America/New_York' : 'Asia/Shanghai', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: quote.timePrecision === 'minute' ? undefined : '2-digit', hour12: false
+  }) + (us ? ' 美东' : '') : quote.time || '时间未提供';
+  const prefix = health.message ? health.message + ' · ' : '';
+  const quoteText = us || quote.source === 'custom' ? `${label ? label + ' · ' : ''}报价 ${stamp}` : `获取于 ${time(record.received)}`;
+  const currentSession = { pre: '盘前', regular: '常规交易时段', post: '盘后', closed: '常规时段外', weekend: '周末休市', lunch: '午间休市' }[clock.phase];
+  const basis = quote.session === 'pre' ? '盘前涨跌较上一常规收盘' : quote.session === 'post' ? '盘后涨跌较当日常规收盘' : '涨跌较前收盘';
+  const reference = quote.regular && quote.session !== 'regular' ? ` · 常规收盘 ${fmt(quote.regular.price)}` : '';
+  return {
+    ...health, label, session: us ? currentSession + (label && quote.session !== clock.phase ? ` · 最近${label}报价` : '') : marketSession(quote.code),
+    summary: `${prefix}${provider} · ${quoteText}`,
+    compact: `${prefix}${quote.source === 'custom' || quote.fallbackFrom ? provider + ' · ' : ''}${quoteText}`,
+    detail: `${provider} · ${label || '常规'}报价\n报价时间 ${stamp}\n获取时间 ${new Date(record.received).toLocaleString('zh-CN', { hour12: false })}\n${basis}${reference}\n${quote.source === 'custom' ? '行情权限、交易范围与时效以自有接口为准' : '公开行情可能延迟，不同来源的成交范围可能不同'}`,
+    basis: basis + reference
+  };
+}
 export function element(tag, value = '', className = '') {
   const node = document.createElement(tag);
   node.textContent = value;

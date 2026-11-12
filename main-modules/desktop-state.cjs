@@ -11,6 +11,7 @@ const DEFAULTS = Object.freeze({
   islandHideInApp: false, islandSymbol: '', islandWidth: 320, islandInterval: 10,
   widgetEnabled: false, widgetTheme: 'system', widgetSparkline: true, widgetBull: true,
   emotionMemory: false, closeSummary: false,
+  quoteSourceMode: 'public', quoteSourceFallback: false,
   quietOffice: { enabled: false, start: '09:30', end: '11:30' }
 });
 const DEFAULT_STOCKS = [
@@ -24,6 +25,7 @@ const clamp = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Ma
 function normalizeSettings(raw = {}) {
   if (!raw || typeof raw !== 'object') raw = {};
   const result = { ...DEFAULTS };
+  result.quoteSourceMode = raw.quoteSourceMode === 'custom' ? 'custom' : 'public';
   for (const [key, fallback] of Object.entries(DEFAULTS)) {
     if (typeof fallback === 'boolean' && typeof raw[key] === 'boolean') result[key] = raw[key];
   }

@@ -71,7 +71,7 @@ export class AlertTriggerEngine {
 
   valueFor(trigger, { quote, position } = {}) {
     if (trigger.type === ALERT_TRIGGER_TYPE.PRICE) return Number(quote?.price);
-    if (trigger.type === ALERT_TRIGGER_TYPE.CHANGE_PCT) return Number(quote?.changePct);
+    if (trigger.type === ALERT_TRIGGER_TYPE.CHANGE_PCT) return quote?.changePct == null ? NaN : Number(quote.changePct);
     if (trigger.type === ALERT_TRIGGER_TYPE.PNL_AMOUNT) return Number(position?.totalPnl);
     if (trigger.type === ALERT_TRIGGER_TYPE.COST_RETURN) return Number(position?.totalPnl);
     return NaN;

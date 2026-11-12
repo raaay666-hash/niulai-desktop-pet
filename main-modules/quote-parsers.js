@@ -3,8 +3,9 @@ const {
   marketForSymbol,
   quoteProviderSymbol
 } = require('./market-symbols');
+const { marketClock, parseQuoteTime } = require('./quote-time');
 
-function parseSinaQuote(text, symbol) {
+function parseSinaQuote(text, symbol, now = Date.now()) {
   const escaped = String(symbol).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = String(text || '').match(new RegExp(`var hq_str_${escaped}="([^"]*)"`));
   if (!match || !match[1]) return null;
@@ -20,7 +21,7 @@ function parseSinaQuote(text, symbol) {
   const changePct = Number.parseFloat(parts[layout.changePct]);
   if (![price, change, changePct].every(Number.isFinite)) return null;
   const providedPrevClose = Number.parseFloat(parts[layout.prevClose]);
-  return {
+  const quote = {
     code: symbol,
     name: parts[layout.name] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ''),
     price,
@@ -30,7 +31,35 @@ function parseSinaQuote(text, symbol) {
     volume: parts[layout.volume] || '',
     amount: parts[layout.amount] || '',
     time: [parts[layout.date], parts[layout.time]].filter(Boolean).join(' '),
-    market
+    market,
+    source: 'sina'
+  };
+  if (market !== MARKET.US) return quote;
+
+  // The provider update at field 3 also advances while the regular price is unchanged.
+  const providerUpdatedAt = parseQuoteTime(parts[3], 's_sh000001', now);
+  const reference = providerUpdatedAt ?? now;
+  const regular = {
+    price, change, changePct, prevClose: quote.prevClose,
+    time: parts[25] || '', quotedAt: parseQuoteTime(parts[25], symbol, reference)
+  };
+  Object.assign(quote, {
+    time: regular.time, quotedAt: regular.quotedAt, session: 'regular',
+    dayPrevClose: regular.prevClose, providerUpdatedAt, timePrecision: 'minute', regular
+  });
+  const extendedPrice = Number.parseFloat(parts[21]);
+  const extendedAt = parseQuoteTime(parts[24], symbol, reference);
+  if (!(extendedPrice > 0) || !Number.isFinite(extendedAt) || extendedAt > now + 90000) return quote;
+  const phase = marketClock(symbol, extendedAt).phase;
+  if (!['pre', 'post'].includes(phase) || Number.isFinite(regular.quotedAt) && extendedAt <= regular.quotedAt) return quote;
+
+  const extendedChange = extendedPrice - regular.price;
+  return {
+    ...quote, price: extendedPrice, change: extendedChange,
+    changePct: extendedChange / regular.price * 100, prevClose: regular.price,
+    dayPrevClose: phase === 'pre' ? regular.price : regular.prevClose,
+    time: parts[24], quotedAt: extendedAt, session: phase,
+    volume: parts[27] || '', amount: ''
   };
 }
 
@@ -47,7 +76,7 @@ function parseTencentQuote(text, symbol) {
   const changePct = Number.parseFloat(parts[detailed ? 32 : 5]);
   if (![price, change, changePct].every(Number.isFinite)) return null;
   const providedPrevClose = Number.parseFloat(parts[4]);
-  return {
+  const quote = {
     code: symbol,
     name: parts[1] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ''),
     price,
@@ -60,6 +89,13 @@ function parseTencentQuote(text, symbol) {
     source: 'tencent',
     market
   };
+  if (market === MARKET.US) {
+    quote.session = 'regular';
+    quote.quotedAt = parseQuoteTime(quote.time, symbol);
+    quote.dayPrevClose = quote.prevClose;
+    quote.regular = { price, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
+  }
+  return quote;
 }
 
 module.exports = { parseSinaQuote, parseTencentQuote };

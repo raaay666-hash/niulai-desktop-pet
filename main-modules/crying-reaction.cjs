@@ -1,4 +1,5 @@
 const { marketForSymbol } = require('./market-symbols');
+const { quoteHealth } = require('./quote-time');
 const STARTUP_GUARD_MS = 30000;
 const AUDIO_COOLDOWN_MS = 15 * 60 * 1000;
 const CONFIRM_MS = 5000;
@@ -34,7 +35,7 @@ class CryingReaction {
     this.entries.set(code, {
       guardUntil: this.now() + STARTUP_GUARD_MS,
       crying: false, armed: previous?.armed ?? true, pendingAudio: false,
-      lowAt: null, highAt: null, lastReceived: 0, enteredAt: 0
+      lowAt: null, highAt: null, lastReceived: 0, lastQuoteKey: '', enteredAt: 0
     });
   }
   invalidate(code) {
@@ -48,13 +49,16 @@ class CryingReaction {
     const entry = this.entries.get(code), now = this.now();
     const quote = record?.quote;
     const maxAge = Math.max(45000, interval * 2500);
-    if (!quote || record.error || quote.code !== code || !(quote.price > 0) || !Number.isFinite(quote.changePct) || !regularSession(code, now) || now - record.received > maxAge || record.received > now + 5000) {
+    if (!quote || !quoteHealth(record, interval, now).actionable || quote.code !== code || !(quote.price > 0) || !Number.isFinite(quote.changePct) || !regularSession(code, now) || now - record.received > maxAge || record.received > now + 5000) {
       this.invalidate(code);
       return false;
     }
     if (record.received <= entry.lastReceived) return entry.crying;
-    if (record.received - entry.lastReceived > maxAge) { entry.lowAt = null; entry.highAt = null; }
+    const quoteKey = [quote.quotedAt ?? record.received, quote.price, quote.changePct].join(':');
+    if (entry.lastQuoteKey === quoteKey) return entry.crying;
+    if (record.received - entry.lastReceived > Math.max(maxAge, quote.quotedAt ? 120000 : 0)) { entry.lowAt = null; entry.highAt = null; }
     entry.lastReceived = record.received;
+    entry.lastQuoteKey = quoteKey;
     if (now < entry.guardUntil) return false;
     if (quote.changePct > -2.5) {
       entry.lowAt = null;
@@ -80,7 +84,7 @@ class CryingReaction {
     const entry = this.entries.get(code), now = this.now();
     if (!entry?.pendingAudio || now - entry.enteredAt < 1000) return false;
     entry.pendingAudio = false;
-    if (!entry.crying || !visible || !settings.autoActions || !settings.mamaSound || settings.muted || !settings.motion || quietNow(settings, now) || !regularSession(code, now) || record?.error || !record?.received || now - record.received > Math.max(45000, settings.interval * 2500) || now - entry.enteredAt > 5000 || now - this.lastAudioAt < AUDIO_COOLDOWN_MS) return false;
+    if (!entry.crying || !visible || !settings.autoActions || !settings.mamaSound || settings.muted || !settings.motion || quietNow(settings, now) || !regularSession(code, now) || !quoteHealth(record, settings.interval, now).actionable || now - entry.enteredAt > 5000 || now - this.lastAudioAt < AUDIO_COOLDOWN_MS) return false;
     this.lastAudioAt = now;
     return true;
   }

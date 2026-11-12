@@ -145,6 +145,122 @@
     }
   });
 
+  // main-modules/quote-time.js
+  var require_quote_time = __commonJS({
+    "main-modules/quote-time.js"(exports, module) {
+      var { marketForSymbol: marketForSymbol2 } = require_market_symbols();
+      var US_ZONE = "America/New_York";
+      var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+      var clockFormats = /* @__PURE__ */ new Map();
+      function marketClock(code, now = Date.now()) {
+        const market = marketForSymbol2(code);
+        const zone = market === "us" ? US_ZONE : "Asia/Shanghai";
+        if (!clockFormats.has(zone)) {
+          clockFormats.set(zone, new Intl.DateTimeFormat("en-US", {
+            timeZone: zone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            weekday: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hourCycle: "h23"
+          }));
+        }
+        const parts = Object.fromEntries(clockFormats.get(zone).formatToParts(new Date(now)).map((part) => [part.type, part.value]));
+        const minute = Number(parts.hour) * 60 + Number(parts.minute);
+        const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
+        let phase = "closed";
+        if (["Sat", "Sun"].includes(parts.weekday)) phase = "weekend";
+        else if (market === "us") {
+          if (minute >= 240 && minute < 570) phase = "pre";
+          else if (minute >= 570 && minute < 960) phase = "regular";
+          else if (minute >= 960 && minute < 1200) phase = "post";
+        } else {
+          const lunch = market === "hk" ? 720 : 690;
+          const close = market === "hk" ? 960 : 900;
+          if (minute >= lunch && minute < 780) phase = "lunch";
+          else if (minute >= 570 && minute < close) phase = "regular";
+        }
+        return { ...parts, market, zone, dateKey, minuteOfDay: minute, phase };
+      }
+      function wallTime(year, month, day, hour, minute, second, code) {
+        const wanted = Date.UTC(year, month, day, hour, minute, second);
+        if (!Number.isFinite(wanted)) return null;
+        let timestamp = wanted;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const actual2 = marketClock(code, timestamp);
+          const represented = Date.UTC(Number(actual2.year), Number(actual2.month) - 1, Number(actual2.day), Number(actual2.hour), Number(actual2.minute), Number(actual2.second));
+          timestamp += wanted - represented;
+        }
+        const actual = marketClock(code, timestamp);
+        return Number(actual.year) === year && Number(actual.month) - 1 === month && Number(actual.day) === day && Number(actual.hour) === hour && Number(actual.minute) === minute ? timestamp : null;
+      }
+      function parseQuoteTime(value, code, reference = Date.now()) {
+        const text = String(value || "").trim();
+        const numeric = /^(\d{4})[-/](\d{2})[-/](\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(text);
+        if (numeric) {
+          const [, year2, month2, day2, hour2, minute2, second] = numeric.map(Number);
+          return wallTime(year2, month2 - 1, day2, hour2, minute2, second, code);
+        }
+        if (marketForSymbol2(code) !== "us") return null;
+        const american = /^([a-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(AM|PM)(?:\s+(EST|EDT))?$/i.exec(text);
+        if (!american) return null;
+        const month = MONTHS.indexOf(american[1].toLowerCase());
+        const day = Number(american[2]), rawHour = Number(american[3]), minute = Number(american[4]);
+        if (month < 0 || rawHour < 1 || rawHour > 12 || minute > 59 || day < 1 || day > 31) return null;
+        const hour = rawHour % 12 + (american[5].toUpperCase() === "PM" ? 12 : 0);
+        const year = Number(marketClock(code, reference).year);
+        const candidates = [year - 1, year, year + 1].map((candidate) => {
+          if (american[6]) {
+            const offset = american[6].toUpperCase() === "EDT" ? 4 : 5;
+            const timestamp = Date.UTC(candidate, month, day, hour + offset, minute);
+            const clock = marketClock(code, timestamp);
+            return Number(clock.month) - 1 === month && Number(clock.day) === day && Number(clock.hour) === hour ? timestamp : null;
+          }
+          return wallTime(candidate, month, day, hour, minute, 0, code);
+        }).filter(Number.isFinite);
+        candidates.sort((a, b) => Math.abs(a - reference) - Math.abs(b - reference));
+        return candidates[0] ?? null;
+      }
+      function quoteHealth2(record, interval = 10, now = Date.now()) {
+        const quote = record?.quote;
+        const maxReceiveAge = Math.max(45e3, interval * 2500);
+        if (!quote || !(quote.price > 0)) return { warning: true, actionable: false, message: record?.error || "\u7B49\u5F85\u884C\u60C5" };
+        if (record.error || !record.received || now - record.received > maxReceiveAge || record.received > now + 5e3) {
+          return { warning: true, actionable: false, message: record.error ? "\u66F4\u65B0\u5EF6\u8FDF \xB7 " + record.error : "\u8FDE\u63A5\u66F4\u65B0\u5EF6\u8FDF" };
+        }
+        if (marketForSymbol2(quote.code) !== "us" && quote.source !== "custom") return { warning: false, actionable: true, message: "" };
+        if (!Number.isFinite(quote.quotedAt) || quote.quotedAt > now + 9e4) {
+          return { warning: true, actionable: false, message: "\u62A5\u4EF7\u65F6\u95F4\u672A\u786E\u8BA4" };
+        }
+        const clock = marketClock(quote.code, now);
+        const active = ["pre", "regular", "post"].includes(clock.phase);
+        if (!active) return { warning: false, actionable: false, message: "\u4F11\u5E02" };
+        if (quote.session !== clock.phase || marketClock(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
+          return { warning: true, actionable: false, message: { pre: "\u76D8\u524D\u62A5\u4EF7\u5F85\u66F4\u65B0", regular: "\u5E38\u89C4\u62A5\u4EF7\u5F85\u66F4\u65B0", post: "\u76D8\u540E\u62A5\u4EF7\u5F85\u66F4\u65B0" }[clock.phase] };
+        }
+        if (now - quote.quotedAt > Math.max(12e4, interval * 3e3)) {
+          return { warning: true, actionable: false, message: "\u62A5\u4EF7\u8F83\u65E9" };
+        }
+        return { warning: false, actionable: true, message: "" };
+      }
+      function newestQuote(candidates, now = Date.now()) {
+        let latest = null;
+        const timed = (quote) => Number.isFinite(quote?.quotedAt) && quote.quotedAt <= now + 9e4;
+        const current = (quote) => timed(quote) && !quoteHealth2({ quote, received: now }, 10, now).warning;
+        for (const candidate of candidates) {
+          if (!(candidate?.price > 0)) continue;
+          const candidateCurrent = current(candidate), latestCurrent = current(latest);
+          if (!latest || candidateCurrent && !latestCurrent || candidateCurrent === latestCurrent && timed(candidate) && (!timed(latest) || candidate.quotedAt > latest.quotedAt)) latest = candidate;
+        }
+        return latest;
+      }
+      module.exports = { marketClock, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
+    }
+  });
+
   // main-modules/quote-parsers.js
   var require_quote_parsers = __commonJS({
     "main-modules/quote-parsers.js"(exports, module) {
@@ -153,7 +269,8 @@
         marketForSymbol: marketForSymbol2,
         quoteProviderSymbol: quoteProviderSymbol2
       } = require_market_symbols();
-      function parseSinaQuote2(text, symbol) {
+      var { marketClock, parseQuoteTime } = require_quote_time();
+      function parseSinaQuote2(text, symbol, now = Date.now()) {
         const escaped = String(symbol).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`var hq_str_${escaped}="([^"]*)"`));
         if (!match || !match[1]) return null;
@@ -165,7 +282,7 @@
         const changePct = Number.parseFloat(parts[layout.changePct]);
         if (![price, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[layout.prevClose]);
-        return {
+        const quote = {
           code: symbol,
           name: parts[layout.name] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
           price,
@@ -175,7 +292,47 @@
           volume: parts[layout.volume] || "",
           amount: parts[layout.amount] || "",
           time: [parts[layout.date], parts[layout.time]].filter(Boolean).join(" "),
-          market
+          market,
+          source: "sina"
+        };
+        if (market !== MARKET.US) return quote;
+        const providerUpdatedAt = parseQuoteTime(parts[3], "s_sh000001", now);
+        const reference = providerUpdatedAt ?? now;
+        const regular = {
+          price,
+          change,
+          changePct,
+          prevClose: quote.prevClose,
+          time: parts[25] || "",
+          quotedAt: parseQuoteTime(parts[25], symbol, reference)
+        };
+        Object.assign(quote, {
+          time: regular.time,
+          quotedAt: regular.quotedAt,
+          session: "regular",
+          dayPrevClose: regular.prevClose,
+          providerUpdatedAt,
+          timePrecision: "minute",
+          regular
+        });
+        const extendedPrice = Number.parseFloat(parts[21]);
+        const extendedAt = parseQuoteTime(parts[24], symbol, reference);
+        if (!(extendedPrice > 0) || !Number.isFinite(extendedAt) || extendedAt > now + 9e4) return quote;
+        const phase = marketClock(symbol, extendedAt).phase;
+        if (!["pre", "post"].includes(phase) || Number.isFinite(regular.quotedAt) && extendedAt <= regular.quotedAt) return quote;
+        const extendedChange = extendedPrice - regular.price;
+        return {
+          ...quote,
+          price: extendedPrice,
+          change: extendedChange,
+          changePct: extendedChange / regular.price * 100,
+          prevClose: regular.price,
+          dayPrevClose: phase === "pre" ? regular.price : regular.prevClose,
+          time: parts[24],
+          quotedAt: extendedAt,
+          session: phase,
+          volume: parts[27] || "",
+          amount: ""
         };
       }
       function parseTencentQuote2(text, symbol) {
@@ -191,7 +348,7 @@
         const changePct = Number.parseFloat(parts[detailed ? 32 : 5]);
         if (![price, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[4]);
-        return {
+        const quote = {
           code: symbol,
           name: parts[1] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
           price,
@@ -204,6 +361,13 @@
           source: "tencent",
           market
         };
+        if (market === MARKET.US) {
+          quote.session = "regular";
+          quote.quotedAt = parseQuoteTime(quote.time, symbol);
+          quote.dayPrevClose = quote.prevClose;
+          quote.regular = { price, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
+        }
+        return quote;
       }
       module.exports = { parseSinaQuote: parseSinaQuote2, parseTencentQuote: parseTencentQuote2 };
     }
@@ -253,6 +417,8 @@
         widgetBull: true,
         emotionMemory: false,
         closeSummary: false,
+        quoteSourceMode: "public",
+        quoteSourceFallback: false,
         quietOffice: { enabled: false, start: "09:30", end: "11:30" }
       });
       var DEFAULT_STOCKS = [
@@ -265,6 +431,7 @@
       function normalizeSettings(raw = {}) {
         if (!raw || typeof raw !== "object") raw = {};
         const result = { ...DEFAULTS };
+        result.quoteSourceMode = raw.quoteSourceMode === "custom" ? "custom" : "public";
         for (const [key, fallback] of Object.entries(DEFAULTS)) {
           if (typeof fallback === "boolean" && typeof raw[key] === "boolean") result[key] = raw[key];
         }
@@ -977,8 +1144,9 @@
   var { parseSinaQuote, parseTencentQuote } = import_quote_parsers.default;
   function position(stock, quote) {
     if (!stock?.cost || !stock?.shares || !quote || quote.code !== stock.code) return null;
+    const dayPrevClose = Object.hasOwn(quote, "dayPrevClose") ? quote.dayPrevClose : quote.prevClose;
     return {
-      today: (quote.price - quote.prevClose) * stock.shares,
+      today: Number.isFinite(dayPrevClose) ? (quote.price - dayPrevClose) * stock.shares : null,
       total: (quote.price - stock.cost) * stock.shares,
       percent: (quote.price / stock.cost - 1) * 100,
       value: quote.price * stock.shares
@@ -1001,6 +1169,8 @@
   }
 
   // renderer-modules/desktop-ui.js
+  var import_quote_time = __toESM(require_quote_time());
+  var { quoteHealth } = import_quote_time.default;
   var catalog = motion_catalog_default.map((spec) => ["cover", "slump"].includes(spec.id) ? { ...spec, action: "\u6342\u773C\u54ED\u6CE3" } : spec);
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
@@ -1008,6 +1178,42 @@
   var signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${fmt(Math.abs(value), digits)}` : "\u2014";
   var tone = (value) => value > 0 ? "rise" : value < 0 ? "fall" : "neutral";
   var time = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false }) : "\u2014";
+  function quotePresentation(record, interval = 10, now = Date.now()) {
+    const quote = record?.quote;
+    const health = quoteHealth(record, interval, now);
+    if (!quote) return { ...health, session: "", label: "", summary: health.message, compact: health.message, detail: health.message, basis: "" };
+    const us = quote.market === "us" || quote.code.startsWith("gb_");
+    const clock = import_quote_time.default.marketClock(quote.code, now);
+    const label = us ? { pre: "\u76D8\u524D", regular: "\u5E38\u89C4", post: "\u76D8\u540E" }[quote.session] || "\u5E38\u89C4" : "";
+    const provider = quote.source === "custom" ? quote.sourceName || "\u81EA\u6709\u6E90" : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
+    const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString("zh-CN", {
+      timeZone: us ? "America/New_York" : "Asia/Shanghai",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: quote.timePrecision === "minute" ? void 0 : "2-digit",
+      hour12: false
+    }) + (us ? " \u7F8E\u4E1C" : "") : quote.time || "\u65F6\u95F4\u672A\u63D0\u4F9B";
+    const prefix = health.message ? health.message + " \xB7 " : "";
+    const quoteText = us || quote.source === "custom" ? `${label ? label + " \xB7 " : ""}\u62A5\u4EF7 ${stamp}` : `\u83B7\u53D6\u4E8E ${time(record.received)}`;
+    const currentSession = { pre: "\u76D8\u524D", regular: "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5", post: "\u76D8\u540E", closed: "\u5E38\u89C4\u65F6\u6BB5\u5916", weekend: "\u5468\u672B\u4F11\u5E02", lunch: "\u5348\u95F4\u4F11\u5E02" }[clock.phase];
+    const basis = quote.session === "pre" ? "\u76D8\u524D\u6DA8\u8DCC\u8F83\u4E0A\u4E00\u5E38\u89C4\u6536\u76D8" : quote.session === "post" ? "\u76D8\u540E\u6DA8\u8DCC\u8F83\u5F53\u65E5\u5E38\u89C4\u6536\u76D8" : "\u6DA8\u8DCC\u8F83\u524D\u6536\u76D8";
+    const reference = quote.regular && quote.session !== "regular" ? ` \xB7 \u5E38\u89C4\u6536\u76D8 ${fmt(quote.regular.price)}` : "";
+    return {
+      ...health,
+      label,
+      session: us ? currentSession + (label && quote.session !== clock.phase ? ` \xB7 \u6700\u8FD1${label}\u62A5\u4EF7` : "") : marketSession(quote.code),
+      summary: `${prefix}${provider} \xB7 ${quoteText}`,
+      compact: `${prefix}${quote.source === "custom" || quote.fallbackFrom ? provider + " \xB7 " : ""}${quoteText}`,
+      detail: `${provider} \xB7 ${label || "\u5E38\u89C4"}\u62A5\u4EF7
+\u62A5\u4EF7\u65F6\u95F4 ${stamp}
+\u83B7\u53D6\u65F6\u95F4 ${new Date(record.received).toLocaleString("zh-CN", { hour12: false })}
+${basis}${reference}
+${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\u56F4\u4E0E\u65F6\u6548\u4EE5\u81EA\u6709\u63A5\u53E3\u4E3A\u51C6" : "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\uFF0C\u4E0D\u540C\u6765\u6E90\u7684\u6210\u4EA4\u8303\u56F4\u53EF\u80FD\u4E0D\u540C"}`,
+      basis: basis + reference
+    };
+  }
   function element(tag, value = "", className = "") {
     const node = document.createElement(tag);
     node.textContent = value;
@@ -1388,7 +1594,7 @@
     }
     update({ quote, position: position2, marketOpen } = {}) {
       this.ensureToday();
-      if (!marketOpen || !quote || !Number.isFinite(Number(quote.changePct))) return this.snapshot();
+      if (!marketOpen || !quote || quote.changePct == null || !Number.isFinite(Number(quote.changePct))) return this.snapshot();
       const nextPct = finite(quote.changePct);
       if (this.state.samples > 0) {
         const deltaPct = nextPct - this.state.lastChangePct;
@@ -1505,7 +1711,7 @@
     }
     valueFor(trigger, { quote, position: position2 } = {}) {
       if (trigger.type === ALERT_TRIGGER_TYPE.PRICE) return Number(quote?.price);
-      if (trigger.type === ALERT_TRIGGER_TYPE.CHANGE_PCT) return Number(quote?.changePct);
+      if (trigger.type === ALERT_TRIGGER_TYPE.CHANGE_PCT) return quote?.changePct == null ? NaN : Number(quote.changePct);
       if (trigger.type === ALERT_TRIGGER_TYPE.PNL_AMOUNT) return Number(position2?.totalPnl);
       if (trigger.type === ALERT_TRIGGER_TYPE.COST_RETURN) return Number(position2?.totalPnl);
       return NaN;
@@ -1585,6 +1791,171 @@
     return start < end ? nowMinutes >= start && nowMinutes < end : nowMinutes >= start || nowMinutes < end;
   }
 
+  // renderer-modules/quote-source-settings.js
+  var import_market_symbols3 = __toESM(require_market_symbols());
+  async function buildQuoteSourceSettings(container, { api: api2, toast: toast2, onSaved, isCurrent }) {
+    container.append(element("p", "\u6B63\u5728\u8BFB\u53D6\u884C\u60C5\u914D\u7F6E\u2026", "muted"));
+    let config;
+    try {
+      config = await api2.quoteSource("get");
+    } catch (error) {
+      if (isCurrent()) container.replaceChildren(element("p", error.message, "footnote"));
+      return;
+    }
+    if (!isCurrent()) return;
+    container.replaceChildren();
+    const form = element("form", "", "source-form");
+    form.noValidate = true;
+    const controls = {};
+    function input(parent, key, label, value = "", type = "text") {
+      const row = element("label", "", "source-field");
+      const control = document.createElement("input");
+      control.type = type;
+      control.id = "source-" + key;
+      control.value = value;
+      control.autocomplete = "off";
+      control.spellcheck = false;
+      row.append(element("span", label), control);
+      parent.append(row);
+      controls[key] = control;
+      return control;
+    }
+    function select(parent, key, label, value, options) {
+      const row = element("label", "", "source-field");
+      const control = document.createElement("select");
+      control.id = "source-" + key;
+      for (const [id, text] of options) {
+        const option = element("option", text);
+        option.value = id;
+        control.append(option);
+      }
+      control.value = value;
+      row.append(element("span", label), control);
+      parent.append(row);
+      controls[key] = control;
+      return control;
+    }
+    select(form, "mode", "\u884C\u60C5\u6765\u6E90", config.mode, [["public", "\u516C\u5171\u884C\u60C5 \xB7 \u65B0\u6D6A / \u817E\u8BAF"], ["custom", "\u4F7F\u7528\u81EA\u5DF1\u7684 HTTP JSON \u63A5\u53E3"]]);
+    const fields = element("fieldset", "", "source-options");
+    input(fields, "name", "\u6765\u6E90\u540D\u79F0", config.name);
+    const address = input(fields, "url", "\u62A5\u4EF7\u63A5\u53E3\u5730\u5740", config.url);
+    address.placeholder = "https://example.com/quote?symbol={symbol}";
+    fields.append(element("p", "\u5730\u5740\u652F\u6301 {symbol}\u3001{ticker}\u3001{code}\u3001{market}\u3001{exchange}\u3002\u672C\u5730\u8F6C\u63A5\u670D\u52A1\u4E5F\u53EF\u4F7F\u7528 HTTP \u5730\u5740\u3002", "footnote"));
+    const marketGroup = element("div", "", "source-markets");
+    marketGroup.append(element("span", "\u9002\u7528\u5E02\u573A"));
+    const markets = [];
+    for (const [id, label] of [["cn", "A \u80A1"], ["hk", "\u6E2F\u80A1"], ["us", "\u7F8E\u80A1"]]) {
+      const row = element("label"), control = document.createElement("input");
+      control.type = "checkbox";
+      control.value = id;
+      control.checked = config.markets.includes(id);
+      row.append(control, label);
+      marketGroup.append(row);
+      markets.push(control);
+    }
+    fields.append(marketGroup, element("p", "\u6240\u9009\u5E02\u573A\u4F7F\u7528\u81EA\u6709\u63A5\u53E3\uFF0C\u5176\u4F59\u5E02\u573A\u7EE7\u7EED\u4F7F\u7528\u516C\u5171\u884C\u60C5\u3002", "footnote"));
+    const connectionGrid = element("div", "", "source-grid");
+    select(connectionGrid, "symbolFormat", "\u80A1\u7968\u4EE3\u7801\u683C\u5F0F", config.symbolFormat, [["ticker", "\u539F\u59CB\u4EE3\u7801 \xB7 MP / 00700 / 600519"], ["yahoo", "Yahoo \u683C\u5F0F \xB7 MP / 0700.HK / 600519.SS"], ["niulai", "\u725B\u6765\u4EE3\u7801 \xB7 gb_mp / rt_hk00700"]]);
+    select(connectionGrid, "interval", "\u6B64\u6A21\u5F0F\u6700\u77ED\u5237\u65B0\u95F4\u9694", String(config.interval), [[5, "5 \u79D2"], [10, "10 \u79D2"], [30, "30 \u79D2"], [60, "60 \u79D2"]]);
+    select(connectionGrid, "authType", "\u9274\u6743\u65B9\u5F0F", config.authType, [["none", "\u65E0\u9700\u9274\u6743"], ["bearer", "Authorization \xB7 Bearer"], ["header", "\u81EA\u5B9A\u4E49\u8BF7\u6C42\u5934"], ["query", "URL \u67E5\u8BE2\u53C2\u6570"]]);
+    input(connectionGrid, "authName", "\u8BF7\u6C42\u5934 / \u53C2\u6570\u540D\u79F0", config.authName);
+    fields.append(connectionGrid);
+    const token = input(fields, "token", "API \u5BC6\u94A5 / Token", "", "password");
+    token.placeholder = config.hasToken ? "\u5DF2\u4FDD\u5B58\uFF0C\u7559\u7A7A\u4FDD\u7559\u73B0\u6709\u5BC6\u94A5" : "\u4EC5\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111";
+    const mapping = element("details", "", "source-mapping");
+    mapping.append(element("summary", "JSON \u5B57\u6BB5\u4E0E\u65F6\u95F4\u8BBE\u7F6E"));
+    input(mapping, "dataPath", "\u62A5\u4EF7\u5BF9\u8C61\u8DEF\u5F84\uFF0C\u9876\u5C42\u5BF9\u8C61\u7559\u7A7A", config.dataPath).placeholder = "\u4F8B\u5982 data.quote \u6216 data[0]";
+    mapping.append(element("p", "\u5B57\u6BB5\u652F\u6301 price\u3001quote.price\u3001data[0].price \u6216 /Global Quote/05. price\u3002\u53EF\u9009\u5B57\u6BB5\u7559\u7A7A\u8868\u793A\u4E0D\u8BFB\u53D6\u3002", "footnote"));
+    const mappingGrid = element("div", "", "source-grid");
+    const labels = { price: "\u73B0\u4EF7", prevClose: "\u6DA8\u8DCC\u6BD4\u8F83\u57FA\u51C6\u4EF7", change: "\u6DA8\u8DCC\u989D", changePct: "\u6DA8\u8DCC\u5E45\uFF0C\u767E\u5206\u6570", timestamp: "\u62A5\u4EF7\u65F6\u95F4", session: "\u4EA4\u6613\u65F6\u6BB5", name: "\u80A1\u7968\u540D\u79F0", symbol: "\u80A1\u7968\u4EE3\u7801", regularPrice: "\u5E38\u89C4\u6536\u76D8\u4EF7", dayPrevClose: "\u4ECA\u65E5\u76C8\u4E8F\u57FA\u51C6\u4EF7" };
+    for (const [key, label] of Object.entries(labels)) input(mappingGrid, "field-" + key, label, config.fields[key]);
+    mapping.append(mappingGrid);
+    const timeGrid = element("div", "", "source-grid");
+    select(timeGrid, "timeZone", "\u65E0\u65F6\u533A\u65E5\u671F\u4F7F\u7528", config.timeZone, [["market", "\u80A1\u7968\u6240\u5C5E\u5E02\u573A\u65F6\u533A"], ["America/New_York", "\u7F8E\u4E1C\u65F6\u95F4"], ["Asia/Shanghai", "\u5317\u4EAC\u65F6\u95F4"], ["UTC", "UTC"]]);
+    select(timeGrid, "defaultSession", "\u63A5\u53E3\u7F3A\u5C11\u4EA4\u6613\u65F6\u6BB5\u65F6", config.defaultSession, [["regular", "\u4F5C\u4E3A\u5E38\u89C4\u62A5\u4EF7"], ["auto", "\u6309\u62A5\u4EF7\u65F6\u95F4\u5224\u65AD\u76D8\u524D / \u76D8\u540E"]]);
+    mapping.append(timeGrid, element("p", "\u65F6\u95F4\u652F\u6301 Unix \u79D2\u3001Unix \u6BEB\u79D2\u3001ISO 8601 \u6216\u5E74\u6708\u65E5\u65F6\u5206\u79D2\u3002\u4EA4\u6613\u65F6\u6BB5\u586B\u5199 pre\u3001regular\u3001post\u3002\u76D8\u540E\u4ECA\u65E5\u76C8\u4E8F\u57FA\u51C6\u4EF7\u5E94\u4E3A\u8BE5\u4EA4\u6613\u65E5\u7684\u524D\u6536\u76D8\u4EF7\u3002", "footnote"));
+    const example = element("pre", '{\n  "symbol": "MP", "price": 37.88,\n  "previousClose": 36.73,\n  "timestamp": "2026-11-12T13:47:00Z",\n  "session": "pre"\n}', "source-example");
+    mapping.append(example);
+    fields.append(mapping);
+    const fallback = element("label", "", "setting-row"), fallbackInput = document.createElement("input");
+    fallbackInput.type = "checkbox";
+    fallbackInput.id = "source-fallback";
+    fallbackInput.checked = config.fallback;
+    fallback.append(element("span", "\u81EA\u6709\u6E90\u5931\u8D25\u6216\u62A5\u4EF7\u8FC7\u671F\u65F6\uFF0C\u5141\u8BB8\u56DE\u9000\u516C\u5171\u884C\u60C5"), fallbackInput);
+    fields.append(fallback, element("p", "\u56DE\u9000\u65F6\u4F1A\u663E\u793A\u5B9E\u9645\u91C7\u7528\u7684\u6765\u6E90\u3002\u6765\u6E90\u5207\u6362\u540E\u91CD\u65B0\u5EFA\u7ACB\u62A5\u4EF7\u91C7\u6837\u3002", "footnote"));
+    input(fields, "testCode", "\u6D4B\u8BD5\u80A1\u7968", config.markets.includes("us") ? "MP" : config.markets.includes("hk") ? "00700.HK" : "600519");
+    form.append(fields);
+    const status = element("p", config.error || "", "source-status footnote");
+    status.id = "source-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    const actions = element("div", "", "source-actions");
+    const test = element("button", "\u6D4B\u8BD5\u8FDE\u63A5", "button secondary");
+    test.type = "button";
+    test.id = "source-test";
+    const save = element("button", "\u4FDD\u5B58\u5E76\u4F7F\u7528", "button primary");
+    save.type = "submit";
+    save.id = "source-save";
+    actions.append(test, save);
+    if (config.url) {
+      const clear = element("button", "\u6E05\u9664\u81EA\u6709\u6E90\u914D\u7F6E", "link-button");
+      clear.type = "button";
+      clear.id = "source-clear";
+      clear.onclick = () => run(async () => {
+        await api2.quoteSource("clear");
+        toast2("\u5DF2\u6E05\u9664\u81EA\u6709\u6E90\u914D\u7F6E");
+        onSaved();
+      });
+      actions.append(clear);
+    }
+    form.append(status, actions);
+    container.append(form);
+    function updateVisibility() {
+      fields.hidden = controls.mode.value !== "custom";
+      test.hidden = fields.hidden;
+      controls.authName.disabled = !["header", "query"].includes(controls.authType.value);
+      token.disabled = controls.authType.value === "none";
+    }
+    controls.mode.onchange = updateVisibility;
+    controls.authType.onchange = updateVisibility;
+    updateVisibility();
+    function payload() {
+      return {
+        ...Object.fromEntries(Object.entries(controls).filter(([key]) => !key.startsWith("field-")).map(([key, control]) => [key, control.value])),
+        fields: Object.fromEntries(Object.keys(labels).map((key) => [key, controls["field-" + key].value])),
+        markets: markets.filter((control) => control.checked).map((control) => control.value),
+        fallback: fallbackInput.checked,
+        testCode: import_market_symbols3.default.normalizeMarketSymbol(controls.testCode.value)
+      };
+    }
+    async function run(task) {
+      for (const button of actions.querySelectorAll("button")) button.disabled = true;
+      status.textContent = "\u6B63\u5728\u5904\u7406\u2026";
+      try {
+        await task();
+      } catch (error) {
+        status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, "");
+      } finally {
+        for (const button of actions.querySelectorAll("button")) button.disabled = false;
+      }
+    }
+    test.onclick = () => run(async () => {
+      const result = await api2.quoteSource("test", payload());
+      const presentation = quotePresentation(result, Number(controls.interval.value));
+      const percent = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + "%" : "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B";
+      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent} \xB7 ${presentation.summary}`;
+    });
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      run(async () => {
+        const result = await api2.quoteSource("save", payload());
+        toast2(result.mode === "public" ? "\u5DF2\u4F7F\u7528\u516C\u5171\u884C\u60C5" : result.storedSecurely ? "\u5DF2\u542F\u7528\u81EA\u6709\u6E90\uFF0C\u914D\u7F6E\u5DF2\u52A0\u5BC6\u4FDD\u5B58\u5728\u672C\u673A" : "\u5DF2\u542F\u7528\u81EA\u6709\u6E90\uFF0C\u672C\u673A\u5B89\u5168\u5B58\u50A8\u4E0D\u53EF\u7528\uFF0C\u672C\u6B21\u8FD0\u884C\u6709\u6548");
+        token.value = "";
+        onSaved();
+      });
+    };
+  }
+
   // renderer.js
   var data;
   var tab = "home";
@@ -1603,6 +1974,7 @@
   var session;
   var alerts;
   var lastMarketScene;
+  var sourceFormEpoch = 0;
   var moods = new MarketMood();
   var bull = makeMotion($("bull"));
   var wood = makeMotion($("wood-canvas"));
@@ -1693,7 +2065,8 @@
   function updateMood() {
     if (!data) return;
     const entry = currentEntry();
-    liveMood = settings().autoActions ? moods.update(entry?.quote ? { ...entry.quote, received: entry.received } : null, entry?.error, Date.now(), settings().interval, data.state.selected) : "idle";
+    const health = quoteHealth(entry, settings().interval);
+    liveMood = settings().autoActions ? moods.update(entry?.quote ? { ...entry.quote, received: entry.received } : null, entry?.error || (entry?.quote && health.warning ? health.message : null), Date.now(), settings().interval, data.state.selected) : "idle";
     liveMood = desktopMood(liveMood, data, data.state.selected);
     const spec = catalog.find((item) => item.id === liveMood);
     $("pet-state").textContent = spec.label;
@@ -1728,16 +2101,18 @@
       container.replaceChildren();
       for (const stock of data.state.stocks) {
         const entry = data.quotes[stock.code], quote = entry?.quote;
+        const presentation = quotePresentation(entry, settings().interval);
         const row = element("div", "", "stock-row" + (stock.code === data.state.selected ? " selected" : ""));
+        row.title = presentation.detail;
         const button = element("button", "", "stock-main");
         button.setAttribute("aria-label", "\u76EF\u76D8 " + stock.name);
         const name = element("div");
-        name.append(element("strong", stock.name), element("small", displaySymbol(stock.code)));
+        name.append(element("strong", stock.name), element("small", displaySymbol(stock.code) + (presentation.label ? " \xB7 " + presentation.label : "")));
         const price = element("div", "", "stock-price " + tone(quote?.changePct));
-        price.append(element("strong", fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2)), element("small", quote ? signed(quote.changePct) + "%" : "\u7B49\u5F85\u884C\u60C5"));
-        if (entry?.error) price.append(element("small", "\u66F4\u65B0\u5EF6\u8FDF"));
+        price.append(element("strong", fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2)), element("small", Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : quote ? "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B" : "\u7B49\u5F85\u884C\u60C5"));
+        if (quote && presentation.warning) price.append(element("small", presentation.message));
         button.append(name, price);
-        if (full) button.append(element("span", quote ? signed(quote.changePct) + "%" : "\u2014", "stock-pct " + tone(quote?.changePct)));
+        if (full) button.append(element("span", Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014", "stock-pct " + tone(quote?.changePct)));
         button.onclick = () => selectStock(stock.code);
         row.append(button);
         if (full) {
@@ -1773,7 +2148,9 @@
       const details = element("div", "", "holding-details");
       const result = position(stock, entry?.quote);
       details.append(element("span", settings().private ? "\u6210\u672C\u4E0E\u80A1\u6570\u5DF2\u9690\u85CF" : `\u6210\u672C ${fmt(stock.cost, 3)} \xB7 ${stock.shares} \u80A1`), element("span", settings().private || !result ? "" : signed(result.percent) + "%", tone(result?.percent)));
-      card.append(header, content, details, element("p", entry?.quote ? `${entry.error ? "\u66F4\u65B0\u5931\u8D25 \xB7 " : ""}\u83B7\u53D6\u4E8E ${time(entry.received)}` : "\u7B49\u5F85\u884C\u60C5", "footnote"));
+      const presentation = quotePresentation(entry, settings().interval);
+      card.title = presentation.detail;
+      card.append(header, content, details, element("p", presentation.summary, "footnote"));
       container.append(card);
     }
   }
@@ -1805,10 +2182,21 @@
     const woodMode = settings().islandContent === "muyu";
     $("preview-name").textContent = woodMode ? "\u725B\u6765\u6728\u9C7C" : quote?.name || selectedStock().name;
     $("preview-price").textContent = woodMode ? "\u672C\u8F6E " + data.counts.session : settings().islandPrice ? fmt(quote?.price) : "\u725B\u6765";
-    $("preview-pct").textContent = woodMode ? "+1" : settings().islandPercent && quote ? signed(quote.changePct) + "%" : "";
+    $("preview-pct").textContent = woodMode ? "+1" : settings().islandPercent && Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "";
     $("preview-pct").className = tone(quote?.changePct);
     $("preview-canvas").hidden = !settings().islandBull;
     mini?.state(woodMode ? "muyu" : liveMood);
+  }
+  function renderQuoteStatus() {
+    if (!data?.state) return;
+    const entry = currentEntry(), quote = entry?.quote;
+    const presentation = quotePresentation(entry, settings().interval);
+    $("session").textContent = presentation.session || marketSession(data.state.selected);
+    $("connection").className = "connection " + (presentation.warning ? "error" : quote ? "ok" : "");
+    $("connection").textContent = presentation.summary;
+    $("connection").title = presentation.detail;
+    $("footer-status").textContent = data.suspended ? "\u7CFB\u7EDF\u4F11\u7720\uFF0C\u5DF2\u6682\u505C" : quiet() ? "\u5B89\u9759\u529E\u516C\u4E2D" : quote ? quote.market === "us" ? presentation.basis : quote.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u6210\u4EA4\u65F6\u95F4" : "\u7B49\u5F85\u884C\u60C5";
+    $("footer-status").title = presentation.detail;
   }
   function render() {
     if (!data?.state) return;
@@ -1817,16 +2205,11 @@
     $("app-version").textContent = data.version;
     $("quote-name").textContent = stock.name;
     $("quote-code").textContent = displaySymbol(stock.code) + " \xB7 " + currency(stock.code);
-    $("session").textContent = marketSession(stock.code);
     $("price").textContent = fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2);
     $("change").textContent = signed(quote?.change);
-    $("percent").textContent = quote ? signed(quote.changePct) + "%" : "\u2014";
+    $("percent").textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
     $("quote-number").className = "quote-number " + tone(quote?.changePct);
-    const delayed = entry?.error || entry?.received && Date.now() - entry.received > Math.max(45e3, settings().interval * 2500);
-    $("connection").className = "connection " + (delayed ? "error" : quote ? "ok" : "");
-    $("connection").textContent = quote ? `${delayed ? "\u66F4\u65B0\u5EF6\u8FDF \xB7 " : ""}${quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A"} \xB7 \u83B7\u53D6\u4E8E ${time(entry.received)}` : entry?.error || "\u6B63\u5728\u8FDE\u63A5\u884C\u60C5\u2026";
-    $("connection").title = quote?.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u6E90\u672A\u63D0\u4F9B\u65F6\u95F4\uFF0C\u83B7\u53D6\u65F6\u95F4\u4E0D\u4EE3\u8868\u6210\u4EA4\u65F6\u95F4";
-    $("footer-status").textContent = data.suspended ? "\u7CFB\u7EDF\u4F11\u7720\uFF0C\u5DF2\u6682\u505C" : quiet() ? "\u5B89\u9759\u529E\u516C\u4E2D" : quote ? quote.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u6210\u4EA4\u65F6\u95F4" : "\u7B49\u5F85\u884C\u60C5";
+    renderQuoteStatus();
     renderPosition($("home-position"), stock, entry);
     renderStocks();
     renderPortfolio();
@@ -1938,7 +2321,7 @@
       if (epoch === searchEpoch) $("search-message").textContent = direct ? "\u540D\u79F0\u641C\u7D22\u6682\u4E0D\u53EF\u7528\uFF0C\u53EF\u6309\u4EE3\u7801\u9A8C\u8BC1\u6DFB\u52A0" : "\u641C\u7D22\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
     }
   }
-  var settingsSections = [["island", "\u60AC\u6D6E\u7A97"], ["pet", "\u684C\u5BA0"], ["muyu", "\u6728\u9C7C"], ["widget", "\u5361\u7247"], ["general", "\u901A\u7528"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
+  var settingsSections = [["island", "\u60AC\u6D6E\u7A97"], ["pet", "\u684C\u5BA0"], ["muyu", "\u6728\u9C7C"], ["widget", "\u5361\u7247"], ["source", "\u884C\u60C5\u6765\u6E90"], ["general", "\u901A\u7528"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
   function heading(title) {
     $("settings-content").append(element("h3", title));
   }
@@ -1969,6 +2352,7 @@
     $("settings-content").append(button);
   }
   function buildSettings() {
+    const sourceEpoch = ++sourceFormEpoch;
     mini?.close();
     mini = null;
     const container = $("settings-content");
@@ -2046,6 +2430,8 @@
       settingRow("\u9690\u85CF\u6301\u4ED3\u91D1\u989D", "private");
       settingRow("\u8DDF\u968F\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5\u5207\u6362\u573A\u666F", "smartScene");
       container.append(element("p", "\u884C\u60C5\u6765\u81EA\u5E94\u7528\u5185\u540C\u4E00\u4EFD\u6570\u636E\u3002\u5361\u7247\u6807\u8BB0\u83B7\u53D6\u65F6\u95F4\uFF0C\u5173\u95ED\u7A0B\u5E8F\u540E\u505C\u6B62\u5237\u65B0\u3002", "footnote"));
+    } else if (settingsPanel === "source") {
+      buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === "source" });
     } else if (settingsPanel === "general") {
       settingRow("\u5E94\u7528\u5916\u89C2", "theme", "select", themes);
       settingRow("\u9759\u97F3", "muted");
@@ -2078,7 +2464,7 @@
     } else {
       container.append(element("p", "\u725B\u6765\u76EF\u76D8 Windows \xB7 " + data.version, "muted"));
       for (const paragraph of [
-        "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1\u516C\u5F00\u884C\u60C5\uFF0C\u4F7F\u7528\u65B0\u6D6A\u4E0E\u817E\u8BAF\u63A5\u53E3\u3002\u516C\u5F00\u62A5\u4EF7\u53EF\u80FD\u5EF6\u8FDF\u6216\u4E2D\u65AD\uFF0C\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5\u6309\u5468\u5386\u4F30\u7B97\uFF0C\u8282\u5047\u65E5\u4E0E\u505C\u724C\u4EE5\u4EA4\u6613\u6240\u516C\u544A\u4E3A\u51C6\u3002",
+        "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1\u884C\u60C5\uFF0C\u9ED8\u8BA4\u4F7F\u7528\u65B0\u6D6A\u4E0E\u817E\u8BAF\u63A5\u53E3\uFF0C\u4E5F\u53EF\u5728\u201C\u884C\u60C5\u6765\u6E90\u201D\u4E2D\u63A5\u5165\u81EA\u5DF1\u7684 HTTP JSON \u63A5\u53E3\u3002\u7F8E\u80A1\u533A\u5206\u76D8\u524D\u3001\u5E38\u89C4\u548C\u76D8\u540E\u62A5\u4EF7\u3002\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\u6216\u4E2D\u65AD\uFF0C\u4EA4\u6613\u65F6\u6BB5\u6309\u5468\u5386\u4F30\u7B97\uFF0C\u8282\u5047\u65E5\u4E0E\u505C\u724C\u4EE5\u4EA4\u6613\u6240\u516C\u544A\u4E3A\u51C6\u3002",
         "\u81EA\u9009\u3001\u6301\u4ED3\u3001\u6728\u9C7C\u8BA1\u6570\u548C\u8BBE\u7F6E\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111\u3002\u67E5\u8BE2\u8BCD\u548C\u80A1\u7968\u4EE3\u7801\u53D1\u9001\u7ED9\u884C\u60C5\u63D0\u4F9B\u65B9\uFF0C\u6210\u672C\u3001\u80A1\u6570\u548C\u8BA1\u6570\u4EC5\u5728\u672C\u673A\u4F7F\u7528\u3002",
         "Ctrl + K \u641C\u7D22\u80A1\u7968\uFF0CCtrl + 1\u20134 \u5207\u6362\u9875\u9762\uFF0CEsc \u5173\u95ED\u5F39\u7A97\u3002\u6728\u9C7C\u9875\u9762\u652F\u6301\u7A7A\u683C\u6572\u51FB\u3002"
       ]) container.append(element("p", paragraph, "footnote"));
@@ -2176,8 +2562,9 @@
     emotion.configure({ enabled: settings().emotionMemory });
     alerts.configure(data.state.alerts);
     const marketOpen = marketSession(code) === "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5";
-    if (entry?.quote && !entry.error && entry.received !== lastFeatureQuote) {
-      lastFeatureQuote = entry.received;
+    const sampleKey = [entry?.quote?.quotedAt ?? entry?.received, entry?.quote?.price, entry?.quote?.changePct].join(":");
+    if (entry?.quote && quoteHealth(entry, settings().interval).actionable && sampleKey !== lastFeatureQuote) {
+      lastFeatureQuote = sampleKey;
       const result = position(selectedStock(), entry.quote);
       const held = result ? { totalPnl: result.total, todayPnl: result.today, totalPct: result.percent, shares: selectedStock().shares } : null;
       const events = liveMood === "surge" ? [{ type: "RAPID_RISE" }] : liveMood === "drop" ? [{ type: "RAPID_FALL" }] : [];
@@ -2376,6 +2763,7 @@
   api.bootstrap(import_desktop_state.default.migrateLegacy(legacyValues)).then((next) => {
     applySnapshot(next);
     setInterval(() => {
+      renderQuoteStatus();
       updateMood();
       processFeatures();
     }, 1e3);

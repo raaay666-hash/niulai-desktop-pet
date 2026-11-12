@@ -1,4 +1,4 @@
-import { $, api, fmt, signed, tone, time, element, makeMotion, catalog, paintIcons, drawSparkline, desktopMood } from './renderer-modules/desktop-ui.js';
+import { $, api, fmt, signed, tone, time, element, makeMotion, catalog, paintIcons, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
 import { position, currency, displaySymbol, marketSession, normalizeMarketSymbol } from './niulai-android/web/core.mjs';
 import { MarketMood } from './niulai-android/web/market-mood.mjs';
 import { TapVoice } from './niulai-android/web/tap-voice.mjs';
@@ -8,12 +8,14 @@ import { EmotionMemory } from './renderer-modules/emotion-memory.js';
 import { DailySessionTracker } from './renderer-modules/daily-session.js';
 import { AlertTriggerEngine } from './renderer-modules/alert-trigger-engine.js';
 import { isQuietOfficeActive } from './renderer-modules/quiet-office.js';
+import { buildQuoteSourceSettings } from './renderer-modules/quote-source-settings.js';
 
 let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
 let liveMood = 'loading', previewUntil = 0, motionPreview = 'loading';
 let featureCode = '', lastFeatureQuote = 0, wasOpen = false;
 let emotion, session, alerts;
 let lastMarketScene;
+let sourceFormEpoch = 0;
 const moods = new MarketMood();
 const bull = makeMotion($('bull'));
 const wood = makeMotion($('wood-canvas'));
@@ -87,7 +89,8 @@ function syncMotion() {
 function updateMood() {
   if (!data) return;
   const entry = currentEntry();
-  liveMood = settings().autoActions ? moods.update(entry?.quote ? { ...entry.quote, received: entry.received } : null, entry?.error, Date.now(), settings().interval, data.state.selected) : 'idle';
+  const health = quoteHealth(entry, settings().interval);
+  liveMood = settings().autoActions ? moods.update(entry?.quote ? { ...entry.quote, received: entry.received } : null, entry?.error || (entry?.quote && health.warning ? health.message : null), Date.now(), settings().interval, data.state.selected) : 'idle';
   liveMood = desktopMood(liveMood, data, data.state.selected);
   const spec = catalog.find(item => item.id === liveMood);
   $('pet-state').textContent = spec.label;
@@ -122,16 +125,18 @@ function renderStocks() {
     container.replaceChildren();
     for (const stock of data.state.stocks) {
       const entry = data.quotes[stock.code], quote = entry?.quote;
+      const presentation = quotePresentation(entry, settings().interval);
       const row = element('div', '', 'stock-row' + (stock.code === data.state.selected ? ' selected' : ''));
+      row.title = presentation.detail;
       const button = element('button', '', 'stock-main');
       button.setAttribute('aria-label', '盯盘 ' + stock.name);
       const name = element('div');
-      name.append(element('strong', stock.name), element('small', displaySymbol(stock.code)));
+      name.append(element('strong', stock.name), element('small', displaySymbol(stock.code) + (presentation.label ? ' · ' + presentation.label : '')));
       const price = element('div', '', 'stock-price ' + tone(quote?.changePct));
-      price.append(element('strong', fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2)), element('small', quote ? signed(quote.changePct) + '%' : '等待行情'));
-      if (entry?.error) price.append(element('small', '更新延迟'));
+      price.append(element('strong', fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2)), element('small', Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : quote ? '涨跌幅未提供' : '等待行情'));
+      if (quote && presentation.warning) price.append(element('small', presentation.message));
       button.append(name, price);
-      if (full) button.append(element('span', quote ? signed(quote.changePct) + '%' : '—', 'stock-pct ' + tone(quote?.changePct)));
+      if (full) button.append(element('span', Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—', 'stock-pct ' + tone(quote?.changePct)));
       button.onclick = () => selectStock(stock.code);
       row.append(button);
       if (full) {
@@ -166,7 +171,9 @@ function renderPortfolio() {
     const details = element('div', '', 'holding-details');
     const result = position(stock, entry?.quote);
     details.append(element('span', settings().private ? '成本与股数已隐藏' : `成本 ${fmt(stock.cost, 3)} · ${stock.shares} 股`), element('span', settings().private || !result ? '' : signed(result.percent) + '%', tone(result?.percent)));
-    card.append(header, content, details, element('p', entry?.quote ? `${entry.error ? '更新失败 · ' : ''}获取于 ${time(entry.received)}` : '等待行情', 'footnote'));
+    const presentation = quotePresentation(entry, settings().interval);
+    card.title = presentation.detail;
+    card.append(header, content, details, element('p', presentation.summary, 'footnote'));
     container.append(card);
   }
 }
@@ -198,10 +205,21 @@ function renderSettingsPreview() {
   const woodMode = settings().islandContent === 'muyu';
   $('preview-name').textContent = woodMode ? '牛来木鱼' : quote?.name || selectedStock().name;
   $('preview-price').textContent = woodMode ? '本轮 ' + data.counts.session : settings().islandPrice ? fmt(quote?.price) : '牛来';
-  $('preview-pct').textContent = woodMode ? '+1' : settings().islandPercent && quote ? signed(quote.changePct) + '%' : '';
+  $('preview-pct').textContent = woodMode ? '+1' : settings().islandPercent && Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '';
   $('preview-pct').className = tone(quote?.changePct);
   $('preview-canvas').hidden = !settings().islandBull;
   mini?.state(woodMode ? 'muyu' : liveMood);
+}
+function renderQuoteStatus() {
+  if (!data?.state) return;
+  const entry = currentEntry(), quote = entry?.quote;
+  const presentation = quotePresentation(entry, settings().interval);
+  $('session').textContent = presentation.session || marketSession(data.state.selected);
+  $('connection').className = 'connection ' + (presentation.warning ? 'error' : quote ? 'ok' : '');
+  $('connection').textContent = presentation.summary;
+  $('connection').title = presentation.detail;
+  $('footer-status').textContent = data.suspended ? '系统休眠，已暂停' : quiet() ? '安静办公中' : quote ? quote.market === 'us' ? presentation.basis : quote.time ? '源时间 ' + quote.time : '行情源未提供成交时间' : '等待行情';
+  $('footer-status').title = presentation.detail;
 }
 function render() {
   if (!data?.state) return;
@@ -210,16 +228,11 @@ function render() {
   $('app-version').textContent = data.version;
   $('quote-name').textContent = stock.name;
   $('quote-code').textContent = displaySymbol(stock.code) + ' · ' + currency(stock.code);
-  $('session').textContent = marketSession(stock.code);
   $('price').textContent = fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2);
   $('change').textContent = signed(quote?.change);
-  $('percent').textContent = quote ? signed(quote.changePct) + '%' : '—';
+  $('percent').textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
   $('quote-number').className = 'quote-number ' + tone(quote?.changePct);
-  const delayed = entry?.error || entry?.received && Date.now() - entry.received > Math.max(45000, settings().interval * 2500);
-  $('connection').className = 'connection ' + (delayed ? 'error' : quote ? 'ok' : '');
-  $('connection').textContent = quote ? `${delayed ? '更新延迟 · ' : ''}${quote.source === 'tencent' ? '腾讯' : '新浪'} · 获取于 ${time(entry.received)}` : entry?.error || '正在连接行情…';
-  $('connection').title = quote?.time ? '源时间 ' + quote.time : '源未提供时间，获取时间不代表成交时间';
-  $('footer-status').textContent = data.suspended ? '系统休眠，已暂停' : quiet() ? '安静办公中' : quote ? (quote.time ? '源时间 ' + quote.time : '行情源未提供成交时间') : '等待行情';
+  renderQuoteStatus();
   renderPosition($('home-position'), stock, entry);
   renderStocks(); renderPortfolio(); renderCounts(); syncControls();
   const samples = data.histories[stock.code] || [];
@@ -314,7 +327,7 @@ async function search() {
   }
 }
 
-const settingsSections = [['island', '悬浮窗'], ['pet', '桌宠'], ['muyu', '木鱼'], ['widget', '卡片'], ['general', '通用'], ['alerts', '提醒与记录'], ['about', '关于']];
+const settingsSections = [['island', '悬浮窗'], ['pet', '桌宠'], ['muyu', '木鱼'], ['widget', '卡片'], ['source', '行情来源'], ['general', '通用'], ['alerts', '提醒与记录'], ['about', '关于']];
 function heading(title) { $('settings-content').append(element('h3', title)); }
 function settingRow(label, key, type = 'checkbox', options = [], note = '') {
   const row = element('label', '', 'setting-row');
@@ -339,6 +352,7 @@ function settingsButton(label, action) {
   $('settings-content').append(button);
 }
 function buildSettings() {
+  const sourceEpoch = ++sourceFormEpoch;
   mini?.close(); mini = null;
   const container = $('settings-content'); container.replaceChildren();
   $('settings-nav').replaceChildren(...settingsSections.map(([key, label]) => {
@@ -394,6 +408,8 @@ function buildSettings() {
     settingRow('显示最近报价曲线', 'widgetSparkline'); settingRow('显示牛来', 'widgetBull');
     settingRow('隐藏持仓金额', 'private'); settingRow('跟随常规交易时段切换场景', 'smartScene');
     container.append(element('p', '行情来自应用内同一份数据。卡片标记获取时间，关闭程序后停止刷新。', 'footnote'));
+  } else if (settingsPanel === 'source') {
+    buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === 'source' });
   } else if (settingsPanel === 'general') {
     settingRow('应用外观', 'theme', 'select', themes);
     settingRow('静音', 'muted');
@@ -419,7 +435,7 @@ function buildSettings() {
   } else {
     container.append(element('p', '牛来盯盘 Windows · ' + data.version, 'muted'));
     for (const paragraph of [
-      '支持 A 股、港股和美股公开行情，使用新浪与腾讯接口。公开报价可能延迟或中断，常规交易时段按周历估算，节假日与停牌以交易所公告为准。',
+      '支持 A 股、港股和美股行情，默认使用新浪与腾讯接口，也可在“行情来源”中接入自己的 HTTP JSON 接口。美股区分盘前、常规和盘后报价。行情可能延迟或中断，交易时段按周历估算，节假日与停牌以交易所公告为准。',
       '自选、持仓、木鱼计数和设置保存在这台电脑。查询词和股票代码发送给行情提供方，成本、股数和计数仅在本机使用。',
       'Ctrl + K 搜索股票，Ctrl + 1–4 切换页面，Esc 关闭弹窗。木鱼页面支持空格敲击。'
     ]) container.append(element('p', paragraph, 'footnote'));
@@ -472,8 +488,9 @@ function processFeatures() {
   }
   emotion.configure({ enabled: settings().emotionMemory }); alerts.configure(data.state.alerts);
   const marketOpen = marketSession(code) === '常规交易时段';
-  if (entry?.quote && !entry.error && entry.received !== lastFeatureQuote) {
-    lastFeatureQuote = entry.received;
+  const sampleKey = [entry?.quote?.quotedAt ?? entry?.received, entry?.quote?.price, entry?.quote?.changePct].join(':');
+  if (entry?.quote && quoteHealth(entry, settings().interval).actionable && sampleKey !== lastFeatureQuote) {
+    lastFeatureQuote = sampleKey;
     const result = position(selectedStock(), entry.quote);
     const held = result ? { totalPnl: result.total, todayPnl: result.today, totalPct: result.percent, shares: selectedStock().shares } : null;
     const events = liveMood === 'surge' ? [{ type: 'RAPID_RISE' }] : liveMood === 'drop' ? [{ type: 'RAPID_FALL' }] : [];
@@ -604,6 +621,6 @@ for (const key of ['niulai:pet-settings', 'niulai:saved-stocks-v1', 'niulai:port
 }
 api.bootstrap(desktopState.migrateLegacy(legacyValues)).then(next => {
   applySnapshot(next);
-  setInterval(() => { updateMood(); processFeatures(); }, 1000);
+  setInterval(() => { renderQuoteStatus(); updateMood(); processFeatures(); }, 1000);
   window.__NIULAI_RENDERER_READY__ = true;
 }).catch(error => toast('启动失败 · ' + error.message));

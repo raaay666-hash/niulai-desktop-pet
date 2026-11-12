@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
   stock: (operation, payload) => ipcRenderer.invoke('desktop:stock', operation, payload),
   search: query => ipcRenderer.invoke('desktop:search', query),
   refresh: () => ipcRenderer.invoke('desktop:refresh'),
+  quoteSource: (operation, payload) => ipcRenderer.invoke('desktop:quote-source', operation, payload),
   knock: () => ipcRenderer.invoke('desktop:counts', false),
   newRound: () => ipcRenderer.invoke('desktop:counts', true),
   alerts: rules => ipcRenderer.invoke('desktop:alerts', rules),

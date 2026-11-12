@@ -1,4 +1,4 @@
-import { $, api, fmt, signed, tone, time, element, makeMotion, catalog, drawSparkline, desktopMood } from './renderer-modules/desktop-ui.js';
+import { $, api, fmt, signed, tone, time, element, makeMotion, catalog, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
 import { position, currency, displaySymbol, marketSession } from './niulai-android/web/core.mjs';
 import { MarketMood } from './niulai-android/web/market-mood.mjs';
 import { TapVoice } from './niulai-android/web/tap-voice.mjs';
@@ -44,6 +44,7 @@ function renderCounts() {
 function render() {
   if (!data?.state) return;
   const quote = entry()?.quote, stock = data.state.stocks.find(item => item.code === code());
+  const presentation = quotePresentation(entry(), settings().interval);
   const theme = kind === 'widget' ? settings().widgetTheme : kind === 'island' ? settings().islandTheme : settings().theme;
   const dark = theme === 'dark' || theme === 'system' && data.dark;
   document.documentElement.classList.toggle('dark', dark);
@@ -52,18 +53,21 @@ function render() {
   shell.classList.toggle('wood-mode', isWood());
   $('overlay-title').textContent = isWood() ? '牛来木鱼' : { pet: '牛来桌宠', widget: '牛来卡片', island: '牛来悬浮窗' }[kind];
   const name = quote?.name || stock?.name || displaySymbol(code());
-  $('overlay-name').textContent = $('compact-name').textContent = name;
-  $('overlay-code').textContent = displaySymbol(code()) + ' · ' + currency(code());
+  $('overlay-name').textContent = name;
+  $('compact-name').textContent = name + (presentation.label ? ' · ' + presentation.label : '') + (quote && presentation.warning ? ' · 待更新' : '');
+  $('overlay-code').textContent = displaySymbol(code()) + ' · ' + currency(code()) + (presentation.label ? ' · ' + presentation.label : '');
   $('overlay-price').textContent = $('compact-price').textContent = fmt(quote?.price, currency(code()) === 'HKD' ? 3 : 2);
-  $('overlay-percent').textContent = $('compact-percent').textContent = quote ? signed(quote.changePct) + '%' : '—';
+  $('overlay-percent').textContent = $('compact-percent').textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
   $('overlay-numbers').className = $('compact-percent').className = tone(quote?.changePct);
   if (kind === 'island' && !isWood()) {
     $('compact-price').hidden = !settings().islandPrice;
     $('compact-percent').hidden = !settings().islandPercent;
   } else { $('compact-price').hidden = $('compact-percent').hidden = false; }
-  const delayed = entry()?.error || entry()?.received && Date.now() - entry().received > Math.max(45000, settings().interval * 2500);
-  $('overlay-status').textContent = quote ? `${delayed ? '更新延迟 · ' : ''}获取于 ${time(entry().received)}` : entry()?.error || '正在连接行情…';
-  shell.title = quote?.time ? '源时间 ' + quote.time : '源未提供时间，获取时间不代表成交时间';
+  $('overlay-status').textContent = presentation.compact;
+  $('overlay-status').title = presentation.detail;
+  shell.classList.toggle('quote-warning', Boolean(quote && presentation.warning && !isWood()));
+  shell.title = presentation.detail;
+  $('compact-island').setAttribute('aria-label', name + ' · ' + presentation.compact);
   $('compact-island').hidden = kind !== 'island';
   $('overlay-content').hidden = kind === 'island' && collapsed;
   $('mini-canvas').hidden = !settings().islandBull;
@@ -79,7 +83,7 @@ function render() {
   }
   const held = stock && position(stock, quote);
   const holdingText = held ? settings().private ? '持仓金额已隐藏' : `今日 ${signed(held.today)} · 累计 ${signed(held.total)} ${currency(code())}` : '尚未设置持仓';
-  $('island-position').textContent = settings().islandHoldings && !isWood() ? holdingText : isWood() ? '今日 ' + data.counts.today + ' · 累计 ' + data.counts.total : marketSession(code());
+  $('island-position').textContent = settings().islandHoldings && !isWood() ? holdingText : isWood() ? '今日 ' + data.counts.today + ' · 累计 ' + data.counts.total : presentation.session || marketSession(code());
   const positionContainer = $('overlay-position'); positionContainer.replaceChildren();
   if (held) {
     const grid = element('div', '', 'pnl-grid');
@@ -97,7 +101,8 @@ function render() {
 function updateMood() {
   if (!data) return;
   const record = entry();
-  const base = isWood() ? 'muyu' : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error, Date.now(), settings().interval, code()) : 'idle';
+  const health = quoteHealth(record, settings().interval);
+  const base = isWood() ? 'muyu' : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error || (record?.quote && health.warning ? health.message : null), Date.now(), settings().interval, code()) : 'idle';
   const mood = isWood() ? base : desktopMood(base, data, code());
   if (Date.now() > previewUntil) { bull.state(mood); mini.state(mood); }
   syncMotion();

@@ -28,7 +28,8 @@ export function saveState(storage, state) { storage.setItem(KEY, JSON.stringify(
 function finitePositive(value) { return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : 0; }
 export function position(stock, quote) {
   if (!stock?.cost || !stock?.shares || !quote || quote.code !== stock.code) return null;
-  return { today: (quote.price - quote.prevClose) * stock.shares,
+  const dayPrevClose = Object.hasOwn(quote, 'dayPrevClose') ? quote.dayPrevClose : quote.prevClose;
+  return { today: Number.isFinite(dayPrevClose) ? (quote.price - dayPrevClose) * stock.shares : null,
     total: (quote.price - stock.cost) * stock.shares,
     percent: (quote.price / stock.cost - 1) * 100, value: quote.price * stock.shares };
 }

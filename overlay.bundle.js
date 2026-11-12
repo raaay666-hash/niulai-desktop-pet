@@ -145,6 +145,122 @@
     }
   });
 
+  // main-modules/quote-time.js
+  var require_quote_time = __commonJS({
+    "main-modules/quote-time.js"(exports, module) {
+      var { marketForSymbol: marketForSymbol2 } = require_market_symbols();
+      var US_ZONE = "America/New_York";
+      var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+      var clockFormats = /* @__PURE__ */ new Map();
+      function marketClock(code2, now = Date.now()) {
+        const market = marketForSymbol2(code2);
+        const zone = market === "us" ? US_ZONE : "Asia/Shanghai";
+        if (!clockFormats.has(zone)) {
+          clockFormats.set(zone, new Intl.DateTimeFormat("en-US", {
+            timeZone: zone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            weekday: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hourCycle: "h23"
+          }));
+        }
+        const parts = Object.fromEntries(clockFormats.get(zone).formatToParts(new Date(now)).map((part) => [part.type, part.value]));
+        const minute = Number(parts.hour) * 60 + Number(parts.minute);
+        const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
+        let phase = "closed";
+        if (["Sat", "Sun"].includes(parts.weekday)) phase = "weekend";
+        else if (market === "us") {
+          if (minute >= 240 && minute < 570) phase = "pre";
+          else if (minute >= 570 && minute < 960) phase = "regular";
+          else if (minute >= 960 && minute < 1200) phase = "post";
+        } else {
+          const lunch = market === "hk" ? 720 : 690;
+          const close = market === "hk" ? 960 : 900;
+          if (minute >= lunch && minute < 780) phase = "lunch";
+          else if (minute >= 570 && minute < close) phase = "regular";
+        }
+        return { ...parts, market, zone, dateKey, minuteOfDay: minute, phase };
+      }
+      function wallTime(year, month, day, hour, minute, second, code2) {
+        const wanted = Date.UTC(year, month, day, hour, minute, second);
+        if (!Number.isFinite(wanted)) return null;
+        let timestamp = wanted;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const actual2 = marketClock(code2, timestamp);
+          const represented = Date.UTC(Number(actual2.year), Number(actual2.month) - 1, Number(actual2.day), Number(actual2.hour), Number(actual2.minute), Number(actual2.second));
+          timestamp += wanted - represented;
+        }
+        const actual = marketClock(code2, timestamp);
+        return Number(actual.year) === year && Number(actual.month) - 1 === month && Number(actual.day) === day && Number(actual.hour) === hour && Number(actual.minute) === minute ? timestamp : null;
+      }
+      function parseQuoteTime(value, code2, reference = Date.now()) {
+        const text = String(value || "").trim();
+        const numeric = /^(\d{4})[-/](\d{2})[-/](\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(text);
+        if (numeric) {
+          const [, year2, month2, day2, hour2, minute2, second] = numeric.map(Number);
+          return wallTime(year2, month2 - 1, day2, hour2, minute2, second, code2);
+        }
+        if (marketForSymbol2(code2) !== "us") return null;
+        const american = /^([a-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(AM|PM)(?:\s+(EST|EDT))?$/i.exec(text);
+        if (!american) return null;
+        const month = MONTHS.indexOf(american[1].toLowerCase());
+        const day = Number(american[2]), rawHour = Number(american[3]), minute = Number(american[4]);
+        if (month < 0 || rawHour < 1 || rawHour > 12 || minute > 59 || day < 1 || day > 31) return null;
+        const hour = rawHour % 12 + (american[5].toUpperCase() === "PM" ? 12 : 0);
+        const year = Number(marketClock(code2, reference).year);
+        const candidates = [year - 1, year, year + 1].map((candidate) => {
+          if (american[6]) {
+            const offset = american[6].toUpperCase() === "EDT" ? 4 : 5;
+            const timestamp = Date.UTC(candidate, month, day, hour + offset, minute);
+            const clock = marketClock(code2, timestamp);
+            return Number(clock.month) - 1 === month && Number(clock.day) === day && Number(clock.hour) === hour ? timestamp : null;
+          }
+          return wallTime(candidate, month, day, hour, minute, 0, code2);
+        }).filter(Number.isFinite);
+        candidates.sort((a, b) => Math.abs(a - reference) - Math.abs(b - reference));
+        return candidates[0] ?? null;
+      }
+      function quoteHealth2(record, interval = 10, now = Date.now()) {
+        const quote = record?.quote;
+        const maxReceiveAge = Math.max(45e3, interval * 2500);
+        if (!quote || !(quote.price > 0)) return { warning: true, actionable: false, message: record?.error || "\u7B49\u5F85\u884C\u60C5" };
+        if (record.error || !record.received || now - record.received > maxReceiveAge || record.received > now + 5e3) {
+          return { warning: true, actionable: false, message: record.error ? "\u66F4\u65B0\u5EF6\u8FDF \xB7 " + record.error : "\u8FDE\u63A5\u66F4\u65B0\u5EF6\u8FDF" };
+        }
+        if (marketForSymbol2(quote.code) !== "us" && quote.source !== "custom") return { warning: false, actionable: true, message: "" };
+        if (!Number.isFinite(quote.quotedAt) || quote.quotedAt > now + 9e4) {
+          return { warning: true, actionable: false, message: "\u62A5\u4EF7\u65F6\u95F4\u672A\u786E\u8BA4" };
+        }
+        const clock = marketClock(quote.code, now);
+        const active = ["pre", "regular", "post"].includes(clock.phase);
+        if (!active) return { warning: false, actionable: false, message: "\u4F11\u5E02" };
+        if (quote.session !== clock.phase || marketClock(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
+          return { warning: true, actionable: false, message: { pre: "\u76D8\u524D\u62A5\u4EF7\u5F85\u66F4\u65B0", regular: "\u5E38\u89C4\u62A5\u4EF7\u5F85\u66F4\u65B0", post: "\u76D8\u540E\u62A5\u4EF7\u5F85\u66F4\u65B0" }[clock.phase] };
+        }
+        if (now - quote.quotedAt > Math.max(12e4, interval * 3e3)) {
+          return { warning: true, actionable: false, message: "\u62A5\u4EF7\u8F83\u65E9" };
+        }
+        return { warning: false, actionable: true, message: "" };
+      }
+      function newestQuote(candidates, now = Date.now()) {
+        let latest = null;
+        const timed = (quote) => Number.isFinite(quote?.quotedAt) && quote.quotedAt <= now + 9e4;
+        const current = (quote) => timed(quote) && !quoteHealth2({ quote, received: now }, 10, now).warning;
+        for (const candidate of candidates) {
+          if (!(candidate?.price > 0)) continue;
+          const candidateCurrent = current(candidate), latestCurrent = current(latest);
+          if (!latest || candidateCurrent && !latestCurrent || candidateCurrent === latestCurrent && timed(candidate) && (!timed(latest) || candidate.quotedAt > latest.quotedAt)) latest = candidate;
+        }
+        return latest;
+      }
+      module.exports = { marketClock, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
+    }
+  });
+
   // main-modules/quote-parsers.js
   var require_quote_parsers = __commonJS({
     "main-modules/quote-parsers.js"(exports, module) {
@@ -153,7 +269,8 @@
         marketForSymbol: marketForSymbol2,
         quoteProviderSymbol: quoteProviderSymbol2
       } = require_market_symbols();
-      function parseSinaQuote2(text, symbol) {
+      var { marketClock, parseQuoteTime } = require_quote_time();
+      function parseSinaQuote2(text, symbol, now = Date.now()) {
         const escaped = String(symbol).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`var hq_str_${escaped}="([^"]*)"`));
         if (!match || !match[1]) return null;
@@ -165,7 +282,7 @@
         const changePct = Number.parseFloat(parts[layout.changePct]);
         if (![price, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[layout.prevClose]);
-        return {
+        const quote = {
           code: symbol,
           name: parts[layout.name] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
           price,
@@ -175,7 +292,47 @@
           volume: parts[layout.volume] || "",
           amount: parts[layout.amount] || "",
           time: [parts[layout.date], parts[layout.time]].filter(Boolean).join(" "),
-          market
+          market,
+          source: "sina"
+        };
+        if (market !== MARKET.US) return quote;
+        const providerUpdatedAt = parseQuoteTime(parts[3], "s_sh000001", now);
+        const reference = providerUpdatedAt ?? now;
+        const regular = {
+          price,
+          change,
+          changePct,
+          prevClose: quote.prevClose,
+          time: parts[25] || "",
+          quotedAt: parseQuoteTime(parts[25], symbol, reference)
+        };
+        Object.assign(quote, {
+          time: regular.time,
+          quotedAt: regular.quotedAt,
+          session: "regular",
+          dayPrevClose: regular.prevClose,
+          providerUpdatedAt,
+          timePrecision: "minute",
+          regular
+        });
+        const extendedPrice = Number.parseFloat(parts[21]);
+        const extendedAt = parseQuoteTime(parts[24], symbol, reference);
+        if (!(extendedPrice > 0) || !Number.isFinite(extendedAt) || extendedAt > now + 9e4) return quote;
+        const phase = marketClock(symbol, extendedAt).phase;
+        if (!["pre", "post"].includes(phase) || Number.isFinite(regular.quotedAt) && extendedAt <= regular.quotedAt) return quote;
+        const extendedChange = extendedPrice - regular.price;
+        return {
+          ...quote,
+          price: extendedPrice,
+          change: extendedChange,
+          changePct: extendedChange / regular.price * 100,
+          prevClose: regular.price,
+          dayPrevClose: phase === "pre" ? regular.price : regular.prevClose,
+          time: parts[24],
+          quotedAt: extendedAt,
+          session: phase,
+          volume: parts[27] || "",
+          amount: ""
         };
       }
       function parseTencentQuote2(text, symbol) {
@@ -191,7 +348,7 @@
         const changePct = Number.parseFloat(parts[detailed ? 32 : 5]);
         if (![price, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[4]);
-        return {
+        const quote = {
           code: symbol,
           name: parts[1] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
           price,
@@ -204,6 +361,13 @@
           source: "tencent",
           market
         };
+        if (market === MARKET.US) {
+          quote.session = "regular";
+          quote.quotedAt = parseQuoteTime(quote.time, symbol);
+          quote.dayPrevClose = quote.prevClose;
+          quote.regular = { price, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
+        }
+        return quote;
       }
       module.exports = { parseSinaQuote: parseSinaQuote2, parseTencentQuote: parseTencentQuote2 };
     }
@@ -826,8 +990,9 @@
   var { parseSinaQuote, parseTencentQuote } = import_quote_parsers.default;
   function position(stock, quote) {
     if (!stock?.cost || !stock?.shares || !quote || quote.code !== stock.code) return null;
+    const dayPrevClose = Object.hasOwn(quote, "dayPrevClose") ? quote.dayPrevClose : quote.prevClose;
     return {
-      today: (quote.price - quote.prevClose) * stock.shares,
+      today: Number.isFinite(dayPrevClose) ? (quote.price - dayPrevClose) * stock.shares : null,
       total: (quote.price - stock.cost) * stock.shares,
       percent: (quote.price / stock.cost - 1) * 100,
       value: quote.price * stock.shares
@@ -850,6 +1015,8 @@
   }
 
   // renderer-modules/desktop-ui.js
+  var import_quote_time = __toESM(require_quote_time());
+  var { quoteHealth } = import_quote_time.default;
   var catalog = motion_catalog_default.map((spec) => ["cover", "slump"].includes(spec.id) ? { ...spec, action: "\u6342\u773C\u54ED\u6CE3" } : spec);
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
@@ -857,6 +1024,42 @@
   var signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${fmt(Math.abs(value), digits)}` : "\u2014";
   var tone = (value) => value > 0 ? "rise" : value < 0 ? "fall" : "neutral";
   var time = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false }) : "\u2014";
+  function quotePresentation(record, interval = 10, now = Date.now()) {
+    const quote = record?.quote;
+    const health = quoteHealth(record, interval, now);
+    if (!quote) return { ...health, session: "", label: "", summary: health.message, compact: health.message, detail: health.message, basis: "" };
+    const us = quote.market === "us" || quote.code.startsWith("gb_");
+    const clock = import_quote_time.default.marketClock(quote.code, now);
+    const label = us ? { pre: "\u76D8\u524D", regular: "\u5E38\u89C4", post: "\u76D8\u540E" }[quote.session] || "\u5E38\u89C4" : "";
+    const provider = quote.source === "custom" ? quote.sourceName || "\u81EA\u6709\u6E90" : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
+    const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString("zh-CN", {
+      timeZone: us ? "America/New_York" : "Asia/Shanghai",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: quote.timePrecision === "minute" ? void 0 : "2-digit",
+      hour12: false
+    }) + (us ? " \u7F8E\u4E1C" : "") : quote.time || "\u65F6\u95F4\u672A\u63D0\u4F9B";
+    const prefix = health.message ? health.message + " \xB7 " : "";
+    const quoteText = us || quote.source === "custom" ? `${label ? label + " \xB7 " : ""}\u62A5\u4EF7 ${stamp}` : `\u83B7\u53D6\u4E8E ${time(record.received)}`;
+    const currentSession = { pre: "\u76D8\u524D", regular: "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5", post: "\u76D8\u540E", closed: "\u5E38\u89C4\u65F6\u6BB5\u5916", weekend: "\u5468\u672B\u4F11\u5E02", lunch: "\u5348\u95F4\u4F11\u5E02" }[clock.phase];
+    const basis = quote.session === "pre" ? "\u76D8\u524D\u6DA8\u8DCC\u8F83\u4E0A\u4E00\u5E38\u89C4\u6536\u76D8" : quote.session === "post" ? "\u76D8\u540E\u6DA8\u8DCC\u8F83\u5F53\u65E5\u5E38\u89C4\u6536\u76D8" : "\u6DA8\u8DCC\u8F83\u524D\u6536\u76D8";
+    const reference = quote.regular && quote.session !== "regular" ? ` \xB7 \u5E38\u89C4\u6536\u76D8 ${fmt(quote.regular.price)}` : "";
+    return {
+      ...health,
+      label,
+      session: us ? currentSession + (label && quote.session !== clock.phase ? ` \xB7 \u6700\u8FD1${label}\u62A5\u4EF7` : "") : marketSession(quote.code),
+      summary: `${prefix}${provider} \xB7 ${quoteText}`,
+      compact: `${prefix}${quote.source === "custom" || quote.fallbackFrom ? provider + " \xB7 " : ""}${quoteText}`,
+      detail: `${provider} \xB7 ${label || "\u5E38\u89C4"}\u62A5\u4EF7
+\u62A5\u4EF7\u65F6\u95F4 ${stamp}
+\u83B7\u53D6\u65F6\u95F4 ${new Date(record.received).toLocaleString("zh-CN", { hour12: false })}
+${basis}${reference}
+${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\u56F4\u4E0E\u65F6\u6548\u4EE5\u81EA\u6709\u63A5\u53E3\u4E3A\u51C6" : "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\uFF0C\u4E0D\u540C\u6765\u6E90\u7684\u6210\u4EA4\u8303\u56F4\u53EF\u80FD\u4E0D\u540C"}`,
+      basis: basis + reference
+    };
+  }
   function element(tag, value = "", className = "") {
     const node = document.createElement(tag);
     node.textContent = value;
@@ -1143,6 +1346,7 @@
   function render() {
     if (!data?.state) return;
     const quote = entry()?.quote, stock = data.state.stocks.find((item) => item.code === code());
+    const presentation = quotePresentation(entry(), settings().interval);
     const theme = kind === "widget" ? settings().widgetTheme : kind === "island" ? settings().islandTheme : settings().theme;
     const dark = theme === "dark" || theme === "system" && data.dark;
     document.documentElement.classList.toggle("dark", dark);
@@ -1151,10 +1355,11 @@
     shell.classList.toggle("wood-mode", isWood());
     $("overlay-title").textContent = isWood() ? "\u725B\u6765\u6728\u9C7C" : { pet: "\u725B\u6765\u684C\u5BA0", widget: "\u725B\u6765\u5361\u7247", island: "\u725B\u6765\u60AC\u6D6E\u7A97" }[kind];
     const name = quote?.name || stock?.name || displaySymbol(code());
-    $("overlay-name").textContent = $("compact-name").textContent = name;
-    $("overlay-code").textContent = displaySymbol(code()) + " \xB7 " + currency(code());
+    $("overlay-name").textContent = name;
+    $("compact-name").textContent = name + (presentation.label ? " \xB7 " + presentation.label : "") + (quote && presentation.warning ? " \xB7 \u5F85\u66F4\u65B0" : "");
+    $("overlay-code").textContent = displaySymbol(code()) + " \xB7 " + currency(code()) + (presentation.label ? " \xB7 " + presentation.label : "");
     $("overlay-price").textContent = $("compact-price").textContent = fmt(quote?.price, currency(code()) === "HKD" ? 3 : 2);
-    $("overlay-percent").textContent = $("compact-percent").textContent = quote ? signed(quote.changePct) + "%" : "\u2014";
+    $("overlay-percent").textContent = $("compact-percent").textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
     $("overlay-numbers").className = $("compact-percent").className = tone(quote?.changePct);
     if (kind === "island" && !isWood()) {
       $("compact-price").hidden = !settings().islandPrice;
@@ -1162,9 +1367,11 @@
     } else {
       $("compact-price").hidden = $("compact-percent").hidden = false;
     }
-    const delayed = entry()?.error || entry()?.received && Date.now() - entry().received > Math.max(45e3, settings().interval * 2500);
-    $("overlay-status").textContent = quote ? `${delayed ? "\u66F4\u65B0\u5EF6\u8FDF \xB7 " : ""}\u83B7\u53D6\u4E8E ${time(entry().received)}` : entry()?.error || "\u6B63\u5728\u8FDE\u63A5\u884C\u60C5\u2026";
-    shell.title = quote?.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u6E90\u672A\u63D0\u4F9B\u65F6\u95F4\uFF0C\u83B7\u53D6\u65F6\u95F4\u4E0D\u4EE3\u8868\u6210\u4EA4\u65F6\u95F4";
+    $("overlay-status").textContent = presentation.compact;
+    $("overlay-status").title = presentation.detail;
+    shell.classList.toggle("quote-warning", Boolean(quote && presentation.warning && !isWood()));
+    shell.title = presentation.detail;
+    $("compact-island").setAttribute("aria-label", name + " \xB7 " + presentation.compact);
     $("compact-island").hidden = kind !== "island";
     $("overlay-content").hidden = kind === "island" && collapsed;
     $("mini-canvas").hidden = !settings().islandBull;
@@ -1180,7 +1387,7 @@
     }
     const held = stock && position(stock, quote);
     const holdingText = held ? settings().private ? "\u6301\u4ED3\u91D1\u989D\u5DF2\u9690\u85CF" : `\u4ECA\u65E5 ${signed(held.today)} \xB7 \u7D2F\u8BA1 ${signed(held.total)} ${currency(code())}` : "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3";
-    $("island-position").textContent = settings().islandHoldings && !isWood() ? holdingText : isWood() ? "\u4ECA\u65E5 " + data.counts.today + " \xB7 \u7D2F\u8BA1 " + data.counts.total : marketSession(code());
+    $("island-position").textContent = settings().islandHoldings && !isWood() ? holdingText : isWood() ? "\u4ECA\u65E5 " + data.counts.today + " \xB7 \u7D2F\u8BA1 " + data.counts.total : presentation.session || marketSession(code());
     const positionContainer = $("overlay-position");
     positionContainer.replaceChildren();
     if (held) {
@@ -1202,7 +1409,8 @@
   function updateMood() {
     if (!data) return;
     const record = entry();
-    const base = isWood() ? "muyu" : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error, Date.now(), settings().interval, code()) : "idle";
+    const health = quoteHealth(record, settings().interval);
+    const base = isWood() ? "muyu" : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error || (record?.quote && health.warning ? health.message : null), Date.now(), settings().interval, code()) : "idle";
     const mood = isWood() ? base : desktopMood(base, data, code());
     if (Date.now() > previewUntil) {
       bull.state(mood);

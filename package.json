@@ -9,7 +9,7 @@
   "scripts": {
     "build:renderer": "node scripts/build-renderer.js",
     "start": "node scripts/build-renderer.js && electron .",
-    "test:modules": "node scripts/test-desktop-state.cjs && node scripts/test-crying-reaction.cjs && node scripts/test-mama-voice.mjs && node scripts/test-market-symbols.cjs && node scripts/test-market-events.mjs && node scripts/test-feature-systems.mjs",
+    "test:modules": "node scripts/test-desktop-state.cjs && node scripts/test-crying-reaction.cjs && node scripts/test-mama-voice.mjs && node scripts/test-market-symbols.cjs && node scripts/test-us-quotes.cjs && node scripts/test-custom-quotes.cjs && node scripts/test-market-events.mjs && node scripts/test-feature-systems.mjs",
     "test:market": "node scripts/test-market-events.mjs",
     "test:regression": "npm run test:modules && node --test niulai-android/tests/core.test.mjs niulai-android/tests/motion.test.mjs",
     "test:single-instance": "node scripts/test-single-instance.cjs",
@@ -50,6 +50,8 @@
       "overlay.bundle.js",
       "main-modules/market-symbols.js",
       "main-modules/quote-parsers.js",
+      "main-modules/quote-time.js",
+      "main-modules/custom-quotes.cjs",
       "main-modules/desktop-state.cjs",
       "build/icon.png",
       "assets/2d/frames/webp/muyu-v1.webp",

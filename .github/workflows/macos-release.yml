@@ -1,4 +1,4 @@
-name: Build macOS stable release
+name: Build macOS 1.5.0 market update
 
 on:
   workflow_dispatch:
@@ -38,24 +38,34 @@ jobs:
         run: >-
           npm run build:renderer &&
           npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
-          --config.mac.artifactName='Niulai-${version}-mac-${arch}.${ext}'
-          --config.dmg.artifactName='Niulai-${version}-mac-${arch}.${ext}'
+          --config.mac.artifactName='Niulai-${version}-mac-${arch}-20261112.${ext}'
+          --config.dmg.artifactName='Niulai-${version}-mac-${arch}-20261112.${ext}'
       - name: Install launch-test dependencies
         run: npm ci --prefix niulai-android --ignore-scripts --no-audit --no-fund
-      - name: Verify native application launch
-        run: node scripts/verify-macos-release.mjs
+      - name: Verify native application and all market-source flows
+        env:
+          NIULAI_QA_OUTPUT: outputs/us-market-fix/${{ matrix.arch }}/desktop
+          NIULAI_SOURCE_QA_OUTPUT: outputs/us-market-fix/${{ matrix.arch }}/sources
+        run: |
+          if [ '${{ matrix.arch }}' = 'arm64' ]; then app_dir='mac-arm64'; else app_dir='mac'; fi
+          export NIULAI_QA_EXECUTABLE="$PWD/release/$app_dir/牛来盯盘.app/Contents/MacOS/牛来盯盘"
+          node scripts/verify-macos-release.mjs
+          node scripts/verify-release-payload.cjs "$PWD/release/$app_dir/牛来盯盘.app/Contents/Resources/app.asar" "outputs/us-market-fix/${{ matrix.arch }}/payload-verification.json"
+          node scripts/verify-market-sources.mjs
+          node scripts/verify-desktop.mjs
       - name: Compute checksums
         run: |
           cd release
-          shasum -a 256 Niulai-1.5.0-mac-${{ matrix.arch }}.dmg > Niulai-1.5.0-mac-${{ matrix.arch }}.dmg.sha256
+          shasum -a 256 Niulai-1.5.0-mac-${{ matrix.arch }}-20261112.dmg > Niulai-1.5.0-mac-${{ matrix.arch }}-20261112.dmg.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-1.5.0-${{ matrix.arch }}
+          name: macos-1.5.0-${{ matrix.arch }}-20261112
           path: |
             release/*.dmg
             release/*.sha256
             outputs/macos-release/
+            outputs/us-market-fix/
       - name: Upload verified packages to stable release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v1.5.0 release/Niulai-1.5.0-mac-${{ matrix.arch }}.dmg release/Niulai-1.5.0-mac-${{ matrix.arch }}.dmg.sha256
+        run: gh release upload v1.5.0 release/Niulai-1.5.0-mac-${{ matrix.arch }}-20261112.dmg release/Niulai-1.5.0-mac-${{ matrix.arch }}-20261112.dmg.sha256

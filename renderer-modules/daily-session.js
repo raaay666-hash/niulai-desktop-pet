@@ -44,7 +44,7 @@ export class DailySessionTracker {
 
   update({ quote, position, marketOpen } = {}) {
     this.ensureToday();
-    if (!marketOpen || !quote || !Number.isFinite(Number(quote.changePct))) return this.snapshot();
+    if (!marketOpen || !quote || quote.changePct == null || !Number.isFinite(Number(quote.changePct))) return this.snapshot();
     const nextPct = finite(quote.changePct);
     if (this.state.samples > 0) {
       const deltaPct = nextPct - this.state.lastChangePct;

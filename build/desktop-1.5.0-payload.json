@@ -3,9 +3,9 @@
   "reference": {
     "platform": "win32",
     "arch": "x64",
-    "asarSha256": "2da703b95d7c54835d3c21893d623f2e8ef711a61b5869a7b712b4246286e3a1",
-    "installerSha256": "459846634db68b1677bc9d6e8fa4ca8156a67f0e18adbb762a41100d3ae72668",
-    "portableSha256": "22f652715f69d852560e8a617c9a7378bd2548e111bedaf2405010874e514543"
+    "asarSha256": "11081590f3dbed7a062e63cab963bcb3673d9d321ba7682fb6097b34dc4009ee",
+    "installerSha256": "56cc2cdca9e8146446e13e025e42f62c90cdd0f59f4698ef1c0a50ca9ab0a16e",
+    "portableSha256": "afae1485e4e4ea4787f28743f758851542825755486f41440da76dfd082b9356"
   },
   "files": [
     {
@@ -105,13 +105,13 @@
     },
     {
       "name": "desktop.css",
-      "bytes": 16935,
-      "sha256": "ac430f16839246bf880a68fa9c9fdf8936e52084b87d66817b507da80e66a72c"
+      "bytes": 18006,
+      "sha256": "f5c9bf3ac03a98db2e166a634d91d3004450f36ac634d1201f2ce0ada44a3637"
     },
     {
       "name": "docs/电脑版使用说明.md",
-      "bytes": 4125,
-      "sha256": "779c3ba84f5296eef8cb3108fd1b957244076564bfa910c67ab2d1be372ecdec"
+      "bytes": 5732,
+      "sha256": "28b987747ba179daf634c169ee5782d69b8dfb07f0cb21622a016db3a648b867"
     },
     {
       "name": "index.html",
@@ -120,13 +120,18 @@
     },
     {
       "name": "main-modules/crying-reaction.cjs",
-      "bytes": 4504,
-      "sha256": "1ce8687c0e005d544ed0a79e41cf646dc2163a35412332b6f67fef5ad4276d14"
+      "bytes": 4791,
+      "sha256": "daad9ab6c6f2d7f373a19f61ab0c6b8f9252c4b31b726988affc34fa67502553"
+    },
+    {
+      "name": "main-modules/custom-quotes.cjs",
+      "bytes": 10409,
+      "sha256": "370c327ef7b41fb121614a4a54b8a7ef7dedec4401f77f89ffc8c6d96c8e5b45"
     },
     {
       "name": "main-modules/desktop-state.cjs",
-      "bytes": 6206,
-      "sha256": "7d1382bc455da4a4f44ead702705021b165757343d54d95c83b84bad7fb20be0"
+      "bytes": 6346,
+      "sha256": "c328dcfa3da69ed7897653a31152f69baac2fdcc11a315f120b928a961381605"
     },
     {
       "name": "main-modules/market-symbols.js",
@@ -135,23 +140,28 @@
     },
     {
       "name": "main-modules/quote-parsers.js",
-      "bytes": 2683,
-      "sha256": "0f32903fbca0e1a6c504a43d4ab9d7a2e685b032d6d26b085035b37621a67f66"
+      "bytes": 4494,
+      "sha256": "69959070db4a84e14c98ddcea84febbf69ca97d6104b99a2ba9d8dd7b79930ed"
+    },
+    {
+      "name": "main-modules/quote-time.js",
+      "bytes": 6063,
+      "sha256": "9f6ded45b8c975bbaf70f7e73edd44cefae355a1e4c47f736eb8789c5493f387"
     },
     {
       "name": "main.js",
-      "bytes": 21712,
-      "sha256": "793d47a52c892edf638749c6a844737e141850097fd127515c2275a3ab867ba5"
+      "bytes": 27014,
+      "sha256": "ea4de461d6b3f6d686ccfb39ad8a069c97ff52245b2df3038553ea0447e437d8"
     },
     {
       "name": "overlay.bundle.js",
-      "bytes": 52514,
-      "sha256": "c81579a95e91171ecaa5068fc7d27b3e7b22995d30ed48534d5fd64e133b2e5d"
+      "bytes": 65234,
+      "sha256": "d373b974e719b081c499a779838d1f62504194c12c3a19965d6c0984a963d074"
     },
     {
       "name": "overlay.css",
-      "bytes": 6694,
-      "sha256": "4586378bee77e62dda0629d88c7ad479f82c19ad90e3e8f00efa7c67dc6b6e8b"
+      "bytes": 6783,
+      "sha256": "0112ba1c37abbf2b842aed575b8b731a8714a35780d77ef41fdcb1ff19750781"
     },
     {
       "name": "overlay.html",
@@ -165,13 +175,13 @@
     },
     {
       "name": "preload.js",
-      "bytes": 1515,
-      "sha256": "d5353208ce769b796bd9c38e78be5c4c26747382f85d67644930caeb383f1b4f"
+      "bytes": 1618,
+      "sha256": "393ce0efff86afaf373496639653a09ad6096c65d519d8fa4dcb846508b7af04"
     },
     {
       "name": "renderer.bundle.js",
-      "bytes": 106261,
-      "sha256": "71ab035b0ddbd8018ea7ca738e56315228363e9e4755ed6cb5d0241d5d139ed8"
+      "bytes": 131125,
+      "sha256": "ae2745b47e45ffa405a17810fe93664f32a0cea87c6d439a77b7a0821ee68dca"
     }
   ]
 }
