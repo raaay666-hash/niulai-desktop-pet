@@ -1,5 +1,5 @@
-const CACHE='niulai-mobile-v16';
-const FILES=['./','index.html','styles.css','styles.css?v=20261112-frames','theme.js','app.js','app.js?v=20261112-frames','download/','download/history/','download.css?v=20261112-desktop150','download.js?v=20261112-desktop150','assets/fonts/niulai-brush.ttf','manifest.webmanifest','assets/head.png','assets/desktop-cow-chinrest.png','assets/niulai.mp3','assets/niulai-tap.wav','assets/muyu-frames.webp','assets/icon-180.png','assets/icon-192.png','assets/icon-512.png'];
+const CACHE='niulai-mobile-v18-stable150';
+const FILES=['./','index.html','styles.css','styles.css?v=20261112-frames','theme.js','app.js','app.js?v=20261112-frames','download/','download/history/','download.css?v=20261112-stable150','download.js?v=20261112-stable150','assets/fonts/niulai-brush.ttf','manifest.webmanifest','assets/head.png','assets/desktop-cow-chinrest.png','assets/niulai.mp3','assets/niulai-tap.wav','assets/muyu-frames.webp','assets/icon-180.png','assets/icon-192.png','assets/icon-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('niulai-mobile-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{

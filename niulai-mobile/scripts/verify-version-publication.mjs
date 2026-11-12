@@ -57,20 +57,22 @@ try {
     }
   }
   console.log('Download headers and byte ranges verified: ' + report.ranges.length);
-  for (const name of ['Niulai-1.5.0-Setup-x64.exe', 'Niulai-1.5.0-portable-x64.exe']) {
+  for (const name of ['Niulai-1.5.0-Setup-x64.exe', 'Niulai-1.5.0-portable-x64.exe', 'Niulai-1.5.0-mac-arm64.dmg', 'Niulai-1.5.0-mac-x64.dmg']) {
     const response = await fetch(origin + '/files/' + name, { signal: AbortSignal.timeout(240000) });
     assert.equal(response.status, 200, name);
     const digest = crypto.createHash('sha256');
-    let bytes = 0, magic, nextProgress = 20 * 1024 * 1024;
+    let bytes = 0, magic, tail = Buffer.alloc(0), nextProgress = 20 * 1024 * 1024;
     for await (const chunk of response.body) {
       magic ??= Buffer.from(chunk).subarray(0, 2).toString('ascii');
+      tail = Buffer.concat([tail, chunk]).subarray(-512);
       digest.update(chunk); bytes += chunk.length;
       if (bytes >= nextProgress) { console.log(name + ' ' + Math.round(bytes / 1024 / 1024) + ' MiB'); nextProgress += 20 * 1024 * 1024; }
     }
-    const result = { name, bytes, sha256: digest.digest('hex'), magic };
+    const result = { name, bytes, sha256: digest.digest('hex'), magic, dmgTrailer: name.endsWith('.dmg') ? tail.subarray(0, 4).toString('ascii') : null };
     assert.equal(result.bytes, metadata[name].size);
     assert.equal(result.sha256, metadata[name].sha256);
-    assert.equal(result.magic, 'MZ');
+    if (name.endsWith('.exe')) assert.equal(result.magic, 'MZ');
+    else assert.equal(result.dmgTrailer, 'koly');
     report.fullDownloads.push(result);
   }
   const feedback = await fetch(origin + '/api/feedback', { signal: AbortSignal.timeout(30000) });

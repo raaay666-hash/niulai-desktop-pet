@@ -30,5 +30,17 @@
     "sha256": "22f652715f69d852560e8a617c9a7378bd2548e111bedaf2405010874e514543",
     "type": "application/vnd.microsoft.portable-executable",
     "release": "v1.5.0"
+  },
+  "Niulai-1.5.0-mac-arm64.dmg": {
+    "size": 98689599,
+    "sha256": "536fcd5f6426b65672a950af2c4561bcac815b0712da13fb3394a6188aea8843",
+    "type": "application/x-apple-diskimage",
+    "release": "v1.5.0"
+  },
+  "Niulai-1.5.0-mac-x64.dmg": {
+    "size": 102348211,
+    "sha256": "5feeb031bbda2971d6a3513d72ce3fc9be912ce46e8319144346a2d24adb5115",
+    "type": "application/x-apple-diskimage",
+    "release": "v1.5.0"
   }
 }

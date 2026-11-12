@@ -68,18 +68,24 @@ test('Windows installer downloads as a same-origin executable attachment',async(
   assert.deepEqual([...new Uint8Array(await result.arrayBuffer())],[77,90,0,0]);
 });
 
-test('new Windows release and old Mac files use their own release tags', async () => {
+test('current Windows and Mac files and historical Mac files use their release tags', async () => {
   const installer = 'Niulai-1.5.0-Setup-x64.exe';
-  const metadata = { ...files, [installer]: { size: 4, type: 'application/vnd.microsoft.portable-executable', sha256: 'b'.repeat(64), release: 'v1.5.0' } };
+  const mac = 'Niulai-1.5.0-mac-arm64.dmg';
+  const metadata = { ...files,
+    [installer]: { size: 4, type: 'application/vnd.microsoft.portable-executable', sha256: 'b'.repeat(64), release: 'v1.5.0' },
+    [mac]: { ...files[name], release: 'v1.5.0' }
+  };
   const requested = [];
   const fetcher = async address => {
     requested.push(address);
     return new Response(new Uint8Array([77, 90, 0, 0]), { headers: { 'Content-Length': '4' } });
   };
   await serveDownload(new Request('https://niulai.raaay.art/files/' + installer), metadata, fetcher);
+  await serveDownload(new Request('https://niulai.raaay.art/files/' + mac), metadata, fetcher);
   await serveDownload(new Request(url), metadata, fetcher);
   assert.match(requested[0], /\/v1\.5\.0\/Niulai-1\.5\.0-Setup-x64\.exe$/);
-  assert.match(requested[1], /\/v1\.4\.0\/Niulai-1\.4\.0-mac-arm64\.dmg$/);
+  assert.match(requested[1], /\/v1\.5\.0\/Niulai-1\.5\.0-mac-arm64\.dmg$/);
+  assert.match(requested[2], /\/v1\.4\.0\/Niulai-1\.4\.0-mac-arm64\.dmg$/);
 });
 
 test('invalid release metadata never sends an upstream request', async () => {
