@@ -1,0 +1,62 @@
+name: Build and verify macOS 1.6.0
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/polish-update-1.6.0]
+permissions:
+  contents: write
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      NIULAI_QA_OUTPUT: outputs/polish-20261113/${{ matrix.arch }}
+      NIULAI_SOURCE_QA_OUTPUT: outputs/polish-20261113/${{ matrix.arch }}/sources
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --prefix niulai-android --ignore-scripts --no-audit --no-fund
+      - name: Shared behavior regressions
+        run: npm run test:regression && node scripts/test-updates.cjs
+      - name: Build installer
+        run: >-
+          npm run build:renderer && npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
+          --config.mac.artifactName='Niulai-${version}-mac-${arch}.${ext}'
+          --config.dmg.artifactName='Niulai-${version}-mac-${arch}.${ext}'
+      - name: Verify packaged application
+        run: |
+          if [ '${{ matrix.arch }}' = 'arm64' ]; then app_dir='mac-arm64'; else app_dir='mac'; fi
+          export NIULAI_QA_EXECUTABLE="$PWD/release/$app_dir/牛来盯盘.app/Contents/MacOS/牛来盯盘"
+          node scripts/verify-release-payload.cjs "$PWD/release/$app_dir/牛来盯盘.app/Contents/Resources/app.asar" "$NIULAI_QA_OUTPUT/payload-verification.json"
+          node scripts/verify-desktop.mjs
+          node scripts/test-desktop-experience.mjs
+          node scripts/verify-market-sources.mjs
+          node scripts/test-update-ui.mjs
+          node scripts/test-single-instance.cjs
+      - name: Checksums
+        run: cd release && shasum -a 256 Niulai-1.6.0-mac-${{ matrix.arch }}.dmg > Niulai-1.6.0-mac-${{ matrix.arch }}.dmg.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: niulai-1.6.0-mac-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.sha256
+            outputs/polish-20261113/
+      - name: Upload verified packages to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v1.6.0 release/Niulai-1.6.0-mac-${{ matrix.arch }}.dmg release/Niulai-1.6.0-mac-${{ matrix.arch }}.dmg.sha256

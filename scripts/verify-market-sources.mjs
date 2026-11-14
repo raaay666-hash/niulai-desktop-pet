@@ -69,7 +69,7 @@ try {
   await fs.mkdir(output, { recursive: true });
   await launch();
   await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).quotes.s_sh000001?.quote.price > 0, { timeout: 30000 });
-  assert.equal((await state()).version, '1.5.0');
+  assert.equal((await state()).version, require('../package.json').version);
   pass('unchanged version and real public quote through the native application');
   const preNow = Date.parse('2026-11-12T13:47:50Z');
   await clocks(preNow);

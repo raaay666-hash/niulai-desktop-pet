@@ -8,6 +8,9 @@ const { marketClock, quoteHealth, newestQuote } = require('./main-modules/quote-
 const { normalizeState, normalizeSettings, normalizeCounts, tapCounts } = require('./main-modules/desktop-state.cjs');
 const { CryingReaction } = require('./main-modules/crying-reaction.cjs');
 const { defaultSourceConfig, normalizeSourceConfig, fetchCustomQuote, fetchCustomQuotes } = require('./main-modules/custom-quotes.cjs');
+const { createUpdateChecker } = require('./main-modules/update-checker.cjs');
+const { OFFICIAL } = require('./main-modules/update-policy.cjs');
+let updater, updateTimer;
 
 const argument = prefix => (process.argv.find(value => value.startsWith(prefix)) || '').slice(prefix.length);
 const qaProfile = argument('--qa-user-data-dir=');
@@ -37,7 +40,7 @@ process.on('unhandledRejection', error => log('ERROR', error?.stack || error));
 
 function snapshot() {
   counts = normalizeCounts(counts);
-  return { state, counts, quotes: Object.fromEntries(quotes), histories: Object.fromEntries(histories), reactions: crying.snapshot(), quoteSource: { configured: Boolean(customQuoteConfig), name: customQuoteConfig?.name || '', storage: sealedQuoteSource ? 'encrypted' : 'session', error: quoteSourceError }, suspended, dark: nativeTheme.shouldUseDarkColors, version: app.getVersion() };
+  return { state, counts, quotes: Object.fromEntries(quotes), histories: Object.fromEntries(histories), reactions: crying.snapshot(), quoteSource: { configured: Boolean(customQuoteConfig), name: customQuoteConfig?.name || '', storage: sealedQuoteSource ? 'encrypted' : 'session', error: quoteSourceError }, suspended, refreshing: polling || refreshPending, dark: nativeTheme.shouldUseDarkColors, version: app.getVersion() };
 }
 function windows() {
   return [dashboard, ...overlays.values()].filter(window => window && !window.isDestroyed());
@@ -237,6 +240,7 @@ async function poll() {
   if (polling) { refreshPending = true; return; }
   polling = true;
   refreshPending = false;
+  broadcast('desktop:refreshing', true);
   const epoch = quoteEpoch;
   const codes = [...new Set([...state.stocks.map(stock => stock.code), state.settings.islandSymbol].filter(Boolean))];
   try {
@@ -263,7 +267,9 @@ async function poll() {
     await persist();
   } finally {
     polling = false;
-    schedulePoll(refreshPending || epoch !== quoteEpoch ? 0 : undefined);
+    refreshPending = !suspended && !quitting && (refreshPending || epoch !== quoteEpoch);
+    broadcast('desktop:refreshing', refreshPending);
+    schedulePoll(refreshPending ? 0 : undefined);
   }
 }
 
@@ -275,6 +281,12 @@ handle('desktop:bootstrap', async (_event, legacy) => {
     syncOverlays(); schedulePoll(0);
   }
   return snapshot();
+});
+handle('desktop:updates', async (_event, operation) => {
+  if (operation === 'permissions') { await shell.openExternal(process.platform === 'darwin' ? 'x-apple.systempreferences:com.apple.preference.notifications' : 'ms-settings:notifications'); return updater.status(); }
+  if (operation === 'download') { await shell.openExternal(OFFICIAL + '/download/#versions'); return updater.status(); }
+  if (operation === 'history') { await shell.openExternal(OFFICIAL + '/download/updates/'); return updater.status(); }
+  return operation === 'check' ? updater.check(true) : updater.status();
 });
 handle('desktop:settings', async (_event, patch) => {
   state.settings = normalizeSettings({ ...state.settings, ...patch });
@@ -491,6 +503,21 @@ app.whenReady().then(async () => {
       log('WARN', '自有行情凭据解密失败');
     }
   }
+  const updateFile = path.join(app.getPath('userData'), 'updates.json');
+  updater = createUpdateChecker({ current: app.getVersion(),
+    read: () => { try { return JSON.parse(fs.readFileSync(updateFile, 'utf8')); } catch { return {}; } },
+    save: value => fs.writeFileSync(updateFile, JSON.stringify(value)),
+    enabled: () => state?.settings.updateNotifications && !suspended && !qaProfile,
+    changed: value => broadcast('desktop:update', value),
+    notify: info => new Promise(resolve => {
+      if (!Notification.isSupported()) return resolve(false);
+      const notification = new Notification({ title: '牛来盯盘 ' + info.version + ' 已发布', body: info.notes[0] + '，点击查看更新。', silent: true });
+      notification.on('click', () => shell.openExternal(OFFICIAL + '/download/#versions'));
+      notification.once('show', () => resolve(true)); notification.once('failed', () => resolve(false));
+      notification.show(); setTimeout(() => resolve(false), 5000).unref();
+    })
+  });
+  if (!qaProfile) { setTimeout(() => updater.check(), 15000).unref(); updateTimer = setInterval(() => updater.check(), updater.interval); updateTimer.unref(); }
   createDashboard();
   tray = new Tray(path.join(__dirname, 'build/icon.png'));
   tray.setToolTip('牛来盯盘');

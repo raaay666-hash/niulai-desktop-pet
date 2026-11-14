@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('desktopPet', {
   stock: (operation, payload) => ipcRenderer.invoke('desktop:stock', operation, payload),
   search: query => ipcRenderer.invoke('desktop:search', query),
   refresh: () => ipcRenderer.invoke('desktop:refresh'),
+  updates: operation => ipcRenderer.invoke('desktop:updates', operation),
+  onUpdate: callback => subscribe('desktop:update', callback),
   quoteSource: (operation, payload) => ipcRenderer.invoke('desktop:quote-source', operation, payload),
   knock: () => ipcRenderer.invoke('desktop:counts', false),
   newRound: () => ipcRenderer.invoke('desktop:counts', true),
@@ -21,6 +23,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
   beginDrag: origin => ipcRenderer.invoke('desktop:drag-start', origin),
   endDrag: () => ipcRenderer.invoke('desktop:drag-end'),
   onSnapshot: callback => subscribe('desktop:snapshot', callback),
+  onRefreshing: callback => subscribe('desktop:refreshing', callback),
   onKnock: callback => subscribe('desktop:knock', callback),
   onPreview: callback => subscribe('desktop:preview', callback),
   onCollapsed: callback => subscribe('desktop:collapsed', callback)

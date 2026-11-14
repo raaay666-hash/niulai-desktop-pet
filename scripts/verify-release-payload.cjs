@@ -7,7 +7,8 @@ const asar = require('@electron/asar');
 const root = path.resolve(__dirname, '..');
 const [archive, reportPath] = process.argv.slice(2);
 assert.ok(archive && reportPath, 'Supply the packaged ASAR and output JSON paths');
-const expected = JSON.parse(fs.readFileSync(path.join(root, 'build/desktop-1.5.0-payload.json'), 'utf8'));
+const expectedVersion = require('../package.json').version;
+const expected = JSON.parse(fs.readFileSync(path.join(root, `build/desktop-${expectedVersion}-payload.json`), 'utf8'));
 const files = asar.listPackage(archive).map(file => file.replace(/^[\\/]/, ''))
   .filter(file => !asar.statFile(archive, file).files)
   .map(file => file.replaceAll('\\', '/')).sort();
@@ -32,4 +33,4 @@ const report = {
 fs.mkdirSync(path.dirname(reportPath), { recursive: true });
 fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
 assert.deepEqual(differences, [], 'Packaged file content matches Windows');
-console.log('All ' + files.length + ' packaged files match the Windows 1.5.0 release byte for byte');
+console.log('All ' + files.length + ' packaged files match the Windows ' + expectedVersion + ' release byte for byte');

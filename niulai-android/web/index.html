@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <meta name="theme-color" content="#f5f4f0">
+  <meta name="theme-color" content="#f4f5f7">
   <title>牛来盯盘</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -16,6 +16,7 @@
       <button id="cover-exit" class="text-button cover-exit">退出预览</button>
     </header>
     <main>
+      <aside id="update-banner" class="update-banner" role="status" hidden><strong id="update-title"></strong><p id="update-note"></p><button id="update-download" class="text-button">查看更新 →</button></aside>
       <section id="view-home" class="view">
 
         <div class="home-left">
@@ -98,9 +99,12 @@
     <div class="setting-row"><label for="theme">应用外观</label><select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
     <div class="setting-row"><label for="interval">桌宠行情刷新</label><select id="interval"><option value="5">每 5 秒</option><option value="10">每 10 秒</option><option value="30">每 30 秒</option></select></div>
     <div class="setting-row"><label for="smartScene">首页跟随常规交易时段</label><input id="smartScene" type="checkbox" role="switch"></div>
-    <p class="eyebrow">使用模式</p><div class="quick-stocks"><button data-preset="office">静音</button><button data-preset="commute">通勤</button><button data-preset="home">标准</button><button data-preset="battery">省电</button></div>
+      <p class="eyebrow">使用模式</p><div class="quick-stocks"><button data-preset="office">静音</button><button data-preset="commute">通勤</button><button data-preset="home">标准</button><button data-preset="battery">省电</button></div>
+      <h3>版本更新</h3><div class="setting-row"><label for="update-notifications">系统更新提醒</label><input id="update-notifications" type="checkbox" role="switch" checked></div>
+      <p id="update-status" class="subtext" role="status">当前版本 1.4.0</p><p class="subtext">新版本正式发布后提醒一次。通知权限关闭时，仍可在软件内查看更新。</p>
+      <div class="quick-stocks"><button id="check-update">检查更新</button><button id="update-permission">系统通知设置</button><button id="update-history">更新记录 ↗</button></div>
   </section>
-  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.3.2</strong><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛使用牛来的顶部悬浮窗。桌宠与灵动岛可分别开启，需要悬浮窗授权，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
+  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.4.0</strong><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛使用牛来的顶部悬浮窗。桌宠与灵动岛可分别开启，需要悬浮窗授权，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
 </dialog>
   <dialog id="device-dialog"><div class="sheet-head"><div><h2>手机设置</h2></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="device-name" class="subtext"></p><div id="device-guide" class="about"></div><div class="quick-stocks"><button id="app-settings">应用设置 ↗</button><button id="battery-settings">电池设置 ↗</button><button id="cover-preview">外屏精简预览</button><button id="compat-open">使用兼容界面</button></div><p class="subtext">桌宠需要悬浮窗权限。后台持续显示可能受系统省电策略限制；设置项名称因手机系统版本而异。</p></dialog>
   <div id="toast" class="toast" role="status" hidden></div>

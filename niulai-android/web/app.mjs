@@ -3,11 +3,27 @@ import { normalizeMarketSymbol, marketForSymbol, displaySymbol, quoteProviderSym
   parseSinaQuote, parseTencentQuote, loadState, saveState, position, currency, marketSession } from './core.mjs';
 import { request, cancelRequests } from './bridge.mjs';
 import { MarketMood } from './market-mood.mjs';
-import { BullMotion, cropSprite, catalog } from './bull-motion.mjs';
+import { cropSprite, catalog } from './bull-motion.mjs';
+import { DesktopBullMotion as BullMotion } from '../../renderer-modules/desktop-crying-motion.js';
 import { featureDefaults, cleanFeatures, localCounts } from './features.mjs';
 import { TapVoice } from './tap-voice.mjs';
 
 const $ = id => document.getElementById(id);
+window.__niulaiUpdate = value => {
+  $('update-banner').hidden = !value.available;
+  $('update-title').textContent = '牛来盯盘 ' + (value.version || '') + ' 已发布';
+  $('update-note').textContent = (value.notes || []).slice(0, 2).join(' · ');
+  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.4.0'));
+  $('check-update').disabled = Boolean(value.checking);
+  $('update-notifications').checked = value.enabled !== false;
+  $('update-permission').textContent = value.permission ? '系统通知设置' : '开启系统通知';
+};
+$('check-update').onclick = () => { if (window.NiulaiNative?.checkUpdates) window.NiulaiNative.checkUpdates(); else toast('请在安装版中检查更新'); };
+$('update-notifications').onchange = () => window.NiulaiNative?.updateNotifications?.($('update-notifications').checked);
+$('update-permission').onclick = () => window.NiulaiNative?.updatePermission?.();
+$('update-download').onclick = () => window.NiulaiNative?.openUpdates?.(false);
+$('update-history').onclick = () => window.NiulaiNative?.openUpdates?.(true);
+try { window.__niulaiUpdate(JSON.parse(window.NiulaiNative?.updateStatus?.() || '{}')); } catch {}
 try { const restored=window.NiulaiNative?.restoreAppState?.(); if(restored)localStorage.setItem('niulai:android:v1',restored); } catch {}
 const state = loadState(localStorage);
 const quotes = new Map();
@@ -15,7 +31,10 @@ const audio = { rise: new Audio('assets/niulai.mp3'), fall: new Audio('assets/ma
 const woodAudio = new TapVoice('assets/niulai-tap.wav');
 woodAudio.volume = .65;
 let active = true, busy = false, refreshTimer, toastTimer, bubbleTimer, tab = 'home', requestEpoch = 0;
-let searchEpoch = 0, searchTimer, positionCode, taps = [], adding = false;
+let searchEpoch = 0, searchTimer, positionCode, taps = [], adding = false, searchComposing = false;
+const tabScroll = new Map();
+const stockRows = { 'home-stocks': new Map(), 'watch-stocks': new Map() };
+const portfolioCards = new Map();
 let petConfigSent='', manualSceneUntil=0, calmTimer;
 let coverOverride=null, previousWideTab=null;
 function dialogOpen(){return Boolean(document.querySelector('dialog[open]'));}
@@ -60,7 +79,7 @@ function applySettings() {
   const dark = state.theme === 'dark' || (state.theme === 'system' && systemIsDark());
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.classList.toggle('no-motion', !state.motion);
-  document.querySelector('meta[name="theme-color"]').content = dark ? '#151714' : '#f5f4f0';
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#15181e' : '#f4f5f7';
   syncMotionVisibility();
   window.NiulaiNative?.appearance(dark);
   for (const key of ['theme', 'interval']) $(key).value = state[key];
@@ -71,7 +90,7 @@ function applySettings() {
 }
 function stopAudio() { for (const a of Object.values(audio)) { a.pause(); a.currentTime = 0; } }
 function animatePet(kind, message) {
-  previewUntil=Date.now()+3200;if(bullMotion){bullMotion.replay(kind);}
+  previewUntil=Date.now()+3200;if(bullMotion){bullMotion.interact(kind);}
   $('pet-bubble').textContent = message;
   clearTimeout(bubbleTimer); bubbleTimer = setTimeout(updatePetMessage, 4200);
 }
@@ -109,34 +128,54 @@ function renderPosition(container, stock, q) {
 }
 function renderLists() {
   for (const [id, removable] of [['home-stocks', false], ['watch-stocks', true]]) {
-    const container = $(id); container.replaceChildren();
+    const container = $(id), rows = stockRows[id];
+    for (const [code, row] of rows) if (!state.stocks.some(stock => stock.code === code)) { row.remove(); rows.delete(code); }
     for (const stock of state.stocks) {
       const entry = quotes.get(stock.code), q = entry?.quote;
-      const row = text('div', '', `stock-row${stock.code === state.selected ? ' selected' : ''}`);
-      const button = text('button', '', 'stock-main'); button.setAttribute('aria-label', `盯盘 ${q?.name || stock.name}`);
-      const name = document.createElement('div'); name.append(text('strong', q?.name || stock.name), text('small', displaySymbol(stock.code)));
-      const price = text('div', '', `stock-price ${q ? tone(q.changePct) : 'neutral'}`);
-      price.append(text('strong', q ? fmt(q.price, marketForSymbol(stock.code) === 'hk' ? 3 : 2) : '—'));
-      if (entry && (entry.error || Date.now() - entry.received > state.interval * 1000 + 20000)) price.append(text('small', '更新延迟'));
-      button.append(name, price, text('span', q ? `${signed(q.changePct)}%` : '—', `stock-pct ${q ? tone(q.changePct) : ''}`));
-      button.onclick = () => select(stock.code);
-      row.append(button);
-      if (removable) { const remove = text('button', '×', 'remove-stock'); remove.setAttribute('aria-label', `移出 ${stock.name}`); remove.onclick = () => removeStock(stock.code); row.append(remove); }
-      container.append(row);
+      let row = rows.get(stock.code);
+      if (!row) {
+        row = text('div', '', 'stock-row');
+        const button = text('button', '', 'stock-main'), name = document.createElement('div'), price = text('div', '', 'stock-price');
+        name.append(text('strong', ''), text('small', displaySymbol(stock.code)));
+        price.append(text('strong', ''), text('small', '更新延迟'));
+        button.append(name, price, text('span', '', 'stock-pct'));
+        button.onclick = () => select(stock.code); row.append(button);
+        if (removable) { const remove = text('button', '×', 'remove-stock'); remove.onclick = () => removeStock(stock.code); row.append(remove); }
+        rows.set(stock.code, row); container.append(row);
+      }
+      const button = row.firstElementChild, name = button.children[0], price = button.children[1], percent = button.children[2];
+      row.classList.toggle('selected', stock.code === state.selected);
+      button.setAttribute('aria-label', `盯盘 ${q?.name || stock.name}`);
+      button.setAttribute('aria-pressed', String(stock.code === state.selected));
+      name.firstElementChild.textContent = q?.name || stock.name;
+      price.className = `stock-price ${q ? tone(q.changePct) : 'neutral'}`;
+      price.firstElementChild.textContent = q ? fmt(q.price, marketForSymbol(stock.code) === 'hk' ? 3 : 2) : '—';
+      price.lastElementChild.hidden = !entry || !(entry.error || Date.now() - entry.received > state.interval * 1000 + 20000);
+      percent.className = `stock-pct ${q ? tone(q.changePct) : ''}`;
+      percent.textContent = q ? `${signed(q.changePct)}%` : '—';
+      if (removable) row.lastElementChild.setAttribute('aria-label', `移出 ${stock.name}`);
     }
   }
   $('stock-count').textContent = state.stocks.length;
 }
 function renderPortfolio() {
-  const container = $('portfolio-list'); container.replaceChildren();
+  const container = $('portfolio-list');
   const held = state.stocks.filter(s => s.cost > 0 && s.shares > 0);
-  if (!held.length) container.append(text('p', '暂无持仓记录', 'subtext'));
+  for (const [code, card] of portfolioCards) if (!held.some(stock => stock.code === code)) { card.remove(); portfolioCards.delete(code); }
+  let empty = container.querySelector('.portfolio-empty');
+  if (!held.length && !empty) { empty = text('p', '暂无持仓记录，点击上方设置持仓。', 'subtext portfolio-empty'); container.append(empty); }
+  if (held.length) empty?.remove();
   for (const stock of held) {
-    const card = text('article', '', 'portfolio-item');
-    const title = text('button', ''); title.append(text('strong', stock.name), text('small', `${displaySymbol(stock.code)} · 编辑 ↗`)); title.onclick = () => openPosition(stock.code);
-    const content = document.createElement('div'); renderPosition(content, stock, quotes.get(stock.code)?.quote);
+    let card = portfolioCards.get(stock.code);
+    if (!card) {
+      card = text('article', '', 'portfolio-item');
+      const title = text('button', ''); title.append(text('strong', ''), text('small', `${displaySymbol(stock.code)} · 编辑 ↗`)); title.onclick = () => openPosition(stock.code);
+      card.append(title, document.createElement('div'), text('p', '', 'subtext')); portfolioCards.set(stock.code, card); container.append(card);
+    }
+    card.firstElementChild.firstElementChild.textContent = stock.name;
+    renderPosition(card.children[1], stock, quotes.get(stock.code)?.quote);
     const entry = quotes.get(stock.code);
-    card.append(title, content, text('p', `成本 ${fmt(stock.cost, 3)} ${currency(stock.code)} · ${Number(stock.shares.toFixed(6))} 股${entry?.error ? ' · 行情更新失败，使用上次数据' : entry ? ' · 获取于 ' + new Date(entry.received).toLocaleTimeString('zh-CN', { hour12: false }) : ''}`, 'subtext')); container.append(card);
+    card.lastElementChild.textContent = `成本 ${fmt(stock.cost, 3)} ${currency(stock.code)} · ${Number(stock.shares.toFixed(6))} 股${entry?.error ? ' · 行情更新失败，使用上次数据' : entry ? ' · 获取于 ' + new Date(entry.received).toLocaleTimeString('zh-CN', { hour12: false }) : ''}`;
   }
 }
 function render() {
@@ -153,6 +192,7 @@ function render() {
   $('connection').className = `connection ${delayed ? 'error' : q ? 'ok' : ''}`;
   $('connection-text').textContent = q ? `${delayed ? '更新失败 · 保留上次数据 · ' : ''}${q.source === 'tencent' ? '腾讯' : '新浪'} · 获取于 ${new Date(entry.received).toLocaleTimeString('zh-CN', { hour12: false })}${q.time ? ` · 源时间 ${q.time}` : ' · 源未提供时间'}` : entry?.error || (window.NiulaiNative ? '正在连接行情…' : '请安装安卓应用连接行情');
   $('refresh').disabled = busy || !active;
+  $('refresh').setAttribute('aria-busy', String(busy));
   $('refresh').textContent = busy ? '↻ 正在更新' : '↻ 刷新行情';
   renderPosition($('home-position'), stock, q); renderLists(); renderPortfolio();
   if(document.documentElement.classList.contains('cover')&&state.private)$('stack-position').replaceChildren(text('p','•••• · 展开手机，在内屏查看持仓。','subtext'));else renderPosition($('stack-position'),stock,q);
@@ -241,10 +281,11 @@ async function refresh() {
   } finally { if (epoch === requestEpoch) { busy = false; render(); schedule(); } }
 }
 function changeTab(next) {
+  tabScroll.set(tab, window.scrollY);
   tab = next;
   for (const e of document.querySelectorAll('[data-tab]')) { e.classList.toggle('active', e.dataset.tab === next); e.setAttribute('aria-current', e.dataset.tab === next ? 'page' : 'false'); }
   for (const e of document.querySelectorAll('.view')) e.hidden = e.id !== `view-${next}`;
-  window.scrollTo(0, 0); render();
+  window.scrollTo(0, tabScroll.get(next) || 0); render();
   bullMotion?.configure(petVisible(),state.motion);
   woodMotion?.configure(active && tab === 'muyu', state.motion);
   if (next === 'muyu') refreshCounts();
@@ -267,6 +308,7 @@ function resultButton(stock, label) {
   b.onclick = () => addStock(stock); return b;
 }
 async function search() {
+  if (searchComposing || adding) return;
   const query = $('search-input').value.trim(); const epoch = ++searchEpoch;
   $('search-results').replaceChildren();
   if (!query) { $('search-message').textContent = '支持 A 股、港股和美股。'; return; }
@@ -289,18 +331,20 @@ async function addStock(stock) {
   if (adding) return;
   if (state.stocks.some(s => s.code === stock.code)) { select(stock.code); $('search-dialog').close(); return; }
   if (state.stocks.length >= 20) { toast('自选已满 20 只，请先移出一只'); return; }
-  adding = true; $('search-message').textContent = '正在验证股票行情…';
+  adding = true; const searchTicket = ++searchEpoch;
+  for (const button of document.querySelectorAll('#search-dialog .result, #search-dialog [data-code], #search-form button')) button.disabled = true;
+  $('search-message').textContent = '正在验证股票行情…';
   const epoch = requestEpoch;
   try {
     let quote;
     try { quote = parseSinaQuote(await request('quote', stock.code), stock.code); } catch {}
     if (!quote || quote.price <= 0) quote = parseTencentQuote(await request('fallback', quoteProviderSymbol(stock.code, 'tencent')), stock.code);
-    if (!active || epoch !== requestEpoch) return;
+    if (!active || epoch !== requestEpoch || searchTicket !== searchEpoch || !$('search-dialog').open) return;
     if (!quote || quote.price <= 0) throw new Error('暂未获取到有效行情，请检查代码或稍后再试');
     state.stocks.push({ code: stock.code, name: quote.name, cost: 0, shares: 0 });
     quotes.set(stock.code, { quote, received: Date.now() }); persist(); select(stock.code); $('search-dialog').close(); toast('已加入自选');
-  } catch (error) { $('search-message').textContent = error.message; }
-  finally { adding = false; }
+  } catch (error) { if (searchTicket === searchEpoch) $('search-message').textContent = error.message; }
+  finally { adding = false; for (const button of document.querySelectorAll('#search-dialog .result, #search-dialog [data-code], #search-form button')) button.disabled = false; }
 }
 function openPosition(code = state.selected) {
   const stock = state.stocks.find(s => s.code === code); if (!stock) return;
@@ -330,9 +374,18 @@ for (const dialog of document.querySelectorAll('dialog')) {
   dialog.querySelector('.close-dialog').onclick = () => dialog.close();
   dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
 }
-$('search-dialog').addEventListener('close', () => { ++searchEpoch; clearTimeout(searchTimer); });
-$('search-input').oninput = () => { ++searchEpoch; clearTimeout(searchTimer); searchTimer = setTimeout(search, 400); };
-$('search-form').onsubmit = e => { e.preventDefault(); clearTimeout(searchTimer); search(); };
+$('search-dialog').addEventListener('close', () => { ++searchEpoch; searchComposing = false; clearTimeout(searchTimer); });
+$('search-input').oninput = () => { ++searchEpoch; clearTimeout(searchTimer); if (!searchComposing) searchTimer = setTimeout(search, 350); };
+$('search-input').addEventListener('compositionstart', () => { searchComposing = true; ++searchEpoch; clearTimeout(searchTimer); });
+$('search-input').addEventListener('compositionend', () => { searchComposing = false; clearTimeout(searchTimer); searchTimer = setTimeout(search, 350); });
+$('search-form').onsubmit = e => { e.preventDefault(); if (searchComposing) return; clearTimeout(searchTimer); search(); };
+$('search-dialog').addEventListener('keydown', e => {
+  if (e.isComposing || searchComposing || !['ArrowDown','ArrowUp'].includes(e.key)) return;
+  const results = [...document.querySelectorAll('#search-results .result:not(:disabled)')];
+  if (!results.length) return;
+  e.preventDefault(); const current = results.indexOf(document.activeElement);
+  results[(current + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length].focus();
+});
 for (const b of document.querySelectorAll('[data-code]')) b.onclick = () => addStock({ code: b.dataset.code, name: displaySymbol(b.dataset.code) });
 $('position-form').onsubmit = e => {
   e.preventDefault(); const cost = Number($('cost').value), shares = Number($('shares').value);

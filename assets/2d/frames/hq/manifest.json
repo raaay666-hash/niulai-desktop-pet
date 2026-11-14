@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "frameSize": 512,
+  "columns": 4,
+  "rows": 4,
+  "pageFrames": 16,
+  "sheets": {
+    "cover": {
+      "duration": 1400,
+      "count": 84,
+      "pages": [
+        "cover-00.webp",
+        "cover-01.webp",
+        "cover-02.webp",
+        "cover-03.webp",
+        "cover-04.webp",
+        "cover-05.webp"
+      ]
+    },
+    "wave": {
+      "duration": 1000,
+      "count": 60,
+      "pages": [
+        "wave-00.webp",
+        "wave-01.webp",
+        "wave-02.webp",
+        "wave-03.webp"
+      ]
+    },
+    "muyu": {
+      "duration": 400,
+      "count": 24,
+      "pages": [
+        "muyu-00.webp",
+        "muyu-01.webp"
+      ]
+    },
+    "scratch": {
+      "duration": 1000,
+      "count": 60,
+      "pages": [
+        "scratch-00.webp",
+        "scratch-01.webp",
+        "scratch-02.webp",
+        "scratch-03.webp"
+      ]
+    },
+    "incense": {
+      "duration": 1600,
+      "count": 96,
+      "pages": [
+        "incense-00.webp",
+        "incense-01.webp",
+        "incense-02.webp",
+        "incense-03.webp",
+        "incense-04.webp",
+        "incense-05.webp"
+      ]
+    },
+    "clap": {
+      "duration": 800,
+      "count": 48,
+      "pages": [
+        "clap-00.webp",
+        "clap-01.webp",
+        "clap-02.webp"
+      ]
+    },
+    "celebrate": {
+      "duration": 1000,
+      "count": 60,
+      "pages": [
+        "celebrate-00.webp",
+        "celebrate-01.webp",
+        "celebrate-02.webp",
+        "celebrate-03.webp"
+      ]
+    },
+    "thumb": {
+      "duration": 1200,
+      "count": 72,
+      "pages": [
+        "thumb-00.webp",
+        "thumb-01.webp",
+        "thumb-02.webp",
+        "thumb-03.webp",
+        "thumb-04.webp"
+      ]
+    },
+    "cheek": {
+      "duration": 1400,
+      "count": 84,
+      "pages": [
+        "cheek-00.webp",
+        "cheek-01.webp",
+        "cheek-02.webp",
+        "cheek-03.webp",
+        "cheek-04.webp",
+        "cheek-05.webp"
+      ]
+    },
+    "sleep": {
+      "duration": 2000,
+      "count": 120,
+      "pages": [
+        "sleep-00.webp",
+        "sleep-01.webp",
+        "sleep-02.webp",
+        "sleep-03.webp",
+        "sleep-04.webp",
+        "sleep-05.webp",
+        "sleep-06.webp",
+        "sleep-07.webp"
+      ]
+    },
+    "look": {
+      "duration": 1600,
+      "count": 96,
+      "pages": [
+        "look-00.webp",
+        "look-01.webp",
+        "look-02.webp",
+        "look-03.webp",
+        "look-04.webp",
+        "look-05.webp"
+      ]
+    },
+    "nod": {
+      "duration": 1000,
+      "count": 60,
+      "pages": [
+        "nod-00.webp",
+        "nod-01.webp",
+        "nod-02.webp",
+        "nod-03.webp"
+      ]
+    },
+    "stretch": {
+      "duration": 1600,
+      "count": 96,
+      "pages": [
+        "stretch-00.webp",
+        "stretch-01.webp",
+        "stretch-02.webp",
+        "stretch-03.webp",
+        "stretch-04.webp",
+        "stretch-05.webp"
+      ]
+    },
+    "lean": {
+      "duration": 1200,
+      "count": 72,
+      "pages": [
+        "lean-00.webp",
+        "lean-01.webp",
+        "lean-02.webp",
+        "lean-03.webp",
+        "lean-04.webp"
+      ]
+    },
+    "idle": {
+      "duration": 2400,
+      "count": 144,
+      "pages": [
+        "idle-00.webp",
+        "idle-01.webp",
+        "idle-02.webp",
+        "idle-03.webp",
+        "idle-04.webp",
+        "idle-05.webp",
+        "idle-06.webp",
+        "idle-07.webp",
+        "idle-08.webp"
+      ]
+    }
+  },
+  "encoding": "lossless-webp"
+}

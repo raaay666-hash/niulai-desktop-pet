@@ -13,7 +13,7 @@ const sh=(...args)=>run('shell',...args);
 if(serial.startsWith('emulator-'))assert.match(run('emu','avd','name'),/Niulai_API_(26|36)/);
 else {const info=JSON.parse(execFileSync('D:/Program Files/Netease/MuMu/nx_main/mumu-cli.exe',['info','-v','2'],{encoding:'utf8',windowsHide:true,timeout:20000}));assert.equal(info.name,'Niulai-Android-QA');assert.equal(info.adb_port,16448);assert.equal(info.is_android_started,true);}
 const api=Number(sh('getprop','ro.build.version.sdk').trim());
-const out=path.join(root,'outputs/android/compat-1.3.2',serial.replace(':','-'));fs.mkdirSync(out,{recursive:true});
+const out=path.join(root,'outputs/polish-20261113/android',serial.replace(':','-'));fs.mkdirSync(out,{recursive:true});
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn,label,limit=15000){const end=Date.now()+limit;while(Date.now()<end){const value=fn();if(value)return value;await wait(300);}throw Error('Timeout: '+label);}
 function dump(){sh('rm','-f','/sdcard/niulai-test.xml');try{sh('uiautomator','dump','/sdcard/niulai-test.xml');}catch(e){if(!String(e.stdout).includes('dumped to:'))throw e;}return sh('cat','/sdcard/niulai-test.xml');}
@@ -66,5 +66,5 @@ if(nativeMode){
   tapNode(nodes(dump()).find(n=>n.text==='编辑'));fields=nodes(dump()).filter(n=>n.class==='android.widget.EditText');assert.equal(Number(fields[0].text),3000);assert.equal(Number(fields[1].text),1.25);sh('input','keyevent','4');sh('input','keyevent','4');pass('fractional positions and P&L remain saved after a native compatibility UI restart');
 }
 const webview=sh('dumpsys','webviewupdate');const crash=appLog('AndroidRuntime:E','NiulaiWidget:E');assert(!crash.includes('FATAL EXCEPTION')&&!crash.includes('Widget update failed'));pass('no application or widget runtime exceptions');
-const local=crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'release/android/Niulai-Android-1.3.2.apk'))).digest('hex');const installed=sh('pm','path',packageName).trim().split('\n')[0].replace('package:','').trim();assert.match(installed,/^\/data\/app\/[A-Za-z0-9_/=+~.-]+\/base\.apk$/);const installedHash=sh('sha256sum',installed).split(/\s+/)[0];assert.equal(installedHash,local);
+const local=crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'release/android/Niulai-Android-1.4.0.apk'))).digest('hex');const installed=sh('pm','path',packageName).trim().split('\n')[0].replace('package:','').trim();assert.match(installed,/^\/data\/app\/[A-Za-z0-9_/=+~.-]+\/base\.apk$/);const installedHash=sh('sha256sum',installed).split(/\s+/)[0];assert.equal(installedHash,local);
 fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify({checkedAt:new Date().toISOString(),serial,api,nativeMode,webview,checks,installedApkSha256:local,scope:'Dedicated Niulai QA virtual device, not Xiaomi/Huawei hardware. Test-only data is cleared at startup.'},null,2));

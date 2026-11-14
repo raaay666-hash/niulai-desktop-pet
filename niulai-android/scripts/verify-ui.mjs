@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(project, '..');
 const web = path.join(project, 'build/web');
-const output = path.join(root, 'outputs/android/compat-1.3.2/browser');
+const output = path.join(root, 'outputs/polish-20261113/android/browser');
 await fs.mkdir(output, { recursive: true });
 const server = http.createServer(async (req, res) => {
   const name = new URL(req.url, 'http://localhost').pathname;

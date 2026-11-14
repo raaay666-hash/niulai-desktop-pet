@@ -136,7 +136,7 @@ async function interact() {
   const now = Date.now(); taps = taps.filter(at => now - at < 1150); taps.push(now);
   const mood = taps.length >= 3 ? 'annoyed' : 'wave';
   if (mood === 'annoyed') taps = [];
-  bull.replay(mood); previewUntil = now + 3200;
+  bull.interact(mood); previewUntil = now + 3200;
   if (settings().sound && !settings().muted && !quiet) {
     stopAudio(); const sound = sounds[entry()?.quote?.changePct < 0 ? 'fall' : 'rise']; sound.volume = settings().volume; sound.play().catch(() => {});
   }

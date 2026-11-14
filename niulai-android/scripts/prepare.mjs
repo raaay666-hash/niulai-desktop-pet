@@ -18,6 +18,11 @@ for (const [from, to] of [
   ['build/icon.png', 'icon.png']
 ]) await fs.copyFile(path.join(root, from), path.join(output, 'assets', to));
 await fs.mkdir(path.join(output, 'assets/frames'), { recursive: true });
+await fs.mkdir(path.join(output, 'assets/hq'), { recursive: true });
+const hqSource = path.join(root, 'assets/2d/frames/mobile-hq');
+for (const file of await fs.readdir(hqSource)) {
+  await fs.copyFile(path.join(hqSource, file), path.join(output, 'assets/hq', file));
+}
 const animation = JSON.parse(await fs.readFile(path.join(project, 'web/bull-frames.json'), 'utf8'));
 const frameFiles = new Set(Object.values(animation.sheets).map(sheet => sheet.file));
 for (const file of await fs.readdir(path.join(output, 'assets/frames'))) {

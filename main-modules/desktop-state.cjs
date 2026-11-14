@@ -2,7 +2,7 @@ const { normalizeMarketSymbol, displaySymbol } = require('./market-symbols');
 
 const DEFAULTS = Object.freeze({
   theme: 'system', sound: false, muted: false, mamaSound: false, volume: 0.9, motion: true, interval: 10,
-  private: true, scene: 0, smartScene: true, autoActions: true,
+  private: true, scene: 0, smartScene: true, autoActions: true, updateNotifications: true,
   petEnabled: true, petMode: 'market', petQuote: true, petHideInApp: false,
   petScale: 100, muyuSound: false, muyuEffects: true, muyuCount: true,
   islandEnabled: false, islandContent: 'market', islandTheme: 'dark',

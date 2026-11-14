@@ -33,6 +33,15 @@ async function overlay(kind) {
   throw new Error('Missing overlay ' + kind);
 }
 const state = page => page.evaluate(() => window.desktopPet.bootstrap());
+async function waitForState(page, predicate) {
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const next = await state(page);
+    if (predicate(next)) return next;
+    await new Promise(resolve => setTimeout(resolve, 60));
+  }
+  throw new Error('Timed out waiting for desktop state');
+}
 try {
   let page = await launch();
   const initialPet = await overlay('pet');
@@ -175,10 +184,10 @@ try {
   await page.locator('#rule-type').selectOption('price');
   await page.locator('#rule-value').fill('999999');
   await page.getByRole('button', { name: '添加提醒', exact: true }).click();
-  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).state.alerts.length === 1);
+  await waitForState(page, next => next.state.alerts.length === 1);
   assert.equal((await state(page)).state.alerts[0].value, 999999);
   await page.locator('.alert-rule button').click();
-  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).state.alerts.length === 0);
+  await waitForState(page, next => next.state.alerts.length === 0);
   assert.equal((await state(page)).state.settings.emotionMemory, true);
   assert.equal((await state(page)).state.settings.closeSummary, true);
   pass('emotion memory, closing summary and alert creation/removal are available');
@@ -246,7 +255,7 @@ try {
     await app.evaluate((_electron, clock) => globalThis.__qaClock = clock, value);
     for (const surface of app.windows()) await surface.evaluate(clock => window.__qaClock = clock, value);
     await page.evaluate(() => window.desktopPet.refresh());
-    await page.waitForFunction(async clock => (await window.desktopPet.bootstrap()).quotes.s_sh000001.received === clock, value);
+    await waitForState(page, next => next.quotes.s_sh000001?.received === value && !next.refreshing);
     await page.waitForTimeout(100);
   }
   await quoteAt(fixtureTime + 30000);

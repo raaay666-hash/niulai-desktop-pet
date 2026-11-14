@@ -11,6 +11,13 @@ const sources=['app/src/main/java/art/niulai/android/FramePlayer.java','app/src/
 const build=spawnSync('javac',['-encoding','UTF-8','--release','8','-d',classes,...sources.map(p=>path.join(project,p))],{encoding:'utf8',windowsHide:true});assert.equal(build.status,0,build.stderr);
 function java(name,rows){const result=spawnSync('java',['-cp',classes,'art.niulai.android.'+name],{input:rows.join('\n')+'\n',encoding:'utf8',windowsHide:true});assert.equal(result.status,0,result.stderr);return result.stdout.trim().split(/\r?\n/);}
 
+test('native HQ reaches every interpolated frame and preserves its pose during suspension',()=>{
+ const commands=['state idle 2400 1600 0 1'];
+ for(let frame=0;frame<144;frame++)commands.push(`hq ${Math.ceil(frame*2400/144)} 1 144`);
+ commands.push('pause 1 1200','hq 6000 1 144','pause 0 6000','hq 6000 1 144','hq 6100 0 144');
+ assert.deepEqual(java('FrameHarness',commands),[...Array.from({length:144},(_,i)=>String(i)),'72','72','0']);
+});
+
 test('native and web choose the same full drawings, pauses and burst recovery',()=>{
  const p=new FramePlayer(),commands=[],expected=[];
  for(const [index,[id,clip]]of Object.entries(animation.clips).entries()){

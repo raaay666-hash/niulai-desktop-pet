@@ -16,11 +16,15 @@ test('native and existing desktop parsers agree on all three markets and both qu
   const hk=Array(20).fill('');Object.assign(hk,{1:'腾讯控股',3:'410',6:'415',7:'5',8:'1.22',17:'2026/11/10',18:'16:08:12'});
   const us=Array(30).fill('');Object.assign(us,{0:'苹果',1:'220',2:'-0.90',3:'2026-11-10 10:25:00',4:'-2',26:'222'});
   const detail=Array(40).fill('');Object.assign(detail,{1:'腾讯控股',3:'415',4:'410',30:'20261110160812',31:'5',32:'1.22'});
+  const post=[...us];Object.assign(post,{3:'2026-11-11 07:00:00',21:'224',24:'Nov 10 05:30PM EST',25:'Nov 10 04:00PM EST'});
+  const pre=[...us];Object.assign(pre,{3:'2026-11-10 22:00:00',21:'224',24:'Nov 10 08:30AM EST',25:'Nov 9 04:00PM EST'});
   const fixtures=[
     ['s_sh000001',false,'var hq_str_s_sh000001="上证指数,3000,-30,-0.99,10,20";'],
     ['s_sz399001',false,'var hq_str_s_sz399001="深证成指,10000,100,1.01,10,20";'],
     ['rt_hk00700',false,`var hq_str_rt_hk00700="${hk.join(',')}";`],
     ['gb_aapl',false,`var hq_str_gb_aapl="${us.join(',')}";`],
+    ['gb_aapl',false,`var hq_str_gb_aapl="${post.join(',')}";`],
+    ['gb_aapl',false,`var hq_str_gb_aapl="${pre.join(',')}";`],
     ['s_sh000001',true,'v_s_sh000001="1~上证指数~000001~3000~-30~-0.99~10~20";'],
     ['rt_hk00700',true,`v_hk00700="${detail.join('~')}";`],
     ['gb_aapl',true,`v_usAAPL="${detail.join('~')}";`],

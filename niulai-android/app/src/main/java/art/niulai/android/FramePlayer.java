@@ -32,6 +32,12 @@ final class FramePlayer {
     }
 
     int frame(long now, boolean moving) {
+        return frame(now, moving, 24);
+    }
+
+    void alias(String next) { id = next; }
+
+    int frame(long now, boolean moving, int count) {
         long elapsed = Math.max(0, (pausedAt >= 0 ? pausedAt : now) - started);
         if (!moving || id.equals("muyu") && !knocking) return 0;
         if (id.equals("muyu") && elapsed >= duration) {
@@ -43,6 +49,6 @@ final class FramePlayer {
             } else { knocking = false; queuedKnock = false; return 0; }
         }
         long time = elapsed % (duration + rest);
-        return time >= duration ? 23 : Math.min(23, (int)(time * 24 / duration));
+        return time >= duration ? count - 1 : Math.min(count - 1, (int)(time * count / duration));
     }
 }

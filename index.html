@@ -19,12 +19,13 @@
     <div class="sidebar-bottom">
       <button id="hide-dashboard"><span data-icon="desktop"></span>收起到托盘</button>
       <button data-tab="settings"><span data-icon="settings"></span>设置</button>
-      <span class="version">电脑版 <span id="app-version">1.5.0</span></span>
+      <span class="version">电脑版 <span id="app-version">1.6.0</span></span>
     </div>
   </aside>
   <div class="workspace">
-    <header class="page-header"><div><h1 id="page-title">盯盘</h1><p id="page-subtitle" hidden></p></div><div class="header-actions"><button id="privacy-toggle" class="icon-button" aria-label="切换持仓隐私" title="切换持仓隐私"><span data-icon="eye"></span></button><button id="refresh" class="button secondary"><span data-icon="refresh"></span>刷新行情</button></div></header>
+    <header class="page-header"><div><h1 id="page-title">盯盘</h1><p id="page-subtitle" hidden></p></div><div class="header-actions"><button id="privacy-toggle" class="icon-button" aria-label="切换持仓隐私" title="切换持仓隐私"><span data-icon="eye"></span></button><button id="refresh" class="button secondary" aria-busy="false"><span data-icon="refresh"></span><span id="refresh-label">刷新行情</span></button></div></header>
     <main>
+      <aside id="update-banner" class="update-banner" hidden role="status"><div><strong id="update-title"></strong><p id="update-note"></p></div><button id="update-download" class="button primary">查看更新</button></aside>
       <section id="view-home" class="view">
         <div class="dashboard-grid">
           <div class="primary-column">

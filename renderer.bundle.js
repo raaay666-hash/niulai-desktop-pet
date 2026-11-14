@@ -389,6 +389,7 @@
         scene: 0,
         smartScene: true,
         autoActions: true,
+        updateNotifications: true,
         petEnabled: true,
         petMode: "market",
         petQuote: true,
@@ -995,33 +996,52 @@
 
   // niulai-android/web/bull-motion.mjs
   var sheets = /* @__PURE__ */ new Map();
-  function loadSheet(name, assetBase) {
+  var preparedCaches = /* @__PURE__ */ new WeakMap();
+  function loadSheet(name, assetBase, prepareSheet) {
+    let cache = sheets;
+    if (prepareSheet) {
+      if (!preparedCaches.has(prepareSheet)) preparedCaches.set(prepareSheet, /* @__PURE__ */ new Map());
+      cache = preparedCaches.get(prepareSheet);
+    }
     const key = assetBase + name;
-    if (sheets.has(key)) {
-      const promise2 = sheets.get(key);
-      sheets.delete(key);
-      sheets.set(key, promise2);
+    if (cache.has(key)) {
+      const promise2 = cache.get(key);
+      cache.delete(key);
+      cache.set(key, promise2);
       return promise2;
     }
     const promise = new Promise((resolve, reject) => {
       const image = new Image();
-      image.onload = () => resolve(image);
+      image.onload = async () => {
+        try {
+          resolve(prepareSheet ? await prepareSheet(image, name) : image);
+        } catch (error) {
+          cache.delete(key);
+          reject(error);
+        }
+      };
       image.onerror = () => {
-        sheets.delete(key);
+        cache.delete(key);
         reject(new Error("\u52A8\u753B\u52A0\u8F7D\u5931\u8D25"));
       };
       image.src = assetBase + bull_frames_default.sheets[name].file;
     });
-    sheets.set(key, promise);
-    if (sheets.size > 4) sheets.delete(sheets.keys().next().value);
+    cache.set(key, promise);
+    if (cache.size > 4) cache.delete(cache.keys().next().value);
     return promise;
   }
   var BullMotion = class {
-    constructor(canvas, fallback, { assetBase = "assets/frames/" } = {}) {
+    constructor(canvas, fallback, { assetBase = "assets/frames/", player = new FramePlayer(), fps = 60, miniFps = 30, transitionMs = 0, breathing = false, prepareSheet = null, highQuality = false } = {}) {
       this.canvas = canvas;
       this.fallback = fallback;
       this.assetBase = assetBase;
-      this.player = new FramePlayer();
+      this.player = player;
+      this.fps = fps;
+      this.miniFps = miniFps;
+      this.transitionMs = transitionMs;
+      this.breathing = breathing;
+      this.prepareSheet = prepareSheet;
+      this.highQuality = highQuality;
       this.active = true;
       this.motion = true;
       this.mini = false;
@@ -1032,38 +1052,61 @@
       this.draw = this.draw.bind(this);
       this.state("idle");
     }
-    async select(id, replay) {
+    async select(id, replay, options) {
       if (!bull_frames_default.clips[id]) id = "loading";
       const name = bull_frames_default.clips[id].sheet;
       const request = ++this.requested;
       try {
-        const image = this.sheetName === name ? this.sheet : await loadSheet(name, this.assetBase);
+        const image = this.sheetName === name ? this.sheet : await this.loadMotionSheet(name);
         if (request !== this.requested) return;
+        const now = performance.now();
+        if (this.transitionMs && this.sheet && this.sheetName !== name && this.active && this.motion) {
+          const snapshot = document.createElement("canvas");
+          snapshot.width = this.canvas.width;
+          snapshot.height = this.canvas.height;
+          snapshot.getContext("2d").drawImage(this.canvas, 0, 0);
+          this.transition = { image: snapshot, started: this.player.pausedAt ?? now };
+        } else if (this.sheetName !== name) this.transition = null;
         this.sheet = image;
         this.sheetName = name;
-        this.player.state(id, performance.now(), replay);
+        this.player.state(id, now, replay, options);
+        this.renderKey = null;
         this.wake();
       } catch (error) {
+        if (request === this.requested) this.target = null;
         console.error(error);
       }
     }
     state(id) {
-      if (this.target === id) return;
+      if (this.target === id) return this.pending;
       this.target = id;
-      this.select(id, false);
+      return this.pending = this.select(id, false);
     }
-    replay(id) {
+    replay(id, options) {
       this.target = id;
-      this.select(id, true);
+      return this.pending = this.select(id, true, options);
+    }
+    loadMotionSheet(name) {
+      return loadSheet(name, this.assetBase, this.prepareSheet);
+    }
+    getDrawing(frame) {
+      return { image: this.sheet, index: frame.index, columns: bull_frames_default.columns, rows: bull_frames_default.rows, key: frame.index };
     }
     configure(active, motion) {
       if (this.active === active && this.motion === motion) return;
       this.active = active;
       this.motion = motion;
-      this.player.pause(!active || !motion);
+      const now = performance.now();
+      if (active && motion && this.player.pausedAt !== null && this.transition) this.transition.started += now - this.player.pausedAt;
+      this.player.pause(!active || !motion, now);
+      if (!motion) this.transition = null;
+      this.renderKey = null;
       cancelAnimationFrame(this.raf);
       this.raf = 0;
-      if (active) this.draw();
+      if (active) {
+        this.last = -Infinity;
+        this.draw(now);
+      }
     }
     wake() {
       if (this.active && !this.raf) this.draw();
@@ -1071,63 +1114,4866 @@
     draw(now = performance.now()) {
       this.raf = 0;
       if (!this.active) return;
-      const interval = 1e3 / (this.mini ? 30 : 60);
+      const rate = this.player.id === "muyu" && this.player.knocking ? this.mini ? 30 : 60 : this.mini ? this.miniFps : this.fps;
+      const interval = 1e3 / rate;
       const elapsed = now - this.last;
       if (this.motion && elapsed < interval - 0.5) {
         this.raf = requestAnimationFrame(this.draw);
         return;
       }
       this.last = this.motion && elapsed >= interval && elapsed < interval * 3 ? now - elapsed % interval : now;
-      const ctx = this.canvas.getContext("2d");
       const w = this.canvas.width, h = this.canvas.height;
-      ctx.clearRect(0, 0, w, h);
       const size = this.mini ? Math.min(w * 1.04, h * 1.08) : Math.min(w * 0.94, h * 0.96);
-      const x = (w - size) / 2, y = h - size - h * 0.01;
-      if (this.sheet) {
-        const frame = this.player.frame(now, this.motion);
-        const sw = this.sheet.naturalWidth / 6, sh = this.sheet.naturalHeight / 4;
-        ctx.drawImage(this.sheet, frame.index % 6 * sw, Math.floor(frame.index / 6) * sh, sw, sh, x, y, size, size);
-      } else if (this.fallback) ctx.drawImage(this.fallback, x, y, size, size);
-      if (this.motion) this.raf = requestAnimationFrame(this.draw);
+      const frame = this.player.frame(now, this.motion);
+      const drawing = this.getDrawing(frame);
+      const clock = this.player.pausedAt ?? now;
+      const clip = bull_frames_default.clips[this.player.id];
+      const duration = bull_frames_default.sheets[clip.sheet].duration;
+      const smooth2 = (value) => {
+        const t = Math.min(1, Math.max(0, value));
+        return t * t * (3 - 2 * t);
+      };
+      const restWeight = this.player.id === "idle" ? 1 : smooth2((frame.elapsed - duration) / 180) * smooth2((duration + clip.rest - frame.elapsed) / 180);
+      const breath = this.breathing && this.motion && this.player.id !== "muyu" ? (1 - Math.cos((clock - this.player.started) * Math.PI * 2 / 4200)) * 0.5 * restWeight : 0;
+      const width = size * (1 + breath * 3e-3), height = size * (1 + breath * 8e-3);
+      const x = (w - width) / 2, y = h - height - h * 0.01;
+      const blend = this.transition ? smooth2((clock - this.transition.started) / this.transitionMs) : 1;
+      if (blend >= 1) this.transition = null;
+      const continuous = breath > 0 || this.transition || this.hasContinuousEffects();
+      const key = [this.sheetName, frame.index, w, h, this.mini, this.motion, continuous ? clock : 0, drawing.key].join(":");
+      const ticking = this.motion && (this.player.id !== "muyu" || this.player.knocking || this.transition);
+      if (key === this.renderKey) {
+        if (ticking) this.raf = requestAnimationFrame(this.draw);
+        return;
+      }
+      this.renderKey = key;
+      const ctx = this.canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = this.highQuality ? "high" : "low";
+      ctx.clearRect(0, 0, w, h);
+      let target = ctx;
+      if (this.transition) {
+        this.layer ||= document.createElement("canvas");
+        if (this.layer.width !== w) this.layer.width = w;
+        if (this.layer.height !== h) this.layer.height = h;
+        target = this.layer.getContext("2d");
+        target.clearRect(0, 0, w, h);
+      }
+      if (drawing.image) {
+        const sw = (drawing.image.naturalWidth || drawing.image.width) / drawing.columns, sh = (drawing.image.naturalHeight || drawing.image.height) / drawing.rows;
+        target.drawImage(drawing.image, drawing.index % drawing.columns * sw, Math.floor(drawing.index / drawing.columns) * sh, sw, sh, x, y, width, height);
+        this.drawEffects(target, { frame, clock, x, y, width, height });
+      } else if (this.fallback) target.drawImage(this.fallback, x, y, width, height);
+      if (this.transition) {
+        ctx.save();
+        ctx.globalAlpha = 1 - blend;
+        ctx.drawImage(this.transition.image, 0, 0, w, h);
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = blend;
+        ctx.drawImage(this.layer, 0, 0);
+        ctx.restore();
+      }
+      if (ticking) this.raf = requestAnimationFrame(this.draw);
+    }
+    hasContinuousEffects() {
+      return false;
+    }
+    drawEffects() {
     }
     close() {
       this.active = false;
       this.requested++;
       cancelAnimationFrame(this.raf);
+      this.raf = 0;
       this.sheet = null;
+      this.transition = null;
+      this.layer = null;
     }
   };
 
+  // renderer-modules/desktop-frame-player.js
+  var DesktopFramePlayer = class extends FramePlayer {
+    state(id, now = performance.now(), replay = false, { finishCurrent = false } = {}) {
+      if (!bull_frames_default.clips[id]) id = "loading";
+      const clock = this.pausedAt ?? now;
+      if (!replay && id !== "muyu" && bull_frames_default.clips[id].sheet === bull_frames_default.clips[this.id].sheet) {
+        if (id !== this.id) this.pendingGesture = null;
+        this.id = id;
+        return;
+      }
+      if (finishCurrent && replay && id === this.id && id !== "muyu") {
+        const duration = bull_frames_default.sheets[bull_frames_default.clips[id].sheet].duration;
+        const elapsed = clock - this.started;
+        const cycle = duration + bull_frames_default.clips[id].rest;
+        if (elapsed >= 0 && elapsed % cycle < duration) {
+          this.pendingGesture = { id, at: this.started + Math.floor(elapsed / cycle) * cycle + duration };
+          return;
+        }
+      }
+      this.pendingGesture = null;
+      super.state(id, now, replay);
+    }
+    frame(now = performance.now(), moving = true) {
+      const clock = this.pausedAt ?? now;
+      if (moving && this.pendingGesture && clock >= this.pendingGesture.at) {
+        const pending = this.pendingGesture;
+        this.pendingGesture = null;
+        if (clock - pending.at < 250) super.state(pending.id, pending.at, true);
+      }
+      return super.frame(now, moving);
+    }
+    pause(value, now = performance.now()) {
+      if (value) this.pendingGesture = null;
+      super.pause(value, now);
+    }
+  };
+
+  // renderer-modules/desktop-frame-colors.json
+  var desktop_frame_colors_default = {
+    reference: "idle-v1.webp: median of 24 opaque-material frame medians",
+    sourceHashes: {
+      muyu: "1802307826ad2b1ef86aa1d484a928ccaa7aab86a5fe409dc69ed7f22f438bc1",
+      scratch: "b8c290633073235152b15c1fcbc454be21322bedcc39a971f57bded677b42fe5",
+      incense: "81603d55db271fd6d7754474d1e216b9caf73cda7392d80861255ac08c0c03e3",
+      clap: "3a0e193c938b3b65dfb1370c510d7917a56bfb187473991c803b06f107d38c91",
+      celebrate: "b0e2394e4a818aa62d845df3c4492c1e964036616c162f7c57bdfade9b2302a7",
+      thumb: "617ab3092f8e1529f933c7835fb17324900410f1a6fd10f628b0dc183dba4c58",
+      cheek: "e65523a40923cf6c05d668d4d00197cb5277f8dd0d92791c9b68c9bda988f111",
+      cover: "5a802c0cd8c55a81637bf63a7a5578da78ac825f2c129656456e1d35860633e7",
+      sleep: "aea442cab83b3d63c762be8367bbb6481b2248bd89e9af45ca256b2b36e97711",
+      look: "5bc6b49e1a61adc0010270e2b053678f949f73422e2bcc9e0466b319eeddea16",
+      wave: "68482e1464450e5f7cc63c1d0da3f9f9f9cd108dbdc1d7a4268768bc0d0bab24",
+      nod: "324a9ef0583558173d3b67855ff5ba0751a4a49f8449364a04f5684065703543",
+      stretch: "26894fc1459d240cb65680607f80fc4eeb23c48b01ca5405ef5c5505ff26fecd",
+      lean: "ec487dcd25b29055a12562cd5fef764bd2cf90fbedd706db05f34e56d7bb4d1c",
+      idle: "72d5b43ec10c866c54531195d329bb84fbde768f8773c29d688bc2dddbfe5f15"
+    },
+    target: {
+      gold: [
+        237,
+        149,
+        60
+      ],
+      pink: [
+        218,
+        151,
+        150
+      ]
+    },
+    sheets: {
+      muyu: [
+        {
+          gold: [
+            237,
+            149,
+            65
+          ],
+          pink: [
+            224,
+            158,
+            158
+          ]
+        },
+        {
+          gold: [
+            238,
+            150,
+            65
+          ],
+          pink: [
+            227,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            65
+          ],
+          pink: [
+            228,
+            162,
+            164
+          ]
+        },
+        {
+          gold: [
+            236,
+            148,
+            62
+          ],
+          pink: [
+            226,
+            160,
+            162
+          ]
+        },
+        {
+          gold: [
+            235,
+            147,
+            62
+          ],
+          pink: [
+            227,
+            162,
+            164
+          ]
+        },
+        {
+          gold: [
+            234,
+            146,
+            60
+          ],
+          pink: [
+            226,
+            159,
+            160
+          ]
+        },
+        {
+          gold: [
+            232,
+            145,
+            59
+          ],
+          pink: [
+            224,
+            158,
+            159
+          ]
+        },
+        {
+          gold: [
+            232,
+            144,
+            58
+          ],
+          pink: [
+            225,
+            158,
+            159
+          ]
+        },
+        {
+          gold: [
+            232,
+            145,
+            58
+          ],
+          pink: [
+            225,
+            159,
+            160
+          ]
+        },
+        {
+          gold: [
+            233,
+            145,
+            58
+          ],
+          pink: [
+            224,
+            157,
+            158
+          ]
+        },
+        {
+          gold: [
+            234,
+            146,
+            61
+          ],
+          pink: [
+            225,
+            158,
+            160
+          ]
+        },
+        {
+          gold: [
+            236,
+            148,
+            62
+          ],
+          pink: [
+            224,
+            158,
+            159
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            62
+          ],
+          pink: [
+            225,
+            158,
+            159
+          ]
+        },
+        {
+          gold: [
+            236,
+            147,
+            63
+          ],
+          pink: [
+            224,
+            158,
+            159
+          ]
+        },
+        {
+          gold: [
+            232,
+            144,
+            59
+          ],
+          pink: [
+            223,
+            156,
+            157
+          ]
+        },
+        {
+          gold: [
+            230,
+            142,
+            56
+          ],
+          pink: [
+            221,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            233,
+            145,
+            59
+          ],
+          pink: [
+            224,
+            158,
+            159
+          ]
+        },
+        {
+          gold: [
+            232,
+            144,
+            58
+          ],
+          pink: [
+            224,
+            157,
+            159
+          ]
+        },
+        {
+          gold: [
+            233,
+            145,
+            59
+          ],
+          pink: [
+            225,
+            159,
+            160
+          ]
+        },
+        {
+          gold: [
+            233,
+            146,
+            60
+          ],
+          pink: [
+            225,
+            158,
+            160
+          ]
+        },
+        {
+          gold: [
+            235,
+            147,
+            62
+          ],
+          pink: [
+            224,
+            157,
+            158
+          ]
+        },
+        {
+          gold: [
+            236,
+            148,
+            64
+          ],
+          pink: [
+            224,
+            157,
+            158
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            65
+          ],
+          pink: [
+            225,
+            159,
+            160
+          ]
+        },
+        {
+          gold: [
+            236,
+            149,
+            65
+          ],
+          pink: [
+            224,
+            157,
+            159
+          ]
+        }
+      ],
+      scratch: [
+        {
+          gold: [
+            239,
+            155,
+            66
+          ],
+          pink: [
+            217,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            238,
+            155,
+            67
+          ],
+          pink: [
+            219,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            238,
+            155,
+            66
+          ],
+          pink: [
+            219,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            237,
+            152,
+            63
+          ],
+          pink: [
+            218,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            150,
+            61
+          ],
+          pink: [
+            218,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            59
+          ],
+          pink: [
+            216,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            60
+          ],
+          pink: [
+            217,
+            153,
+            154
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            59
+          ],
+          pink: [
+            219,
+            155,
+            156
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            59
+          ],
+          pink: [
+            219,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            233,
+            147,
+            58
+          ],
+          pink: [
+            219,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            233,
+            147,
+            59
+          ],
+          pink: [
+            218,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            233,
+            147,
+            58
+          ],
+          pink: [
+            220,
+            156,
+            156
+          ]
+        },
+        {
+          gold: [
+            233,
+            147,
+            58
+          ],
+          pink: [
+            219,
+            156,
+            157
+          ]
+        },
+        {
+          gold: [
+            233,
+            147,
+            59
+          ],
+          pink: [
+            217,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            232,
+            147,
+            59
+          ],
+          pink: [
+            218,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            232,
+            146,
+            57
+          ],
+          pink: [
+            217,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            59
+          ],
+          pink: [
+            217,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            232,
+            147,
+            59
+          ],
+          pink: [
+            217,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            60
+          ],
+          pink: [
+            217,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            237,
+            153,
+            66
+          ],
+          pink: [
+            217,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            65
+          ],
+          pink: [
+            217,
+            152,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            154,
+            65
+          ],
+          pink: [
+            217,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            238,
+            154,
+            66
+          ],
+          pink: [
+            217,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            65
+          ],
+          pink: [
+            218,
+            153,
+            153
+          ]
+        }
+      ],
+      incense: [
+        {
+          gold: [
+            240,
+            153,
+            66
+          ],
+          pink: [
+            224,
+            161,
+            160
+          ]
+        },
+        {
+          gold: [
+            240,
+            153,
+            67
+          ],
+          pink: [
+            222,
+            157,
+            156
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            63
+          ],
+          pink: [
+            224,
+            161,
+            160
+          ]
+        },
+        {
+          gold: [
+            235,
+            145,
+            61
+          ],
+          pink: [
+            225,
+            162,
+            160
+          ]
+        },
+        {
+          gold: [
+            228,
+            138,
+            57
+          ],
+          pink: [
+            226,
+            163,
+            161
+          ]
+        },
+        {
+          gold: [
+            227,
+            137,
+            55
+          ],
+          pink: [
+            226,
+            164,
+            162
+          ]
+        },
+        {
+          gold: [
+            223,
+            134,
+            54
+          ],
+          pink: [
+            226,
+            164,
+            162
+          ]
+        },
+        {
+          gold: [
+            222,
+            133,
+            52
+          ],
+          pink: [
+            225,
+            162,
+            159
+          ]
+        },
+        {
+          gold: [
+            221,
+            132,
+            52
+          ],
+          pink: [
+            225,
+            161,
+            158
+          ]
+        },
+        {
+          gold: [
+            220,
+            131,
+            51
+          ],
+          pink: [
+            225,
+            161,
+            158
+          ]
+        },
+        {
+          gold: [
+            230,
+            139,
+            56
+          ],
+          pink: [
+            224,
+            162,
+            158
+          ]
+        },
+        {
+          gold: [
+            232,
+            142,
+            59
+          ],
+          pink: [
+            223,
+            162,
+            158
+          ]
+        },
+        {
+          gold: [
+            233,
+            144,
+            60
+          ],
+          pink: [
+            223,
+            161,
+            159
+          ]
+        },
+        {
+          gold: [
+            234,
+            144,
+            60
+          ],
+          pink: [
+            223,
+            161,
+            158
+          ]
+        },
+        {
+          gold: [
+            232,
+            142,
+            59
+          ],
+          pink: [
+            226,
+            164,
+            161
+          ]
+        },
+        {
+          gold: [
+            232,
+            141,
+            58
+          ],
+          pink: [
+            225,
+            162,
+            160
+          ]
+        },
+        {
+          gold: [
+            232,
+            142,
+            59
+          ],
+          pink: [
+            225,
+            161,
+            159
+          ]
+        },
+        {
+          gold: [
+            232,
+            141,
+            58
+          ],
+          pink: [
+            225,
+            164,
+            162
+          ]
+        },
+        {
+          gold: [
+            234,
+            144,
+            60
+          ],
+          pink: [
+            228,
+            165,
+            164
+          ]
+        },
+        {
+          gold: [
+            235,
+            145,
+            61
+          ],
+          pink: [
+            224,
+            162,
+            160
+          ]
+        },
+        {
+          gold: [
+            237,
+            148,
+            63
+          ],
+          pink: [
+            226,
+            162,
+            160
+          ]
+        },
+        {
+          gold: [
+            238,
+            149,
+            65
+          ],
+          pink: [
+            225,
+            160,
+            159
+          ]
+        },
+        {
+          gold: [
+            240,
+            152,
+            67
+          ],
+          pink: [
+            224,
+            158,
+            158
+          ]
+        },
+        {
+          gold: [
+            240,
+            152,
+            67
+          ],
+          pink: [
+            221,
+            155,
+            153
+          ]
+        }
+      ],
+      clap: [
+        {
+          gold: [
+            238,
+            153,
+            61
+          ],
+          pink: [
+            225,
+            158,
+            156
+          ]
+        },
+        {
+          gold: [
+            239,
+            153,
+            61
+          ],
+          pink: [
+            227,
+            161,
+            158
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            61
+          ],
+          pink: [
+            228,
+            161,
+            158
+          ]
+        },
+        {
+          gold: [
+            238,
+            152,
+            61
+          ],
+          pink: [
+            227,
+            160,
+            157
+          ]
+        },
+        {
+          gold: [
+            235,
+            149,
+            58
+          ],
+          pink: [
+            228,
+            162,
+            158
+          ]
+        },
+        {
+          gold: [
+            231,
+            144,
+            55
+          ],
+          pink: [
+            228,
+            161,
+            157
+          ]
+        },
+        {
+          gold: [
+            231,
+            145,
+            56
+          ],
+          pink: [
+            226,
+            162,
+            158
+          ]
+        },
+        {
+          gold: [
+            233,
+            146,
+            57
+          ],
+          pink: [
+            228,
+            163,
+            159
+          ]
+        },
+        {
+          gold: [
+            233,
+            144,
+            56
+          ],
+          pink: [
+            230,
+            164,
+            161
+          ]
+        },
+        {
+          gold: [
+            234,
+            146,
+            57
+          ],
+          pink: [
+            231,
+            164,
+            161
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            60
+          ],
+          pink: [
+            231,
+            165,
+            161
+          ]
+        },
+        {
+          gold: [
+            234,
+            147,
+            57
+          ],
+          pink: [
+            231,
+            163,
+            161
+          ]
+        },
+        {
+          gold: [
+            230,
+            144,
+            56
+          ],
+          pink: [
+            230,
+            166,
+            163
+          ]
+        },
+        {
+          gold: [
+            229,
+            143,
+            55
+          ],
+          pink: [
+            230,
+            165,
+            161
+          ]
+        },
+        {
+          gold: [
+            230,
+            143,
+            56
+          ],
+          pink: [
+            230,
+            164,
+            161
+          ]
+        },
+        {
+          gold: [
+            231,
+            143,
+            55
+          ],
+          pink: [
+            230,
+            165,
+            161
+          ]
+        },
+        {
+          gold: [
+            236,
+            150,
+            60
+          ],
+          pink: [
+            230,
+            164,
+            161
+          ]
+        },
+        {
+          gold: [
+            231,
+            143,
+            55
+          ],
+          pink: [
+            232,
+            168,
+            165
+          ]
+        },
+        {
+          gold: [
+            230,
+            143,
+            56
+          ],
+          pink: [
+            230,
+            164,
+            161
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            58
+          ],
+          pink: [
+            228,
+            163,
+            159
+          ]
+        },
+        {
+          gold: [
+            237,
+            151,
+            60
+          ],
+          pink: [
+            227,
+            159,
+            156
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            58
+          ],
+          pink: [
+            226,
+            158,
+            156
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            59
+          ],
+          pink: [
+            227,
+            159,
+            156
+          ]
+        },
+        {
+          gold: [
+            236,
+            150,
+            59
+          ],
+          pink: [
+            227,
+            159,
+            156
+          ]
+        }
+      ],
+      celebrate: [
+        {
+          gold: [
+            235,
+            151,
+            65
+          ],
+          pink: [
+            218,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            236,
+            151,
+            64
+          ],
+          pink: [
+            220,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            236,
+            151,
+            65
+          ],
+          pink: [
+            220,
+            155,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            150,
+            63
+          ],
+          pink: [
+            219,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            62
+          ],
+          pink: [
+            219,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            230,
+            144,
+            60
+          ],
+          pink: [
+            219,
+            155,
+            153
+          ]
+        },
+        {
+          gold: [
+            228,
+            141,
+            58
+          ],
+          pink: [
+            220,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            225,
+            138,
+            55
+          ],
+          pink: [
+            220,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            223,
+            134,
+            53
+          ],
+          pink: [
+            221,
+            156,
+            156
+          ]
+        },
+        {
+          gold: [
+            226,
+            139,
+            56
+          ],
+          pink: [
+            221,
+            155,
+            155
+          ]
+        },
+        {
+          gold: [
+            227,
+            140,
+            56
+          ],
+          pink: [
+            222,
+            156,
+            157
+          ]
+        },
+        {
+          gold: [
+            228,
+            142,
+            57
+          ],
+          pink: [
+            220,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            228,
+            142,
+            58
+          ],
+          pink: [
+            220,
+            155,
+            156
+          ]
+        },
+        {
+          gold: [
+            227,
+            140,
+            56
+          ],
+          pink: [
+            220,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            227,
+            139,
+            56
+          ],
+          pink: [
+            222,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            226,
+            137,
+            54
+          ],
+          pink: [
+            221,
+            156,
+            156
+          ]
+        },
+        {
+          gold: [
+            224,
+            137,
+            54
+          ],
+          pink: [
+            220,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            227,
+            140,
+            57
+          ],
+          pink: [
+            219,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            232,
+            146,
+            61
+          ],
+          pink: [
+            220,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            149,
+            63
+          ],
+          pink: [
+            220,
+            155,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            150,
+            63
+          ],
+          pink: [
+            220,
+            155,
+            156
+          ]
+        },
+        {
+          gold: [
+            235,
+            150,
+            63
+          ],
+          pink: [
+            219,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            236,
+            150,
+            63
+          ],
+          pink: [
+            221,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            235,
+            150,
+            63
+          ],
+          pink: [
+            220,
+            153,
+            153
+          ]
+        }
+      ],
+      thumb: [
+        {
+          gold: [
+            237,
+            153,
+            68
+          ],
+          pink: [
+            215,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            152,
+            67
+          ],
+          pink: [
+            216,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            237,
+            152,
+            67
+          ],
+          pink: [
+            216,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            235,
+            150,
+            66
+          ],
+          pink: [
+            216,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            64
+          ],
+          pink: [
+            214,
+            152,
+            150
+          ]
+        },
+        {
+          gold: [
+            232,
+            147,
+            63
+          ],
+          pink: [
+            215,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            63
+          ],
+          pink: [
+            215,
+            152,
+            152
+          ]
+        },
+        {
+          gold: [
+            232,
+            147,
+            63
+          ],
+          pink: [
+            216,
+            152,
+            152
+          ]
+        },
+        {
+          gold: [
+            232,
+            147,
+            63
+          ],
+          pink: [
+            215,
+            151,
+            150
+          ]
+        },
+        {
+          gold: [
+            230,
+            144,
+            61
+          ],
+          pink: [
+            210,
+            148,
+            146
+          ]
+        },
+        {
+          gold: [
+            228,
+            142,
+            59
+          ],
+          pink: [
+            211,
+            148,
+            146
+          ]
+        },
+        {
+          gold: [
+            227,
+            141,
+            59
+          ],
+          pink: [
+            211,
+            147,
+            145
+          ]
+        },
+        {
+          gold: [
+            228,
+            141,
+            59
+          ],
+          pink: [
+            210,
+            148,
+            146
+          ]
+        },
+        {
+          gold: [
+            231,
+            144,
+            61
+          ],
+          pink: [
+            212,
+            149,
+            148
+          ]
+        },
+        {
+          gold: [
+            231,
+            145,
+            61
+          ],
+          pink: [
+            214,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            232,
+            146,
+            62
+          ],
+          pink: [
+            214,
+            150,
+            149
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            63
+          ],
+          pink: [
+            215,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            233,
+            148,
+            65
+          ],
+          pink: [
+            216,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            234,
+            149,
+            66
+          ],
+          pink: [
+            215,
+            151,
+            151
+          ]
+        },
+        {
+          gold: [
+            236,
+            151,
+            67
+          ],
+          pink: [
+            217,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            154,
+            69
+          ],
+          pink: [
+            218,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            68
+          ],
+          pink: [
+            217,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            238,
+            154,
+            69
+          ],
+          pink: [
+            217,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            154,
+            69
+          ],
+          pink: [
+            216,
+            153,
+            153
+          ]
+        }
+      ],
+      cheek: [
+        {
+          gold: [
+            241,
+            157,
+            70
+          ],
+          pink: [
+            224,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            238,
+            155,
+            69
+          ],
+          pink: [
+            222,
+            157,
+            155
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            67
+          ],
+          pink: [
+            223,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            67
+          ],
+          pink: [
+            224,
+            158,
+            155
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            65
+          ],
+          pink: [
+            222,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            231,
+            145,
+            62
+          ],
+          pink: [
+            221,
+            154,
+            152
+          ]
+        },
+        {
+          gold: [
+            232,
+            146,
+            63
+          ],
+          pink: [
+            222,
+            158,
+            156
+          ]
+        },
+        {
+          gold: [
+            232,
+            146,
+            63
+          ],
+          pink: [
+            224,
+            159,
+            158
+          ]
+        },
+        {
+          gold: [
+            233,
+            146,
+            62
+          ],
+          pink: [
+            223,
+            159,
+            157
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            223,
+            158,
+            156
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            224,
+            160,
+            158
+          ]
+        },
+        {
+          gold: [
+            234,
+            149,
+            64
+          ],
+          pink: [
+            224,
+            158,
+            155
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            220,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            220,
+            156,
+            152
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            221,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            221,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            234,
+            148,
+            63
+          ],
+          pink: [
+            222,
+            155,
+            153
+          ]
+        },
+        {
+          gold: [
+            235,
+            148,
+            64
+          ],
+          pink: [
+            223,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            235,
+            149,
+            66
+          ],
+          pink: [
+            222,
+            156,
+            154
+          ]
+        },
+        {
+          gold: [
+            233,
+            147,
+            64
+          ],
+          pink: [
+            224,
+            158,
+            156
+          ]
+        },
+        {
+          gold: [
+            232,
+            146,
+            63
+          ],
+          pink: [
+            223,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            236,
+            151,
+            67
+          ],
+          pink: [
+            222,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            239,
+            154,
+            69
+          ],
+          pink: [
+            222,
+            155,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            154,
+            70
+          ],
+          pink: [
+            221,
+            155,
+            152
+          ]
+        }
+      ],
+      cover: [
+        {
+          gold: [
+            238,
+            153,
+            65
+          ],
+          pink: [
+            223,
+            157,
+            153
+          ]
+        },
+        {
+          gold: [
+            239,
+            153,
+            65
+          ],
+          pink: [
+            222,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            239,
+            153,
+            65
+          ],
+          pink: [
+            223,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            237,
+            151,
+            62
+          ],
+          pink: [
+            223,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            230,
+            142,
+            56
+          ],
+          pink: [
+            224,
+            158,
+            155
+          ]
+        },
+        {
+          gold: [
+            224,
+            136,
+            50
+          ],
+          pink: [
+            223,
+            156,
+            152
+          ]
+        },
+        {
+          gold: [
+            223,
+            136,
+            49
+          ],
+          pink: [
+            222,
+            155,
+            152
+          ]
+        },
+        {
+          gold: [
+            224,
+            136,
+            49
+          ],
+          pink: [
+            222,
+            157,
+            153
+          ]
+        },
+        {
+          gold: [
+            223,
+            136,
+            49
+          ],
+          pink: [
+            219,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            225,
+            138,
+            50
+          ],
+          pink: [
+            218,
+            151,
+            147
+          ]
+        },
+        {
+          gold: [
+            226,
+            139,
+            51
+          ],
+          pink: [
+            217,
+            147,
+            143
+          ]
+        },
+        {
+          gold: [
+            225,
+            140,
+            52
+          ],
+          pink: [
+            218,
+            149,
+            145
+          ]
+        },
+        {
+          gold: [
+            225,
+            140,
+            52
+          ],
+          pink: [
+            218,
+            150,
+            146
+          ]
+        },
+        {
+          gold: [
+            225,
+            140,
+            52
+          ],
+          pink: [
+            217,
+            149,
+            145
+          ]
+        },
+        {
+          gold: [
+            225,
+            139,
+            51
+          ],
+          pink: [
+            217,
+            148,
+            143
+          ]
+        },
+        {
+          gold: [
+            224,
+            138,
+            50
+          ],
+          pink: [
+            218,
+            148,
+            143
+          ]
+        },
+        {
+          gold: [
+            225,
+            139,
+            51
+          ],
+          pink: [
+            219,
+            149,
+            146
+          ]
+        },
+        {
+          gold: [
+            225,
+            138,
+            50
+          ],
+          pink: [
+            219,
+            151,
+            147
+          ]
+        },
+        {
+          gold: [
+            223,
+            136,
+            49
+          ],
+          pink: [
+            221,
+            154,
+            151
+          ]
+        },
+        {
+          gold: [
+            222,
+            135,
+            48
+          ],
+          pink: [
+            222,
+            156,
+            152
+          ]
+        },
+        {
+          gold: [
+            225,
+            137,
+            51
+          ],
+          pink: [
+            222,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            235,
+            148,
+            60
+          ],
+          pink: [
+            221,
+            153,
+            151
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            63
+          ],
+          pink: [
+            222,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            239,
+            154,
+            65
+          ],
+          pink: [
+            221,
+            155,
+            151
+          ]
+        }
+      ],
+      sleep: [
+        {
+          gold: [
+            243,
+            154,
+            67
+          ],
+          pink: [
+            221,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            243,
+            153,
+            67
+          ],
+          pink: [
+            221,
+            152,
+            153
+          ]
+        },
+        {
+          gold: [
+            242,
+            152,
+            66
+          ],
+          pink: [
+            219,
+            150,
+            150
+          ]
+        },
+        {
+          gold: [
+            241,
+            150,
+            63
+          ],
+          pink: [
+            219,
+            150,
+            151
+          ]
+        },
+        {
+          gold: [
+            242,
+            152,
+            63
+          ],
+          pink: [
+            219,
+            149,
+            151
+          ]
+        },
+        {
+          gold: [
+            242,
+            152,
+            63
+          ],
+          pink: [
+            220,
+            151,
+            151
+          ]
+        },
+        {
+          gold: [
+            242,
+            152,
+            65
+          ],
+          pink: [
+            219,
+            150,
+            153
+          ]
+        },
+        {
+          gold: [
+            242,
+            153,
+            65
+          ],
+          pink: [
+            219,
+            149,
+            151
+          ]
+        },
+        {
+          gold: [
+            243,
+            154,
+            66
+          ],
+          pink: [
+            215,
+            148,
+            148
+          ]
+        },
+        {
+          gold: [
+            243,
+            154,
+            66
+          ],
+          pink: [
+            215,
+            150,
+            149
+          ]
+        },
+        {
+          gold: [
+            243,
+            153,
+            65
+          ],
+          pink: [
+            212,
+            147,
+            149
+          ]
+        },
+        {
+          gold: [
+            244,
+            154,
+            66
+          ],
+          pink: [
+            210,
+            144,
+            143
+          ]
+        },
+        {
+          gold: [
+            243,
+            154,
+            66
+          ],
+          pink: [
+            206,
+            141,
+            142
+          ]
+        },
+        {
+          gold: [
+            243,
+            154,
+            66
+          ],
+          pink: [
+            210,
+            145,
+            146
+          ]
+        },
+        {
+          gold: [
+            243,
+            154,
+            66
+          ],
+          pink: [
+            217,
+            150,
+            152
+          ]
+        },
+        {
+          gold: [
+            245,
+            155,
+            66
+          ],
+          pink: [
+            217,
+            150,
+            152
+          ]
+        },
+        {
+          gold: [
+            244,
+            155,
+            66
+          ],
+          pink: [
+            215,
+            146,
+            148
+          ]
+        },
+        {
+          gold: [
+            244,
+            154,
+            65
+          ],
+          pink: [
+            218,
+            149,
+            151
+          ]
+        },
+        {
+          gold: [
+            243,
+            154,
+            65
+          ],
+          pink: [
+            215,
+            148,
+            148
+          ]
+        },
+        {
+          gold: [
+            242,
+            151,
+            63
+          ],
+          pink: [
+            217,
+            151,
+            151
+          ]
+        },
+        {
+          gold: [
+            241,
+            150,
+            61
+          ],
+          pink: [
+            217,
+            147,
+            147
+          ]
+        },
+        {
+          gold: [
+            242,
+            151,
+            63
+          ],
+          pink: [
+            217,
+            149,
+            150
+          ]
+        },
+        {
+          gold: [
+            242,
+            152,
+            65
+          ],
+          pink: [
+            220,
+            150,
+            151
+          ]
+        },
+        {
+          gold: [
+            242,
+            151,
+            64
+          ],
+          pink: [
+            217,
+            149,
+            149
+          ]
+        }
+      ],
+      look: [
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            221,
+            159,
+            161
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            71
+          ],
+          pink: [
+            221,
+            161,
+            163
+          ]
+        },
+        {
+          gold: [
+            239,
+            157,
+            71
+          ],
+          pink: [
+            223,
+            161,
+            163
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            221,
+            160,
+            162
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            220,
+            160,
+            161
+          ]
+        },
+        {
+          gold: [
+            237,
+            156,
+            69
+          ],
+          pink: [
+            221,
+            160,
+            162
+          ]
+        },
+        {
+          gold: [
+            237,
+            156,
+            69
+          ],
+          pink: [
+            220,
+            161,
+            163
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            69
+          ],
+          pink: [
+            221,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            222,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            222,
+            162,
+            162
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            222,
+            162,
+            163
+          ]
+        },
+        {
+          gold: [
+            238,
+            157,
+            71
+          ],
+          pink: [
+            220,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            237,
+            156,
+            70
+          ],
+          pink: [
+            221,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            237,
+            154,
+            68
+          ],
+          pink: [
+            221,
+            162,
+            163
+          ]
+        },
+        {
+          gold: [
+            235,
+            153,
+            67
+          ],
+          pink: [
+            223,
+            163,
+            165
+          ]
+        },
+        {
+          gold: [
+            236,
+            153,
+            67
+          ],
+          pink: [
+            222,
+            163,
+            166
+          ]
+        },
+        {
+          gold: [
+            235,
+            153,
+            67
+          ],
+          pink: [
+            223,
+            163,
+            164
+          ]
+        },
+        {
+          gold: [
+            236,
+            154,
+            67
+          ],
+          pink: [
+            222,
+            161,
+            163
+          ]
+        },
+        {
+          gold: [
+            236,
+            155,
+            68
+          ],
+          pink: [
+            221,
+            161,
+            163
+          ]
+        },
+        {
+          gold: [
+            237,
+            155,
+            68
+          ],
+          pink: [
+            221,
+            162,
+            164
+          ]
+        },
+        {
+          gold: [
+            237,
+            155,
+            69
+          ],
+          pink: [
+            221,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            237,
+            155,
+            69
+          ],
+          pink: [
+            221,
+            161,
+            162
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            222,
+            162,
+            164
+          ]
+        },
+        {
+          gold: [
+            238,
+            156,
+            70
+          ],
+          pink: [
+            220,
+            160,
+            161
+          ]
+        }
+      ],
+      wave: [
+        {
+          gold: [
+            237,
+            150,
+            63
+          ],
+          pink: [
+            218,
+            151,
+            150
+          ]
+        },
+        {
+          gold: [
+            238,
+            150,
+            62
+          ],
+          pink: [
+            220,
+            151,
+            152
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            63
+          ],
+          pink: [
+            219,
+            150,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            62
+          ],
+          pink: [
+            220,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            234,
+            146,
+            60
+          ],
+          pink: [
+            219,
+            151,
+            151
+          ]
+        },
+        {
+          gold: [
+            233,
+            145,
+            59
+          ],
+          pink: [
+            217,
+            150,
+            149
+          ]
+        },
+        {
+          gold: [
+            231,
+            143,
+            57
+          ],
+          pink: [
+            219,
+            151,
+            151
+          ]
+        },
+        {
+          gold: [
+            231,
+            143,
+            57
+          ],
+          pink: [
+            218,
+            150,
+            151
+          ]
+        },
+        {
+          gold: [
+            231,
+            143,
+            57
+          ],
+          pink: [
+            220,
+            151,
+            152
+          ]
+        },
+        {
+          gold: [
+            232,
+            144,
+            57
+          ],
+          pink: [
+            219,
+            149,
+            151
+          ]
+        },
+        {
+          gold: [
+            232,
+            144,
+            58
+          ],
+          pink: [
+            218,
+            149,
+            149
+          ]
+        },
+        {
+          gold: [
+            230,
+            143,
+            58
+          ],
+          pink: [
+            217,
+            149,
+            150
+          ]
+        },
+        {
+          gold: [
+            231,
+            143,
+            57
+          ],
+          pink: [
+            218,
+            150,
+            151
+          ]
+        },
+        {
+          gold: [
+            232,
+            145,
+            58
+          ],
+          pink: [
+            217,
+            148,
+            149
+          ]
+        },
+        {
+          gold: [
+            230,
+            143,
+            58
+          ],
+          pink: [
+            218,
+            150,
+            151
+          ]
+        },
+        {
+          gold: [
+            230,
+            142,
+            57
+          ],
+          pink: [
+            217,
+            149,
+            149
+          ]
+        },
+        {
+          gold: [
+            232,
+            145,
+            59
+          ],
+          pink: [
+            218,
+            150,
+            150
+          ]
+        },
+        {
+          gold: [
+            236,
+            149,
+            62
+          ],
+          pink: [
+            219,
+            149,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            63
+          ],
+          pink: [
+            218,
+            149,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            62
+          ],
+          pink: [
+            219,
+            150,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            63
+          ],
+          pink: [
+            218,
+            148,
+            150
+          ]
+        },
+        {
+          gold: [
+            236,
+            149,
+            63
+          ],
+          pink: [
+            218,
+            149,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            151,
+            63
+          ],
+          pink: [
+            219,
+            152,
+            153
+          ]
+        },
+        {
+          gold: [
+            238,
+            152,
+            65
+          ],
+          pink: [
+            218,
+            148,
+            149
+          ]
+        }
+      ],
+      nod: [
+        {
+          gold: [
+            239,
+            149,
+            61
+          ],
+          pink: [
+            221,
+            155,
+            156
+          ]
+        },
+        {
+          gold: [
+            239,
+            149,
+            61
+          ],
+          pink: [
+            222,
+            157,
+            158
+          ]
+        },
+        {
+          gold: [
+            238,
+            148,
+            60
+          ],
+          pink: [
+            221,
+            155,
+            156
+          ]
+        },
+        {
+          gold: [
+            236,
+            144,
+            56
+          ],
+          pink: [
+            218,
+            154,
+            152
+          ]
+        },
+        {
+          gold: [
+            235,
+            144,
+            57
+          ],
+          pink: [
+            217,
+            154,
+            152
+          ]
+        },
+        {
+          gold: [
+            235,
+            144,
+            58
+          ],
+          pink: [
+            214,
+            151,
+            147
+          ]
+        },
+        {
+          gold: [
+            235,
+            145,
+            58
+          ],
+          pink: [
+            213,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            236,
+            144,
+            57
+          ],
+          pink: [
+            217,
+            153,
+            150
+          ]
+        },
+        {
+          gold: [
+            236,
+            145,
+            57
+          ],
+          pink: [
+            220,
+            155,
+            155
+          ]
+        },
+        {
+          gold: [
+            237,
+            147,
+            59
+          ],
+          pink: [
+            221,
+            156,
+            156
+          ]
+        },
+        {
+          gold: [
+            238,
+            147,
+            59
+          ],
+          pink: [
+            218,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            236,
+            145,
+            57
+          ],
+          pink: [
+            217,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            235,
+            144,
+            56
+          ],
+          pink: [
+            217,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            235,
+            143,
+            55
+          ],
+          pink: [
+            219,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            236,
+            145,
+            57
+          ],
+          pink: [
+            217,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            237,
+            146,
+            59
+          ],
+          pink: [
+            219,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            238,
+            148,
+            60
+          ],
+          pink: [
+            221,
+            156,
+            156
+          ]
+        },
+        {
+          gold: [
+            237,
+            147,
+            59
+          ],
+          pink: [
+            221,
+            157,
+            157
+          ]
+        },
+        {
+          gold: [
+            238,
+            148,
+            60
+          ],
+          pink: [
+            219,
+            155,
+            156
+          ]
+        },
+        {
+          gold: [
+            238,
+            148,
+            59
+          ],
+          pink: [
+            222,
+            155,
+            157
+          ]
+        },
+        {
+          gold: [
+            238,
+            149,
+            61
+          ],
+          pink: [
+            222,
+            155,
+            157
+          ]
+        },
+        {
+          gold: [
+            238,
+            148,
+            60
+          ],
+          pink: [
+            219,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            238,
+            148,
+            60
+          ],
+          pink: [
+            220,
+            155,
+            155
+          ]
+        },
+        {
+          gold: [
+            238,
+            149,
+            61
+          ],
+          pink: [
+            221,
+            156,
+            156
+          ]
+        }
+      ],
+      stretch: [
+        {
+          gold: [
+            240,
+            153,
+            62
+          ],
+          pink: [
+            222,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            240,
+            154,
+            63
+          ],
+          pink: [
+            222,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            240,
+            153,
+            62
+          ],
+          pink: [
+            224,
+            157,
+            155
+          ]
+        },
+        {
+          gold: [
+            238,
+            151,
+            61
+          ],
+          pink: [
+            220,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            235,
+            148,
+            59
+          ],
+          pink: [
+            221,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            234,
+            146,
+            57
+          ],
+          pink: [
+            221,
+            156,
+            153
+          ]
+        },
+        {
+          gold: [
+            233,
+            145,
+            57
+          ],
+          pink: [
+            220,
+            157,
+            154
+          ]
+        },
+        {
+          gold: [
+            230,
+            141,
+            54
+          ],
+          pink: [
+            220,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            229,
+            139,
+            53
+          ],
+          pink: [
+            219,
+            155,
+            153
+          ]
+        },
+        {
+          gold: [
+            227,
+            138,
+            52
+          ],
+          pink: [
+            218,
+            155,
+            152
+          ]
+        },
+        {
+          gold: [
+            227,
+            138,
+            52
+          ],
+          pink: [
+            220,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            227,
+            139,
+            52
+          ],
+          pink: [
+            220,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            230,
+            141,
+            53
+          ],
+          pink: [
+            220,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            230,
+            141,
+            53
+          ],
+          pink: [
+            220,
+            156,
+            154
+          ]
+        },
+        {
+          gold: [
+            231,
+            142,
+            53
+          ],
+          pink: [
+            219,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            230,
+            141,
+            52
+          ],
+          pink: [
+            219,
+            154,
+            152
+          ]
+        },
+        {
+          gold: [
+            230,
+            141,
+            52
+          ],
+          pink: [
+            219,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            228,
+            139,
+            52
+          ],
+          pink: [
+            220,
+            155,
+            153
+          ]
+        },
+        {
+          gold: [
+            228,
+            139,
+            52
+          ],
+          pink: [
+            220,
+            155,
+            154
+          ]
+        },
+        {
+          gold: [
+            229,
+            139,
+            52
+          ],
+          pink: [
+            221,
+            156,
+            154
+          ]
+        },
+        {
+          gold: [
+            230,
+            140,
+            53
+          ],
+          pink: [
+            221,
+            156,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            146,
+            58
+          ],
+          pink: [
+            219,
+            154,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            151,
+            61
+          ],
+          pink: [
+            222,
+            154,
+            153
+          ]
+        },
+        {
+          gold: [
+            240,
+            153,
+            62
+          ],
+          pink: [
+            220,
+            153,
+            153
+          ]
+        }
+      ],
+      lean: [
+        {
+          gold: [
+            237,
+            153,
+            67
+          ],
+          pink: [
+            223,
+            155,
+            157
+          ]
+        },
+        {
+          gold: [
+            238,
+            153,
+            66
+          ],
+          pink: [
+            225,
+            157,
+            158
+          ]
+        },
+        {
+          gold: [
+            236,
+            150,
+            62
+          ],
+          pink: [
+            224,
+            156,
+            158
+          ]
+        },
+        {
+          gold: [
+            235,
+            147,
+            61
+          ],
+          pink: [
+            224,
+            155,
+            158
+          ]
+        },
+        {
+          gold: [
+            234,
+            145,
+            59
+          ],
+          pink: [
+            223,
+            154,
+            156
+          ]
+        },
+        {
+          gold: [
+            234,
+            145,
+            58
+          ],
+          pink: [
+            221,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            235,
+            146,
+            60
+          ],
+          pink: [
+            220,
+            155,
+            155
+          ]
+        },
+        {
+          gold: [
+            237,
+            147,
+            61
+          ],
+          pink: [
+            217,
+            151,
+            152
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            62
+          ],
+          pink: [
+            218,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            240,
+            153,
+            67
+          ],
+          pink: [
+            216,
+            152,
+            153
+          ]
+        },
+        {
+          gold: [
+            240,
+            153,
+            67
+          ],
+          pink: [
+            216,
+            152,
+            152
+          ]
+        },
+        {
+          gold: [
+            238,
+            152,
+            65
+          ],
+          pink: [
+            216,
+            152,
+            152
+          ]
+        },
+        {
+          gold: [
+            241,
+            154,
+            67
+          ],
+          pink: [
+            216,
+            153,
+            153
+          ]
+        },
+        {
+          gold: [
+            242,
+            155,
+            68
+          ],
+          pink: [
+            217,
+            154,
+            154
+          ]
+        },
+        {
+          gold: [
+            241,
+            155,
+            68
+          ],
+          pink: [
+            218,
+            153,
+            154
+          ]
+        },
+        {
+          gold: [
+            240,
+            153,
+            66
+          ],
+          pink: [
+            219,
+            154,
+            156
+          ]
+        },
+        {
+          gold: [
+            238,
+            150,
+            63
+          ],
+          pink: [
+            219,
+            153,
+            155
+          ]
+        },
+        {
+          gold: [
+            237,
+            148,
+            62
+          ],
+          pink: [
+            219,
+            154,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            145,
+            58
+          ],
+          pink: [
+            219,
+            153,
+            155
+          ]
+        },
+        {
+          gold: [
+            234,
+            144,
+            59
+          ],
+          pink: [
+            221,
+            154,
+            157
+          ]
+        },
+        {
+          gold: [
+            234,
+            146,
+            60
+          ],
+          pink: [
+            220,
+            153,
+            155
+          ]
+        },
+        {
+          gold: [
+            235,
+            148,
+            62
+          ],
+          pink: [
+            222,
+            153,
+            155
+          ]
+        },
+        {
+          gold: [
+            236,
+            151,
+            63
+          ],
+          pink: [
+            223,
+            155,
+            157
+          ]
+        },
+        {
+          gold: [
+            237,
+            152,
+            65
+          ],
+          pink: [
+            223,
+            156,
+            158
+          ]
+        }
+      ],
+      idle: [
+        {
+          gold: [
+            237,
+            151,
+            62
+          ],
+          pink: [
+            217,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            238,
+            151,
+            62
+          ],
+          pink: [
+            220,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            61
+          ],
+          pink: [
+            220,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            61
+          ],
+          pink: [
+            218,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            61
+          ],
+          pink: [
+            218,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            61
+          ],
+          pink: [
+            219,
+            151,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            60
+          ],
+          pink: [
+            217,
+            150,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            219,
+            153,
+            152
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            218,
+            150,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            217,
+            152,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            218,
+            152,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            150,
+            61
+          ],
+          pink: [
+            217,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            59
+          ],
+          pink: [
+            218,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            218,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            148,
+            59
+          ],
+          pink: [
+            218,
+            150,
+            150
+          ]
+        },
+        {
+          gold: [
+            236,
+            147,
+            59
+          ],
+          pink: [
+            217,
+            151,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            220,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            148,
+            60
+          ],
+          pink: [
+            217,
+            150,
+            149
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            218,
+            151,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            220,
+            151,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            219,
+            151,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            148,
+            59
+          ],
+          pink: [
+            219,
+            152,
+            151
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            219,
+            151,
+            150
+          ]
+        },
+        {
+          gold: [
+            237,
+            149,
+            60
+          ],
+          pink: [
+            219,
+            152,
+            150
+          ]
+        }
+      ]
+    }
+  };
+
+  // renderer-modules/desktop-frame-colors.js
+  var smooth = (value, low, high) => {
+    const t = Math.max(0, Math.min(1, (value - low) / (high - low)));
+    return t * t * (3 - 2 * t);
+  };
+  function channelMap(pivot, target) {
+    return Float32Array.from({ length: 256 }, (_, value) => value <= pivot ? value * target / pivot : target + (value - pivot) * (255 - target) / (255 - pivot));
+  }
+  var lookups = /* @__PURE__ */ new Map();
+  function correctFramePixels(pixels, width, frameWidth, frameHeight, name, rowStart = 0, rowEnd = frameHeight * 4) {
+    const frames = desktop_frame_colors_default.sheets[name];
+    if (!frames) return;
+    if (!lookups.has(name)) lookups.set(name, frames.map((frame) => Object.fromEntries(["gold", "pink"].map((material) => [
+      material,
+      frame[material].map((pivot, channel) => channelMap(pivot, desktop_frame_colors_default.target[material][channel]))
+    ]))));
+    const maps = lookups.get(name);
+    for (let y = rowStart; y < rowEnd; y++) for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      if (!pixels[offset + 3]) continue;
+      const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
+      const gold = smooth(g - b, 15, 35) * smooth(r - g, 5, 16) * smooth(r, 80, 125);
+      const pink = (1 - gold) * smooth(r - g, 15, 25) * (1 - smooth(Math.abs(g - b), 15, 30)) * smooth(r, 110, 150) * smooth(g, 60, 85);
+      if (gold + pink < 1e-3) continue;
+      const map = maps[Math.floor(y / frameHeight) * 6 + Math.floor(x / frameWidth)];
+      for (let channel = 0; channel < 3; channel++) {
+        const value = pixels[offset + channel];
+        pixels[offset + channel] = Math.round(value + (map.gold[channel][value] - value) * gold + (map.pink[channel][value] - value) * pink);
+      }
+    }
+  }
+  async function prepareDesktopSheet(image, name) {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const data2 = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const frameWidth = canvas.width / 6, frameHeight = canvas.height / 4;
+    for (let row = 0; row < 4; row++) {
+      correctFramePixels(data2.data, canvas.width, frameWidth, frameHeight, name, row * frameHeight, (row + 1) * frameHeight);
+      if (row < 3) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    ctx.putImageData(data2, 0, 0);
+    return canvas;
+  }
+
+  // assets/2d/frames/hq/manifest.json
+  var manifest_default = {
+    version: 1,
+    frameSize: 512,
+    columns: 4,
+    rows: 4,
+    pageFrames: 16,
+    sheets: {
+      cover: {
+        duration: 1400,
+        count: 84,
+        pages: [
+          "cover-00.webp",
+          "cover-01.webp",
+          "cover-02.webp",
+          "cover-03.webp",
+          "cover-04.webp",
+          "cover-05.webp"
+        ]
+      },
+      wave: {
+        duration: 1e3,
+        count: 60,
+        pages: [
+          "wave-00.webp",
+          "wave-01.webp",
+          "wave-02.webp",
+          "wave-03.webp"
+        ]
+      },
+      muyu: {
+        duration: 400,
+        count: 24,
+        pages: [
+          "muyu-00.webp",
+          "muyu-01.webp"
+        ]
+      },
+      scratch: {
+        duration: 1e3,
+        count: 60,
+        pages: [
+          "scratch-00.webp",
+          "scratch-01.webp",
+          "scratch-02.webp",
+          "scratch-03.webp"
+        ]
+      },
+      incense: {
+        duration: 1600,
+        count: 96,
+        pages: [
+          "incense-00.webp",
+          "incense-01.webp",
+          "incense-02.webp",
+          "incense-03.webp",
+          "incense-04.webp",
+          "incense-05.webp"
+        ]
+      },
+      clap: {
+        duration: 800,
+        count: 48,
+        pages: [
+          "clap-00.webp",
+          "clap-01.webp",
+          "clap-02.webp"
+        ]
+      },
+      celebrate: {
+        duration: 1e3,
+        count: 60,
+        pages: [
+          "celebrate-00.webp",
+          "celebrate-01.webp",
+          "celebrate-02.webp",
+          "celebrate-03.webp"
+        ]
+      },
+      thumb: {
+        duration: 1200,
+        count: 72,
+        pages: [
+          "thumb-00.webp",
+          "thumb-01.webp",
+          "thumb-02.webp",
+          "thumb-03.webp",
+          "thumb-04.webp"
+        ]
+      },
+      cheek: {
+        duration: 1400,
+        count: 84,
+        pages: [
+          "cheek-00.webp",
+          "cheek-01.webp",
+          "cheek-02.webp",
+          "cheek-03.webp",
+          "cheek-04.webp",
+          "cheek-05.webp"
+        ]
+      },
+      sleep: {
+        duration: 2e3,
+        count: 120,
+        pages: [
+          "sleep-00.webp",
+          "sleep-01.webp",
+          "sleep-02.webp",
+          "sleep-03.webp",
+          "sleep-04.webp",
+          "sleep-05.webp",
+          "sleep-06.webp",
+          "sleep-07.webp"
+        ]
+      },
+      look: {
+        duration: 1600,
+        count: 96,
+        pages: [
+          "look-00.webp",
+          "look-01.webp",
+          "look-02.webp",
+          "look-03.webp",
+          "look-04.webp",
+          "look-05.webp"
+        ]
+      },
+      nod: {
+        duration: 1e3,
+        count: 60,
+        pages: [
+          "nod-00.webp",
+          "nod-01.webp",
+          "nod-02.webp",
+          "nod-03.webp"
+        ]
+      },
+      stretch: {
+        duration: 1600,
+        count: 96,
+        pages: [
+          "stretch-00.webp",
+          "stretch-01.webp",
+          "stretch-02.webp",
+          "stretch-03.webp",
+          "stretch-04.webp",
+          "stretch-05.webp"
+        ]
+      },
+      lean: {
+        duration: 1200,
+        count: 72,
+        pages: [
+          "lean-00.webp",
+          "lean-01.webp",
+          "lean-02.webp",
+          "lean-03.webp",
+          "lean-04.webp"
+        ]
+      },
+      idle: {
+        duration: 2400,
+        count: 144,
+        pages: [
+          "idle-00.webp",
+          "idle-01.webp",
+          "idle-02.webp",
+          "idle-03.webp",
+          "idle-04.webp",
+          "idle-05.webp",
+          "idle-06.webp",
+          "idle-07.webp",
+          "idle-08.webp"
+        ]
+      }
+    },
+    encoding: "lossless-webp"
+  };
+
+  // renderer-modules/desktop-hq-frames.js
+  var pages = /* @__PURE__ */ new Map();
+  var imageMetadata = /* @__PURE__ */ new WeakMap();
+  var LIMIT = 4;
+  function pageRecord(name, index, assetBase) {
+    const spec = manifest_default.sheets[name];
+    const url = new URL("../hq/" + spec.pages[index], new URL(assetBase, location.href)).href;
+    let record = pages.get(url);
+    if (record && (!record.failedAt || performance.now() - record.failedAt < 5e3)) {
+      pages.delete(url);
+      pages.set(url, record);
+      return record;
+    }
+    record = { image: null, failedAt: 0 };
+    record.promise = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = async () => {
+        try {
+          await image.decode();
+          record.image = image;
+          imageMetadata.set(image, { name, page: index });
+          resolve(image);
+        } catch (error) {
+          record.failedAt = performance.now() || 1;
+          reject(error);
+        }
+      };
+      image.onerror = () => {
+        record.failedAt = performance.now() || 1;
+        reject(new Error("\u9AD8\u6E05\u52A8\u753B\u52A0\u8F7D\u5931\u8D25"));
+      };
+      image.src = url;
+    });
+    record.promise.catch(() => {
+    });
+    pages.set(url, record);
+    while (pages.size > LIMIT) pages.delete(pages.keys().next().value);
+    return record;
+  }
+  function loadFirstHQPage(name, assetBase) {
+    if (!manifest_default.sheets[name]) return null;
+    const first = pageRecord(name, 0, assetBase);
+    if (manifest_default.sheets[name].pages.length > 1) pageRecord(name, 1, assetBase);
+    return first.promise;
+  }
+  function resolveHQDrawing(motion, frame) {
+    const spec = manifest_default.sheets[frame.sheet];
+    if (!spec || imageMetadata.get(motion.sheet)?.name !== frame.sheet) return null;
+    const duration = motion.player.id === "muyu" ? motion.player.strokeDuration : spec.duration;
+    const index = Math.min(spec.count - 1, Math.floor(frame.elapsed * spec.count / duration));
+    const page = Math.floor(index / manifest_default.pageFrames);
+    const record = pageRecord(frame.sheet, page, motion.assetBase);
+    pageRecord(frame.sheet, (page + 1) % spec.pages.length, motion.assetBase);
+    if (record.image) {
+      motion.sheet = record.image;
+      motion.lastHQDrawing = { image: record.image, index: index % manifest_default.pageFrames, columns: manifest_default.columns, rows: manifest_default.rows, key: "hq-" + index, name: frame.sheet };
+    }
+    if (motion.lastHQDrawing?.name === frame.sheet) return motion.lastHQDrawing;
+    return { image: motion.sheet, index: 0, columns: manifest_default.columns, rows: manifest_default.rows, key: "hq-wait" };
+  }
+
   // renderer-modules/desktop-crying-motion.js
   var DesktopBullMotion = class extends BullMotion {
+    constructor(canvas, fallback, options = {}) {
+      super(canvas, fallback, { ...options, player: new DesktopFramePlayer(), fps: 60, miniFps: 30, transitionMs: 0, breathing: false, prepareSheet: prepareDesktopSheet, highQuality: options.highQuality !== false });
+      this.resizeBacking = () => {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
+        const ratio = Math.min(2, window.devicePixelRatio || 1);
+        const width = Math.min(1024, Math.max(1, Math.round(rect.width * ratio)));
+        const height = Math.min(1024, Math.max(1, Math.round(rect.height * ratio)));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          this.renderKey = null;
+          this.wake();
+        }
+      };
+      if (typeof ResizeObserver !== "undefined") {
+        this.resizeObserver = new ResizeObserver(this.resizeBacking);
+        this.resizeObserver.observe(canvas);
+      }
+      this.resizeBacking();
+      window.addEventListener("resize", this.resizeBacking);
+    }
+    async loadMotionSheet(name) {
+      if (this.highQuality) {
+        try {
+          const first = loadFirstHQPage(name, this.assetBase);
+          if (first) return await first;
+        } catch {
+        }
+      }
+      return super.loadMotionSheet(name);
+    }
+    getDrawing(frame) {
+      return this.highQuality && resolveHQDrawing(this, frame) || super.getDrawing(frame);
+    }
+    close() {
+      this.resizeObserver?.disconnect();
+      window.removeEventListener("resize", this.resizeBacking);
+      this.lastHQDrawing = null;
+      super.close();
+    }
     state(id) {
       this.desktopMood = id;
-      super.state(id === "slump" ? "cover" : id);
+      return super.state(id === "slump" ? "cover" : id);
     }
-    replay(id) {
+    replay(id, options) {
       this.desktopMood = id;
-      super.replay(id === "slump" ? "cover" : id);
+      return super.replay(id === "slump" ? "cover" : id, options);
     }
-    draw(now = performance.now()) {
-      const previousFrame = this.last;
-      super.draw(now);
-      if (this.motion && this.last === previousFrame) return;
-      if (!this.active || !this.sheet || !["cover", "slump"].includes(this.desktopMood)) return;
-      const context = this.canvas.getContext("2d");
-      const width = this.canvas.width, height = this.canvas.height;
-      const size = this.mini ? Math.min(width * 1.04, height * 1.08) : Math.min(width * 0.94, height * 0.96);
-      const left = (width - size) / 2, top = height - size - height * 0.01;
+    interact(id) {
+      return this.replay(id, { finishCurrent: true });
+    }
+    hasContinuousEffects() {
+      return this.motion && this.player.id === "cover";
+    }
+    drawEffects(context, { frame, clock, x: left, y: top, width, height }) {
+      if (!this.hasContinuousEffects()) return;
+      const onset = Math.min(1, Math.max(0, (frame.elapsed - 280) / 180));
+      const release = Math.min(1, Math.max(0, (1400 - frame.elapsed) / 200));
       context.save();
       for (const [index, x] of [0.38, 0.63].entries()) {
-        const phase = this.motion ? (now / 1e3 + index * 0.4) % 1 : 0.3;
-        const y = top + size * (0.4 + phase * 0.15);
-        const radius = size * 0.013;
-        context.globalAlpha = Math.sin(phase * Math.PI) * 0.8;
+        const phase = ((clock - this.player.started) / 1e3 + index * 0.4) % 1;
+        const y = top + height * (0.4 + phase * 0.15);
+        const radius = width * 0.013;
+        context.globalAlpha = Math.sin(phase * Math.PI) * 0.8 * onset * release;
         context.fillStyle = "#79c7ed";
         context.beginPath();
-        context.moveTo(left + size * x, y - radius * 1.8);
-        context.bezierCurveTo(left + size * x + radius * 2, y, left + size * x + radius, y + radius * 1.5, left + size * x, y + radius * 1.5);
-        context.bezierCurveTo(left + size * x - radius, y + radius * 1.5, left + size * x - radius * 2, y, left + size * x, y - radius * 1.8);
+        context.moveTo(left + width * x, y - radius * 1.8);
+        context.bezierCurveTo(left + width * x + radius * 2, y, left + width * x + radius, y + radius * 1.5, left + width * x, y + radius * 1.5);
+        context.bezierCurveTo(left + width * x - radius, y + radius * 1.5, left + width * x - radius * 2, y, left + width * x, y - radius * 1.8);
         context.fill();
       }
       context.restore();
@@ -1975,6 +6821,23 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var alerts;
   var lastMarketScene;
   var sourceFormEpoch = 0;
+  var searchComposing = false;
+  var refreshRequested = false;
+  var stockRows = { "home-stocks": /* @__PURE__ */ new Map(), "watch-stocks": /* @__PURE__ */ new Map() };
+  var portfolioCards = /* @__PURE__ */ new Map();
+  var tabScroll = /* @__PURE__ */ new Map();
+  var updateStatus = { available: false, checking: false };
+  function paintUpdate(value = updateStatus) {
+    updateStatus = value;
+    $("update-banner").hidden = !value.available;
+    $("update-title").textContent = "\u725B\u6765\u76EF\u76D8 " + (value.version || "") + " \u5DF2\u53D1\u5E03";
+    $("update-note").textContent = (value.notes || []).slice(0, 2).join(" \xB7 ");
+    const label = $("update-status");
+    if (label) label.textContent = value.checking ? "\u6B63\u5728\u68C0\u67E5\u66F4\u65B0\u2026" : value.error || (value.available ? "\u53D1\u73B0\u65B0\u7248\u672C " + value.version : value.checkedAt ? "\u5F53\u524D\u5DF2\u662F\u6700\u65B0\u7248\u672C" : "\u5F53\u524D\u7248\u672C " + data.version);
+    if ($("check-update")) $("check-update").disabled = value.checking;
+  }
+  $("update-download").onclick = () => perform(api.updates("download"));
+  api.onUpdate(paintUpdate);
   var moods = new MarketMood();
   var bull = makeMotion($("bull"));
   var wood = makeMotion($("wood-canvas"));
@@ -2098,60 +6961,108 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   function renderStocks() {
     for (const [id, full] of [["home-stocks", false], ["watch-stocks", true]]) {
       const container = $(id);
-      container.replaceChildren();
-      for (const stock of data.state.stocks) {
+      const rows = stockRows[id];
+      for (const [code, item] of rows) {
+        if (!data.state.stocks.some((stock) => stock.code === code)) {
+          item.row.remove();
+          rows.delete(code);
+        }
+      }
+      for (const [index, stock] of data.state.stocks.entries()) {
         const entry = data.quotes[stock.code], quote = entry?.quote;
         const presentation = quotePresentation(entry, settings().interval);
-        const row = element("div", "", "stock-row" + (stock.code === data.state.selected ? " selected" : ""));
-        row.title = presentation.detail;
-        const button = element("button", "", "stock-main");
-        button.setAttribute("aria-label", "\u76EF\u76D8 " + stock.name);
-        const name = element("div");
-        name.append(element("strong", stock.name), element("small", displaySymbol(stock.code) + (presentation.label ? " \xB7 " + presentation.label : "")));
-        const price = element("div", "", "stock-price " + tone(quote?.changePct));
-        price.append(element("strong", fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2)), element("small", Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : quote ? "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B" : "\u7B49\u5F85\u884C\u60C5"));
-        if (quote && presentation.warning) price.append(element("small", presentation.message));
-        button.append(name, price);
-        if (full) button.append(element("span", Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014", "stock-pct " + tone(quote?.changePct)));
-        button.onclick = () => selectStock(stock.code);
-        row.append(button);
-        if (full) {
-          const actions = element("div", "", "row-actions");
-          const edit = element("button", "\u6301\u4ED3");
-          edit.onclick = () => openPosition(stock.code);
-          const remove = element("button", "\u79FB\u51FA");
-          remove.setAttribute("aria-label", "\u79FB\u51FA " + stock.name);
-          remove.onclick = () => confirmRemove(stock);
-          actions.append(edit, remove);
-          row.append(actions);
+        let item = rows.get(stock.code);
+        if (!item) {
+          const row = element("div", "", "stock-row");
+          const button = element("button", "", "stock-main");
+          const name = element("div"), price = element("div");
+          item = {
+            row,
+            button,
+            price,
+            name: element("strong"),
+            code: element("small"),
+            value: element("strong"),
+            change: element("small"),
+            warning: element("small"),
+            percent: element("span")
+          };
+          name.append(item.name, item.code);
+          price.append(item.value, item.change, item.warning);
+          button.append(name, price);
+          if (full) button.append(item.percent);
+          button.onclick = () => selectStock(stock.code);
+          row.append(button);
+          if (full) {
+            const actions = element("div", "", "row-actions");
+            const edit = element("button", "\u6301\u4ED3");
+            edit.onclick = () => openPosition(stock.code);
+            item.remove = element("button", "\u79FB\u51FA");
+            item.remove.onclick = () => confirmRemove(data.state.stocks.find((current) => current.code === stock.code));
+            actions.append(edit, item.remove);
+            row.append(actions);
+          }
+          rows.set(stock.code, item);
         }
-        container.append(row);
+        item.row.classList.toggle("selected", stock.code === data.state.selected);
+        item.row.title = stock.name + "\n" + presentation.detail;
+        item.button.setAttribute("aria-label", "\u76EF\u76D8 " + stock.name);
+        item.button.setAttribute("aria-current", stock.code === data.state.selected ? "true" : "false");
+        item.name.textContent = stock.name;
+        item.code.textContent = displaySymbol(stock.code) + (presentation.label ? " \xB7 " + presentation.label : "");
+        item.price.className = "stock-price " + tone(quote?.changePct);
+        item.value.textContent = fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2);
+        item.change.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : quote ? "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B" : "\u7B49\u5F85\u884C\u60C5";
+        item.warning.textContent = presentation.message;
+        item.warning.hidden = !quote || !presentation.warning;
+        item.percent.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
+        item.percent.className = "stock-pct " + tone(quote?.changePct);
+        item.remove?.setAttribute("aria-label", "\u79FB\u51FA " + stock.name);
+        if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
       }
     }
     $("stock-count").textContent = data.state.stocks.length;
   }
   function renderPortfolio() {
     const container = $("portfolio-list");
-    container.replaceChildren();
     const held = data.state.stocks.filter((stock) => stock.cost > 0 && stock.shares > 0);
-    if (!held.length) container.append(element("p", "\u6682\u65E0\u6301\u4ED3\u8BB0\u5F55\u3002\u53EF\u4E3A\u4EFB\u4E00\u81EA\u9009\u8BBE\u7F6E\u6210\u672C\u548C\u80A1\u6570\u3002", "position-empty"));
-    for (const stock of held) {
-      const card = element("article", "", "card portfolio-item");
-      const header = element("div", "", "section-heading");
-      const title = element("div");
-      title.append(element("h2", stock.name), element("p", displaySymbol(stock.code) + " \xB7 " + currency(stock.code)));
-      const edit = element("button", "\u7F16\u8F91 \u2197", "link-button");
-      edit.onclick = () => openPosition(stock.code);
-      header.append(title, edit);
-      const content = element("div"), entry = data.quotes[stock.code];
-      renderPosition(content, stock, entry);
-      const details = element("div", "", "holding-details");
+    for (const [code, item] of portfolioCards) {
+      if (!held.some((stock) => stock.code === code)) {
+        item.card.remove();
+        portfolioCards.delete(code);
+      }
+    }
+    const empty = container.querySelector(".portfolio-empty");
+    if (held.length) empty?.remove();
+    else if (!empty) container.append(element("p", "\u6682\u65E0\u6301\u4ED3\u8BB0\u5F55\u3002\u53EF\u4E3A\u4EFB\u4E00\u81EA\u9009\u8BBE\u7F6E\u6210\u672C\u548C\u80A1\u6570\u3002", "position-empty portfolio-empty"));
+    for (const [index, stock] of held.entries()) {
+      let item = portfolioCards.get(stock.code);
+      if (!item) {
+        const card = element("article", "", "card portfolio-item");
+        const header = element("div", "", "section-heading"), title = element("div");
+        item = {
+          card,
+          name: element("h2"),
+          content: element("div"),
+          details: element("div", "", "holding-details"),
+          status: element("p", "", "footnote")
+        };
+        title.append(item.name, element("p", displaySymbol(stock.code) + " \xB7 " + currency(stock.code)));
+        const edit = element("button", "\u7F16\u8F91 \u2197", "link-button");
+        edit.onclick = () => openPosition(stock.code);
+        header.append(title, edit);
+        card.append(header, item.content, item.details, item.status);
+        portfolioCards.set(stock.code, item);
+      }
+      const entry = data.quotes[stock.code];
+      item.name.textContent = stock.name;
+      renderPosition(item.content, stock, entry);
       const result = position(stock, entry?.quote);
-      details.append(element("span", settings().private ? "\u6210\u672C\u4E0E\u80A1\u6570\u5DF2\u9690\u85CF" : `\u6210\u672C ${fmt(stock.cost, 3)} \xB7 ${stock.shares} \u80A1`), element("span", settings().private || !result ? "" : signed(result.percent) + "%", tone(result?.percent)));
+      item.details.replaceChildren(element("span", settings().private ? "\u6210\u672C\u4E0E\u80A1\u6570\u5DF2\u9690\u85CF" : `\u6210\u672C ${fmt(stock.cost, 3)} \xB7 ${stock.shares} \u80A1`), element("span", settings().private || !result ? "" : signed(result.percent) + "%", tone(result?.percent)));
       const presentation = quotePresentation(entry, settings().interval);
-      card.title = presentation.detail;
-      card.append(header, content, details, element("p", presentation.summary, "footnote"));
-      container.append(card);
+      item.card.title = presentation.detail;
+      item.status.textContent = presentation.summary;
+      if (container.children[index] !== item.card) container.insertBefore(item.card, container.children[index] || null);
     }
   }
   function renderCounts() {
@@ -2197,6 +7108,9 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("connection").title = presentation.detail;
     $("footer-status").textContent = data.suspended ? "\u7CFB\u7EDF\u4F11\u7720\uFF0C\u5DF2\u6682\u505C" : quiet() ? "\u5B89\u9759\u529E\u516C\u4E2D" : quote ? quote.market === "us" ? presentation.basis : quote.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u6210\u4EA4\u65F6\u95F4" : "\u7B49\u5F85\u884C\u60C5";
     $("footer-status").title = presentation.detail;
+    $("refresh").disabled = Boolean(data.refreshing || data.suspended);
+    $("refresh").setAttribute("aria-busy", String(Boolean(data.refreshing && !data.suspended)));
+    $("refresh-label").textContent = data.suspended ? "\u5DF2\u6682\u505C" : data.refreshing ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u884C\u60C5";
   }
   function render() {
     if (!data?.state) return;
@@ -2226,6 +7140,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   function applySnapshot(next) {
     if (!next?.state) return;
+    if (refreshRequested && next.suspended) refreshRequested = false;
     const changedStock = data?.state.selected !== next.state.selected;
     const changedStocks = JSON.stringify(data?.state.stocks.map((stock) => stock.code)) !== JSON.stringify(next.state.stocks.map((stock) => stock.code));
     data = next;
@@ -2238,6 +7153,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     render();
   }
   function changeTab(next) {
+    tabScroll.set(tab, window.scrollY);
     tab = next;
     for (const button of document.querySelectorAll("[data-tab]")) {
       button.classList.toggle("active", button.dataset.tab === tab);
@@ -2248,7 +7164,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("page-subtitle").textContent = titles[tab][1];
     $("page-subtitle").hidden = !titles[tab][1];
     if (tab === "settings") buildSettings();
-    window.scrollTo(0, 0);
+    window.scrollTo(0, tabScroll.get(next) || 0);
     syncMotion();
   }
   function selectStock(code) {
@@ -2271,36 +7187,62 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     openDialog("confirm-dialog");
   }
   function openSearch() {
+    if ($("search-dialog").open) {
+      $("search-input").focus();
+      $("search-input").select();
+      return;
+    }
+    ++searchEpoch;
+    clearTimeout(searchTimer);
+    searchComposing = false;
     $("search-input").value = "";
     $("search-results").replaceChildren();
-    $("search-message").textContent = "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1";
+    $("search-message").textContent = adding ? "\u6B63\u5728\u9A8C\u8BC1\u884C\u60C5\u2026" : "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1";
+    setSearchBusy(adding);
     openDialog("search-dialog");
     $("search-input").focus();
   }
   function searchButton(stock) {
     const button = element("button", "", "search-result");
+    button.dataset.symbol = stock.code;
     const title = element("div");
     title.append(element("strong", stock.name), element("small", displaySymbol(stock.code)));
-    button.append(title, element("span", "\uFF0B \u6DFB\u52A0", "link-button"));
+    const existing = data.state.stocks.some((item) => item.code === stock.code);
+    button.append(title, element("span", existing ? "\u5DF2\u5728\u81EA\u9009 \xB7 \u76EF\u76D8" : "\uFF0B \u6DFB\u52A0", "link-button"));
     button.onclick = () => addStock(stock.code);
     return button;
   }
   var adding = false;
+  function setSearchBusy(busy) {
+    $("search-dialog").setAttribute("aria-busy", String(busy));
+    for (const control of $("search-dialog").querySelectorAll("input, #search-form button, .quick-stocks button, .search-result")) control.disabled = busy;
+  }
   async function addStock(code) {
     if (adding) return;
     adding = true;
+    const epoch = ++searchEpoch;
+    const existing = data.state.stocks.some((stock) => stock.code === code);
+    const trigger = document.activeElement;
+    clearTimeout(searchTimer);
+    setSearchBusy(true);
     $("search-message").textContent = "\u6B63\u5728\u9A8C\u8BC1\u884C\u60C5\u2026";
     try {
       await api.stock("add", { code });
-      $("search-dialog").close();
-      toast("\u5DF2\u52A0\u5165\u81EA\u9009");
+      if (epoch === searchEpoch) $("search-dialog").close();
+      toast(existing ? "\u5DF2\u5207\u6362\u76EF\u76D8" : "\u5DF2\u52A0\u5165\u81EA\u9009");
     } catch (error) {
-      $("search-message").textContent = error.message.replace(/^.*Error: /, "");
+      if (epoch === searchEpoch) $("search-message").textContent = error.message.replace(/^.*Error: /, "");
+      else toast(error.message);
     } finally {
       adding = false;
+      setSearchBusy(false);
+      if ($("search-dialog").open && epoch !== searchEpoch) search();
+      else if ($("search-dialog").open) trigger?.focus();
     }
   }
   async function search() {
+    clearTimeout(searchTimer);
+    if (searchComposing || adding || !$("search-dialog").open) return;
     const epoch = ++searchEpoch;
     const query = $("search-input").value.trim();
     $("search-results").replaceChildren();
@@ -2314,8 +7256,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     try {
       const results = await api.search(query);
       if (epoch !== searchEpoch || !$("search-dialog").open) return;
+      const focusedCode = document.activeElement?.closest(".search-result")?.dataset.symbol;
       $("search-results").replaceChildren(...results.map(searchButton));
       if (direct && !results.some((stock) => stock.code === direct)) $("search-results").prepend(searchButton({ code: direct, name: displaySymbol(direct) }));
+      if (focusedCode) {
+        const buttons = [...$("search-results").querySelectorAll(".search-result")];
+        (buttons.find((button) => button.dataset.symbol === focusedCode) || buttons[0] || $("search-input")).focus();
+      }
       $("search-message").textContent = results.length || direct ? "\u9009\u62E9\u80A1\u7968\u52A0\u5165\u81EA\u9009" : "\u6682\u672A\u627E\u5230\uFF0C\u8BD5\u8BD5\u5B8C\u6574\u4EE3\u7801";
     } catch {
       if (epoch === searchEpoch) $("search-message").textContent = direct ? "\u540D\u79F0\u641C\u7D22\u6682\u4E0D\u53EF\u7528\uFF0C\u53EF\u6309\u4EE3\u7801\u9A8C\u8BC1\u6DFB\u52A0" : "\u641C\u7D22\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
@@ -2433,6 +7380,19 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     } else if (settingsPanel === "source") {
       buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === "source" });
     } else if (settingsPanel === "general") {
+      heading("\u7248\u672C\u66F4\u65B0");
+      settingRow("\u7CFB\u7EDF\u66F4\u65B0\u63D0\u9192", "updateNotifications", "checkbox", [], "\u4EC5\u5728\u6B63\u5F0F\u53D1\u5E03\u65B0\u7248\u672C\u65F6\u63D0\u9192\u4E00\u6B21\uFF1B\u8F6F\u4EF6\u5185\u59CB\u7EC8\u663E\u793A\u66F4\u65B0\u5165\u53E3");
+      const updateLabel = element("p", "", "muted");
+      updateLabel.id = "update-status";
+      container.append(updateLabel);
+      const check = element("button", "\u68C0\u67E5\u66F4\u65B0", "button secondary");
+      check.id = "check-update";
+      check.onclick = () => perform(api.updates("check"), paintUpdate);
+      container.append(check);
+      settingsButton("\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55", () => perform(api.updates("history")));
+      paintUpdate();
+      settingsButton("\u7CFB\u7EDF\u901A\u77E5\u8BBE\u7F6E", () => perform(api.updates("permissions")));
+      heading("\u5916\u89C2\u4E0E\u4F7F\u7528");
       settingRow("\u5E94\u7528\u5916\u89C2", "theme", "select", themes);
       settingRow("\u9759\u97F3", "muted");
       settingRow("\u884C\u60C5\u5237\u65B0", "interval", "select", intervals);
@@ -2462,7 +7422,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     } else if (settingsPanel === "alerts") {
       buildFeatureSettings();
     } else {
-      container.append(element("p", "\u725B\u6765\u76EF\u76D8 Windows \xB7 " + data.version, "muted"));
+      container.append(element("p", "\u725B\u6765\u76EF\u76D8\u7535\u8111\u7248 \xB7 " + data.version, "muted"));
       for (const paragraph of [
         "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1\u884C\u60C5\uFF0C\u9ED8\u8BA4\u4F7F\u7528\u65B0\u6D6A\u4E0E\u817E\u8BAF\u63A5\u53E3\uFF0C\u4E5F\u53EF\u5728\u201C\u884C\u60C5\u6765\u6E90\u201D\u4E2D\u63A5\u5165\u81EA\u5DF1\u7684 HTTP JSON \u63A5\u53E3\u3002\u7F8E\u80A1\u533A\u5206\u76D8\u524D\u3001\u5E38\u89C4\u548C\u76D8\u540E\u62A5\u4EF7\u3002\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\u6216\u4E2D\u65AD\uFF0C\u4EA4\u6613\u65F6\u6BB5\u6309\u5468\u5386\u4F30\u7B97\uFF0C\u8282\u5047\u65E5\u4E0E\u505C\u724C\u4EE5\u4EA4\u6613\u6240\u516C\u544A\u4E3A\u51C6\u3002",
         "\u81EA\u9009\u3001\u6301\u4ED3\u3001\u6728\u9C7C\u8BA1\u6570\u548C\u8BBE\u7F6E\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111\u3002\u67E5\u8BE2\u8BCD\u548C\u80A1\u7968\u4EE3\u7801\u53D1\u9001\u7ED9\u884C\u60C5\u63D0\u4F9B\u65B9\uFF0C\u6210\u672C\u3001\u80A1\u6570\u548C\u8BA1\u6570\u4EC5\u5728\u672C\u673A\u4F7F\u7528\u3002",
@@ -2635,6 +7595,18 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }
   });
   api.onSnapshot(applySnapshot);
+  api.onRefreshing((refreshing) => {
+    if (!data) return;
+    data.refreshing = refreshing;
+    renderQuoteStatus();
+    if (refreshRequested && !refreshing) {
+      refreshRequested = false;
+      const entry = currentEntry(), health = quoteHealth(entry, settings().interval);
+      let message = health.warning ? "\u5DF2\u83B7\u53D6\u62A5\u4EF7\uFF0C" + health.message : "\u884C\u60C5\u5DF2\u5237\u65B0";
+      if (entry?.error) message = entry.quote ? "\u5237\u65B0\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u4E0A\u6B21\u62A5\u4EF7" : "\u6682\u672A\u83B7\u53D6\u62A5\u4EF7\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
+      toast(message);
+    }
+  });
   api.onMamaVoice(({ volume }) => {
     if (data && lastMarketScene && settings().mamaSound && !settings().muted && !quiet()) {
       stopAudio();
@@ -2649,9 +7621,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   };
   for (const button of document.querySelectorAll(".add-stock")) button.onclick = openSearch;
   $("all-stocks").onclick = $("select-stock").onclick = () => changeTab("watchlist");
-  $("refresh").onclick = () => {
-    perform(api.refresh());
-    toast("\u6B63\u5728\u5237\u65B0\u884C\u60C5");
+  $("refresh").onclick = async () => {
+    refreshRequested = true;
+    try {
+      await api.refresh();
+    } catch (error) {
+      refreshRequested = false;
+      toast(error.message);
+    }
   };
   $("privacy-toggle").onclick = () => perform(api.settings({ private: !settings().private }));
   $("hide-dashboard").onclick = () => perform(api.window("hide"));
@@ -2693,13 +7670,47 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     clearTimeout(searchTimer);
     search();
   };
-  $("search-input").oninput = () => {
+  $("search-input").oninput = (event) => {
     ++searchEpoch;
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(search, 350);
+    $("search-results").replaceChildren();
+    $("search-message").textContent = $("search-input").value.trim() ? "\u6B63\u5728\u641C\u7D22\u2026" : "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1";
+    if (!event.isComposing && !searchComposing && $("search-input").value.trim()) searchTimer = setTimeout(search, 350);
   };
+  $("search-input").addEventListener("compositionstart", () => {
+    searchComposing = true;
+    ++searchEpoch;
+    clearTimeout(searchTimer);
+  });
+  $("search-input").addEventListener("compositionend", () => {
+    searchComposing = false;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(search, 350);
+  });
+  $("search-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing && !searchComposing && event.keyCode !== 229) {
+      const first = $("search-results").querySelector(".search-result");
+      if (first) {
+        event.preventDefault();
+        first.click();
+      }
+    }
+  });
+  $("search-dialog").addEventListener("keydown", (event) => {
+    if (event.isComposing || searchComposing || event.altKey || event.ctrlKey || event.metaKey || !["ArrowDown", "ArrowUp"].includes(event.key)) return;
+    if (event.target !== $("search-input") && !event.target.closest(".search-result")) return;
+    const buttons = [...$("search-results").querySelectorAll(".search-result:not(:disabled)")];
+    if (!buttons.length) return;
+    event.preventDefault();
+    const index = buttons.indexOf(document.activeElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    let next = (index + step + buttons.length) % buttons.length;
+    if (index < 0) next = step > 0 ? 0 : buttons.length - 1;
+    buttons[next].focus();
+  });
   $("search-dialog").addEventListener("close", () => {
     ++searchEpoch;
+    searchComposing = false;
     clearTimeout(searchTimer);
   });
   for (const button of document.querySelectorAll("[data-code]")) button.onclick = () => addStock(button.dataset.code);
@@ -2710,7 +7721,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     taps.push(now);
     const id = taps.length >= 3 ? "annoyed" : "wave";
     if (id === "annoyed") taps = [];
-    bull.replay(id);
+    bull.interact(id);
     previewUntil = now + 3200;
     playPetVoice();
   };
@@ -2732,12 +7743,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   $("preview-floating").onclick = () => perform(api.window("preview", motionPreview));
   document.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       openSearch();
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && /^[1-4]$/.test(event.key)) {
+    if ((event.ctrlKey || event.metaKey) && /^[1-4]$/.test(event.key) && !document.querySelector("dialog[open]")) {
       event.preventDefault();
       changeTab(["home", "watchlist", "portfolio", "muyu"][Number(event.key) - 1]);
       return;
@@ -2762,6 +7774,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   api.bootstrap(import_desktop_state.default.migrateLegacy(legacyValues)).then((next) => {
     applySnapshot(next);
+    api.updates("status").then(paintUpdate).catch(() => {
+    });
     setInterval(() => {
       renderQuoteStatus();
       updateMood();

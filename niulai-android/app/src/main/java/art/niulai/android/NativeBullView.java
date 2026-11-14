@@ -18,7 +18,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class NativeBullView extends View {
-    private static JSONObject animation = new JSONObject(), labels = new JSONObject();
+    private static JSONObject animation = new JSONObject(), labels = new JSONObject(), highQuality = new JSONObject();
     private static final ExecutorService decoder = Executors.newSingleThreadExecutor();
     private static final LruCache<String, Bitmap> cache = new LruCache<String, Bitmap>(24 * 1024 * 1024) {
         @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
@@ -31,6 +31,8 @@ final class NativeBullView extends View {
     private String sheetName = "", target = "";
     private int request;
     private boolean active = true, motion = true, mini;
+    private JSONObject hqSpec;
+    private int lastIndex;
 
     NativeBullView(Context context) { super(context); load(context); state("idle"); }
 
@@ -47,6 +49,7 @@ final class NativeBullView extends View {
         if (animation.has("clips")) return;
         try {
             animation = new JSONObject(read(context, "bull-frames.json"));
+            highQuality = new JSONObject(read(context, "hq/manifest.json")).getJSONObject("sheets");
             JSONArray catalog = new JSONArray(read(context, "motion-catalog.json"));
             for (int i = 0; i < catalog.length(); i++) {
                 JSONObject item = catalog.getJSONObject(i);
@@ -71,6 +74,21 @@ final class NativeBullView extends View {
         final int ticket = ++request;
         if (sheet != null && sheetName.equals(name)) { apply(next, clip, spec, sheet, name, replay); return; }
         Context context = getContext().getApplicationContext();
+        JSONObject hq = highQuality.optJSONObject(name);
+        if (hq != null) {
+            final String file = hq.optJSONArray("pages").optString(0);
+            HQFrames.load(context, file, () -> post(() -> {
+                if (ticket != request) return;
+                Bitmap ready = HQFrames.get(file);
+                if (ready != null) { hqSpec = hq; lastIndex = 0; apply(next, clip, spec, ready, name, replay); }
+                else loadOriginal(context, next, clip, spec, name, replay, ticket);
+            }));
+            return;
+        }
+        loadOriginal(context, next, clip, spec, name, replay, ticket);
+    }
+
+    private void loadOriginal(Context context, String next, JSONObject clip, JSONObject spec, String name, boolean replay, int ticket) {
         decoder.execute(() -> {
             Bitmap image = cache.get(name);
             if (image == null) {
@@ -81,13 +99,15 @@ final class NativeBullView extends View {
                 } catch (Exception error) { android.util.Log.e("NiulaiPet", "Animation image unavailable", error); }
             }
             final Bitmap ready = image;
-            post(() -> { if (ticket == request && ready != null) apply(next, clip, spec, ready, name, replay); });
+            post(() -> { if (ticket == request && ready != null) { hqSpec = null; apply(next, clip, spec, ready, name, replay); } });
         });
     }
 
     private void apply(String id, JSONObject clip, JSONObject spec, Bitmap image, String name, boolean replay) {
+        boolean preserve = sheetName.equals(name) && !replay;
         sheet = image; sheetName = name;
-        player.state(id, spec.optInt("duration", 1000), clip.optInt("rest", 1200), SystemClock.uptimeMillis(), replay);
+        if (preserve) player.alias(id);
+        else player.state(id, spec.optInt("duration", 1000), clip.optInt("rest", 1200), SystemClock.uptimeMillis(), replay);
         invalidate();
     }
 
@@ -101,9 +121,20 @@ final class NativeBullView extends View {
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (sheet == null) return;
-        int index = player.frame(SystemClock.uptimeMillis(), motion);
-        int width = sheet.getWidth() / 6, height = sheet.getHeight() / 4;
-        source.set(index % 6 * width, index / 6 * height, (index % 6 + 1) * width, (index / 6 + 1) * height);
+        int index = player.frame(SystemClock.uptimeMillis(), motion, hqSpec == null ? 24 : hqSpec.optInt("count", 24));
+        int columns = hqSpec == null ? 6 : 4;
+        if (hqSpec != null) {
+            JSONArray files = hqSpec.optJSONArray("pages");
+            int page = index / 16;
+            String file = files.optString(page);
+            Bitmap ready = HQFrames.get(file);
+            if (ready != null) { sheet = ready; lastIndex = index % 16; }
+            else HQFrames.load(getContext(), file, this::postInvalidate);
+            HQFrames.load(getContext(), files.optString((page + 1) % files.length()), null);
+            index = lastIndex;
+        }
+        int width = sheet.getWidth() / columns, height = sheet.getHeight() / 4;
+        source.set(index % columns * width, index / columns * height, (index % columns + 1) * width, (index / columns + 1) * height);
         float size = mini ? Math.min(getWidth() * 1.04f, getHeight() * 1.08f) : Math.min(getWidth() * .94f, getHeight() * .96f);
         float x = (getWidth() - size) / 2, y = getHeight() - size - getHeight() * .01f;
         destination.set(x, y, x + size, y + size);

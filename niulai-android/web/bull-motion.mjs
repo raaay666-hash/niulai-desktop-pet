@@ -3,31 +3,46 @@ import catalog from './motion-catalog.json' with { type: 'json' };
 export { catalog };
 
 const sheets = new Map();
-function loadSheet(name, assetBase) {
+const preparedCaches = new WeakMap();
+function loadSheet(name, assetBase, prepareSheet) {
+  let cache = sheets;
+  if (prepareSheet) {
+    if (!preparedCaches.has(prepareSheet)) preparedCaches.set(prepareSheet, new Map());
+    cache = preparedCaches.get(prepareSheet);
+  }
   const key = assetBase + name;
-  if (sheets.has(key)) {
-    const promise = sheets.get(key);
-    sheets.delete(key);
-    sheets.set(key, promise);
+  if (cache.has(key)) {
+    const promise = cache.get(key);
+    cache.delete(key);
+    cache.set(key, promise);
     return promise;
   }
   const promise = new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => { sheets.delete(key); reject(new Error('动画加载失败')); };
+    image.onload = async () => {
+      try { resolve(prepareSheet ? await prepareSheet(image, name) : image); }
+      catch (error) { cache.delete(key); reject(error); }
+    };
+    image.onerror = () => { cache.delete(key); reject(new Error('动画加载失败')); };
     image.src = assetBase + animation.sheets[name].file;
   });
-  sheets.set(key, promise);
-  if (sheets.size > 4) sheets.delete(sheets.keys().next().value);
+  cache.set(key, promise);
+  if (cache.size > 4) cache.delete(cache.keys().next().value);
   return promise;
 }
 
 export class BullMotion {
-  constructor(canvas, fallback, { assetBase = 'assets/frames/' } = {}) {
+  constructor(canvas, fallback, { assetBase = 'assets/frames/', player = new FramePlayer(), fps = 60, miniFps = 30, transitionMs = 0, breathing = false, prepareSheet = null, highQuality = false } = {}) {
     this.canvas = canvas;
     this.fallback = fallback;
     this.assetBase = assetBase;
-    this.player = new FramePlayer();
+    this.player = player;
+    this.fps = fps;
+    this.miniFps = miniFps;
+    this.transitionMs = transitionMs;
+    this.breathing = breathing;
+    this.prepareSheet = prepareSheet;
+    this.highQuality = highQuality;
     this.active = true;
     this.motion = true;
     this.mini = false;
@@ -39,31 +54,49 @@ export class BullMotion {
     this.state('idle');
   }
 
-  async select(id, replay) {
+  async select(id, replay, options) {
     if (!animation.clips[id]) id = 'loading';
     const name = animation.clips[id].sheet;
     const request = ++this.requested;
     try {
-      const image = this.sheetName === name ? this.sheet : await loadSheet(name, this.assetBase);
+      const image = this.sheetName === name ? this.sheet : await this.loadMotionSheet(name);
       if (request !== this.requested) return;
+      const now = performance.now();
+      if (this.transitionMs && this.sheet && this.sheetName !== name && this.active && this.motion) {
+        const snapshot = document.createElement('canvas');
+        snapshot.width = this.canvas.width;
+        snapshot.height = this.canvas.height;
+        snapshot.getContext('2d').drawImage(this.canvas, 0, 0);
+        this.transition = { image: snapshot, started: this.player.pausedAt ?? now };
+      } else if (this.sheetName !== name) this.transition = null;
       this.sheet = image;
       this.sheetName = name;
-      this.player.state(id, performance.now(), replay);
+      this.player.state(id, now, replay, options);
+      this.renderKey = null;
       this.wake();
-    } catch (error) { console.error(error); }
+    } catch (error) {
+      if (request === this.requested) this.target = null;
+      console.error(error);
+    }
   }
 
-  state(id) { if (this.target === id) return; this.target = id; this.select(id, false); }
-  replay(id) { this.target = id; this.select(id, true); }
+  state(id) { if (this.target === id) return this.pending; this.target = id; return this.pending = this.select(id, false); }
+  replay(id, options) { this.target = id; return this.pending = this.select(id, true, options); }
+  loadMotionSheet(name) { return loadSheet(name, this.assetBase, this.prepareSheet); }
+  getDrawing(frame) { return { image: this.sheet, index: frame.index, columns: animation.columns, rows: animation.rows, key: frame.index }; }
 
   configure(active, motion) {
     if (this.active === active && this.motion === motion) return;
     this.active = active;
     this.motion = motion;
-    this.player.pause(!active || !motion);
+    const now = performance.now();
+    if (active && motion && this.player.pausedAt !== null && this.transition) this.transition.started += now - this.player.pausedAt;
+    this.player.pause(!active || !motion, now);
+    if (!motion) this.transition = null;
+    this.renderKey = null;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    if (active) this.draw();
+    if (active) { this.last = -Infinity; this.draw(now); }
   }
 
   wake() { if (this.active && !this.raf) this.draw(); }
@@ -71,24 +104,66 @@ export class BullMotion {
   draw(now = performance.now()) {
     this.raf = 0;
     if (!this.active) return;
-    const interval = 1000 / (this.mini ? 30 : 60);
+    const rate = this.player.id === 'muyu' && this.player.knocking ? (this.mini ? 30 : 60) : (this.mini ? this.miniFps : this.fps);
+    const interval = 1000 / rate;
     const elapsed = now - this.last;
     if (this.motion && elapsed < interval - .5) { this.raf = requestAnimationFrame(this.draw); return; }
     this.last = this.motion && elapsed >= interval && elapsed < interval * 3 ? now - elapsed % interval : now;
-    const ctx = this.canvas.getContext('2d');
     const w = this.canvas.width, h = this.canvas.height;
-    ctx.clearRect(0, 0, w, h);
     const size = this.mini ? Math.min(w * 1.04, h * 1.08) : Math.min(w * .94, h * .96);
-    const x = (w - size) / 2, y = h - size - h * .01;
-    if (this.sheet) {
-      const frame = this.player.frame(now, this.motion);
-      const sw = this.sheet.naturalWidth / 6, sh = this.sheet.naturalHeight / 4;
-      ctx.drawImage(this.sheet, frame.index % 6 * sw, Math.floor(frame.index / 6) * sh, sw, sh, x, y, size, size);
-    } else if (this.fallback) ctx.drawImage(this.fallback, x, y, size, size);
-    if (this.motion) this.raf = requestAnimationFrame(this.draw);
+    const frame = this.player.frame(now, this.motion);
+    const drawing = this.getDrawing(frame);
+    const clock = this.player.pausedAt ?? now;
+    const clip = animation.clips[this.player.id];
+    const duration = animation.sheets[clip.sheet].duration;
+    const smooth = value => { const t = Math.min(1, Math.max(0, value)); return t * t * (3 - 2 * t); };
+    const restWeight = this.player.id === 'idle' ? 1 : smooth((frame.elapsed - duration) / 180) * smooth((duration + clip.rest - frame.elapsed) / 180);
+    const breath = this.breathing && this.motion && this.player.id !== 'muyu'
+      ? (1 - Math.cos((clock - this.player.started) * Math.PI * 2 / 4200)) * .5 * restWeight : 0;
+    const width = size * (1 + breath * .003), height = size * (1 + breath * .008);
+    const x = (w - width) / 2, y = h - height - h * .01;
+    const blend = this.transition ? smooth((clock - this.transition.started) / this.transitionMs) : 1;
+    if (blend >= 1) this.transition = null;
+    const continuous = breath > 0 || this.transition || this.hasContinuousEffects();
+    const key = [this.sheetName, frame.index, w, h, this.mini, this.motion, continuous ? clock : 0, drawing.key].join(':');
+    const ticking = this.motion && (this.player.id !== 'muyu' || this.player.knocking || this.transition);
+    if (key === this.renderKey) { if (ticking) this.raf = requestAnimationFrame(this.draw); return; }
+    this.renderKey = key;
+    const ctx = this.canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = this.highQuality ? 'high' : 'low';
+    ctx.clearRect(0, 0, w, h);
+    let target = ctx;
+    if (this.transition) {
+      this.layer ||= document.createElement('canvas');
+      if (this.layer.width !== w) this.layer.width = w;
+      if (this.layer.height !== h) this.layer.height = h;
+      target = this.layer.getContext('2d');
+      target.clearRect(0, 0, w, h);
+    }
+    if (drawing.image) {
+      const sw = (drawing.image.naturalWidth || drawing.image.width) / drawing.columns, sh = (drawing.image.naturalHeight || drawing.image.height) / drawing.rows;
+      target.drawImage(drawing.image, drawing.index % drawing.columns * sw, Math.floor(drawing.index / drawing.columns) * sh, sw, sh, x, y, width, height);
+      this.drawEffects(target, { frame, clock, x, y, width, height });
+    } else if (this.fallback) target.drawImage(this.fallback, x, y, width, height);
+    if (this.transition) {
+      ctx.save();
+      ctx.globalAlpha = 1 - blend;
+      ctx.drawImage(this.transition.image, 0, 0, w, h);
+      // Add premultiplied layers so the character does not turn translucent
+      // halfway through a transition on the transparent desktop window.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = blend;
+      ctx.drawImage(this.layer, 0, 0);
+      ctx.restore();
+    }
+    if (ticking) this.raf = requestAnimationFrame(this.draw);
   }
 
-  close() { this.active = false; this.requested++; cancelAnimationFrame(this.raf); this.sheet = null; }
+  hasContinuousEffects() { return false; }
+  drawEffects() {}
+
+  close() { this.active = false; this.requested++; cancelAnimationFrame(this.raf); this.raf = 0; this.sheet = null; this.transition = null; this.layer = null; }
 }
 
 export function cropSprite(canvas) {

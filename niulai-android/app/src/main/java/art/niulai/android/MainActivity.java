@@ -16,6 +16,23 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private WebView web;
     private QuoteGateway gateway;
+    private UpdateChecker updates;
+    private boolean nativeUpdateRequested;
+    private void publishUpdate(){
+        js("window.__niulaiUpdate && window.__niulaiUpdate("+updates.status()+")");
+        if(nativeUpdateRequested)try{JSONObject info=new JSONObject(updates.status());if(!info.optBoolean("checking")){
+            nativeUpdateRequested=false;
+            new AlertDialog.Builder(this).setTitle(info.optBoolean("available")?"新版本 "+info.optString("version"):"版本更新")
+                .setMessage(info.has("error")?info.optString("error"):info.optBoolean("available")?info.optJSONArray("notes").join("\n").replace("\"",""):"当前已是最新版本 "+info.optString("current"))
+                .setPositiveButton("查看官网",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(UpdateChecker.DOWNLOAD)))).setNegativeButton("关闭",null).show();
+        }}catch(Exception ignored){}
+    }
+    void checkUpdatesNative(){nativeUpdateRequested=true;updates.check(true);}
+    void updatePermission(){
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED && !PetConfig.prefs(this).getBoolean("update_permission_asked",false)) {
+            PetConfig.prefs(this).edit().putBoolean("update_permission_asked",true).apply();requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},77);
+        } else startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()));
+    }
     private CompatPanel panel;private int webMajor;private boolean receiverRegistered;
     private FrameLayout host;
     private int background=Color.rgb(245,244,240);
@@ -28,6 +45,7 @@ public class MainActivity extends Activity {
     private void notifyPetState() { if(panel!=null)panel.updatePetState();else js("window.__niulaiPetChanged && window.__niulaiPetChanged();window.__niulaiSettingsChanged && window.__niulaiSettingsChanged()"); }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        updates = new UpdateChecker(this, this::publishUpdate);
         if(Build.VERSION.SDK_INT>=30)getWindow().setDecorFitsSystemWindows(false);
         int cream = background; getWindow().setStatusBarColor(cream); getWindow().setNavigationBarColor(cream);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
@@ -88,8 +106,13 @@ public class MainActivity extends Activity {
         try { AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",true);AndroidCompat.startPet(this); notifyPetState(); }
         catch (Exception e) { Toast.makeText(this,"桌宠未能启动，请检查悬浮窗和后台运行权限",Toast.LENGTH_LONG).show(); }
     }
-    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] grants) { super.onRequestPermissionsResult(code,permissions,grants); if(code==42 && Settings.canDrawOverlays(this)) launchPet(); }
+    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] grants) { super.onRequestPermissionsResult(code,permissions,grants); if(code==42 && Settings.canDrawOverlays(this)) launchPet(); if(code==77)publishUpdate(); }
     public class MarketBridge {
+        @JavascriptInterface public String updateStatus(){return updates.status();}
+        @JavascriptInterface public void checkUpdates(){runOnUiThread(()->updates.check(true));}
+        @JavascriptInterface public void updateNotifications(boolean enabled){runOnUiThread(()->updates.enabled(enabled));}
+        @JavascriptInterface public void updatePermission(){runOnUiThread(()->MainActivity.this.updatePermission());}
+        @JavascriptInterface public void openUpdates(boolean history){runOnUiThread(()->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(history?UpdateChecker.SITE+"/download/updates/":UpdateChecker.DOWNLOAD))));}
         @JavascriptInterface public void request(String id,String kind,String value) { if(gateway!=null)gateway.request(id,kind,value); }
         @JavascriptInterface public String restoreAppState(){return AppState.existing(MainActivity.this);}
         @JavascriptInterface public void storeAppState(String raw){AppState.save(MainActivity.this,raw);}
@@ -120,7 +143,7 @@ public class MainActivity extends Activity {
     }
     void goHomeNative(){startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}
     void applyAppearance(boolean dark) {
-        background = dark ? 0xff151714 : 0xfff5f4f0;
+        background = dark ? 0xff15181e : 0xfff4f5f7;
         getWindow().setStatusBarColor(background);
         getWindow().setNavigationBarColor(background);
         if (host != null) host.setBackgroundColor(background);
@@ -135,12 +158,12 @@ public class MainActivity extends Activity {
     }
     void pinWidgetNative(){AppWidgetManager m=getSystemService(AppWidgetManager.class);try{if(m.isRequestPinAppWidgetSupported()){m.requestPinAppWidget(new ComponentName(this,StackWidgetProvider.class),null,null);Toast.makeText(this,"请在系统弹窗中确认添加",Toast.LENGTH_LONG).show();return;}}catch(RuntimeException ignored){}Toast.makeText(this,"请长按桌面空白处，进入小组件，找到牛来盯盘",Toast.LENGTH_LONG).show();}
     void supportSettingsNative(String kind){try{startActivity("battery".equals(kind)?new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS):new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}catch(Exception e){Toast.makeText(this,"请在系统设置中搜索牛来盯盘",Toast.LENGTH_LONG).show();}}
-    @Override protected void onResume() { super.onResume();JSONObject resumeState=AppState.load(this);if(!pendingPet&&!PetService.running&&AndroidCompat.overlays(this)&&(resumeState.optBoolean("petEnabled")||resumeState.optBoolean("islandEnabled")))AndroidCompat.startPet(this);PetService.appVisible=true;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));StackWidgetProvider.refreshAll(this);js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");if(panel!=null)panel.resume();if(gateway!=null) gateway.setActive(true); if(web!=null){web.onResume();js("window.__niulaiLifecycle && window.__niulaiLifecycle(true)");}notifyPetState();if(pendingPet){pendingPet=false;if(AndroidCompat.overlays(this))requestFeature(requestedFeature);else{AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",false);notifyPetState();}} }
+    @Override protected void onResume() { super.onResume();if(updates!=null){updates.check(false);publishUpdate();}JSONObject resumeState=AppState.load(this);if(!pendingPet&&!PetService.running&&AndroidCompat.overlays(this)&&(resumeState.optBoolean("petEnabled")||resumeState.optBoolean("islandEnabled")))AndroidCompat.startPet(this);PetService.appVisible=true;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));StackWidgetProvider.refreshAll(this);js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");if(panel!=null)panel.resume();if(gateway!=null) gateway.setActive(true); if(web!=null){web.onResume();js("window.__niulaiLifecycle && window.__niulaiLifecycle(true)");}notifyPetState();if(pendingPet){pendingPet=false;if(AndroidCompat.overlays(this))requestFeature(requestedFeature);else{AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",false);notifyPetState();}} }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(pendingPet&&AndroidCompat.overlays(this)){pendingPet=false;requestFeature(requestedFeature);}}
     @Override protected void onPause() {PetService.appVisible=false;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));if(panel!=null)panel.pause();if(gateway!=null)gateway.setActive(false);if(web!=null){js("window.__niulaiLifecycle && window.__niulaiLifecycle(false)");web.onPause();}super.onPause(); }
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){super.onConfigurationChanged(configuration);JSONObject state=AppState.load(this);applyAppearance(Appearance.dark(this,state.optString("theme","system")));if(panel!=null)panel.refreshAppearance();js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");StackWidgetProvider.refreshAll(this);}
     @Override public void onBackPressed(){handleBack();}
     private void handleBack(){if(web==null){moveTaskToBack(true);return;}web.evaluateJavascript("window.__niulaiBack && window.__niulaiBack()",value->{if(!"true".equals(value))moveTaskToBack(true);});}
     @Override protected void onSaveInstanceState(Bundle out){out.putBoolean("pendingPet",pendingPet);out.putString("feature",requestedFeature);super.onSaveInstanceState(out);}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(receiverRegistered)unregisterReceiver(petChanged);if(panel!=null)panel.close();if(gateway!=null)gateway.close();if(web!=null){web.removeJavascriptInterface("NiulaiNative");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(updates!=null)updates.close();if(receiverRegistered)unregisterReceiver(petChanged);if(panel!=null)panel.close();if(gateway!=null)gateway.close();if(web!=null){web.removeJavascriptInterface("NiulaiNative");web.destroy();web=null;}super.onDestroy();}
 }

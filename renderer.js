@@ -16,6 +16,22 @@ let featureCode = '', lastFeatureQuote = 0, wasOpen = false;
 let emotion, session, alerts;
 let lastMarketScene;
 let sourceFormEpoch = 0;
+let searchComposing = false, refreshRequested = false;
+const stockRows = { 'home-stocks': new Map(), 'watch-stocks': new Map() };
+const portfolioCards = new Map();
+const tabScroll = new Map();
+let updateStatus = { available: false, checking: false };
+function paintUpdate(value = updateStatus) {
+  updateStatus = value;
+  $('update-banner').hidden = !value.available;
+  $('update-title').textContent = '牛来盯盘 ' + (value.version || '') + ' 已发布';
+  $('update-note').textContent = (value.notes || []).slice(0, 2).join(' · ');
+  const label = $('update-status');
+  if (label) label.textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + data.version);
+  if ($('check-update')) $('check-update').disabled = value.checking;
+}
+$('update-download').onclick = () => perform(api.updates('download'));
+api.onUpdate(paintUpdate);
 const moods = new MarketMood();
 const bull = makeMotion($('bull'));
 const wood = makeMotion($('wood-canvas'));
@@ -122,59 +138,92 @@ function renderPosition(container, stock, entry) {
 function renderStocks() {
   for (const [id, full] of [['home-stocks', false], ['watch-stocks', true]]) {
     const container = $(id);
-    container.replaceChildren();
-    for (const stock of data.state.stocks) {
+    const rows = stockRows[id];
+    for (const [code, item] of rows) {
+      if (!data.state.stocks.some(stock => stock.code === code)) { item.row.remove(); rows.delete(code); }
+    }
+    for (const [index, stock] of data.state.stocks.entries()) {
       const entry = data.quotes[stock.code], quote = entry?.quote;
       const presentation = quotePresentation(entry, settings().interval);
-      const row = element('div', '', 'stock-row' + (stock.code === data.state.selected ? ' selected' : ''));
-      row.title = presentation.detail;
-      const button = element('button', '', 'stock-main');
-      button.setAttribute('aria-label', '盯盘 ' + stock.name);
-      const name = element('div');
-      name.append(element('strong', stock.name), element('small', displaySymbol(stock.code) + (presentation.label ? ' · ' + presentation.label : '')));
-      const price = element('div', '', 'stock-price ' + tone(quote?.changePct));
-      price.append(element('strong', fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2)), element('small', Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : quote ? '涨跌幅未提供' : '等待行情'));
-      if (quote && presentation.warning) price.append(element('small', presentation.message));
-      button.append(name, price);
-      if (full) button.append(element('span', Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—', 'stock-pct ' + tone(quote?.changePct)));
-      button.onclick = () => selectStock(stock.code);
-      row.append(button);
-      if (full) {
-        const actions = element('div', '', 'row-actions');
-        const edit = element('button', '持仓');
-        edit.onclick = () => openPosition(stock.code);
-        const remove = element('button', '移出');
-        remove.setAttribute('aria-label', '移出 ' + stock.name);
-        remove.onclick = () => confirmRemove(stock);
-        actions.append(edit, remove); row.append(actions);
+      let item = rows.get(stock.code);
+      if (!item) {
+        const row = element('div', '', 'stock-row');
+        const button = element('button', '', 'stock-main');
+        const name = element('div'), price = element('div');
+        item = {
+          row, button, price,
+          name: element('strong'), code: element('small'), value: element('strong'),
+          change: element('small'), warning: element('small'), percent: element('span')
+        };
+        name.append(item.name, item.code);
+        price.append(item.value, item.change, item.warning);
+        button.append(name, price);
+        if (full) button.append(item.percent);
+        button.onclick = () => selectStock(stock.code);
+        row.append(button);
+        if (full) {
+          const actions = element('div', '', 'row-actions');
+          const edit = element('button', '持仓');
+          edit.onclick = () => openPosition(stock.code);
+          item.remove = element('button', '移出');
+          item.remove.onclick = () => confirmRemove(data.state.stocks.find(current => current.code === stock.code));
+          actions.append(edit, item.remove); row.append(actions);
+        }
+        rows.set(stock.code, item);
       }
-      container.append(row);
+      item.row.classList.toggle('selected', stock.code === data.state.selected);
+      item.row.title = stock.name + '\n' + presentation.detail;
+      item.button.setAttribute('aria-label', '盯盘 ' + stock.name);
+      item.button.setAttribute('aria-current', stock.code === data.state.selected ? 'true' : 'false');
+      item.name.textContent = stock.name;
+      item.code.textContent = displaySymbol(stock.code) + (presentation.label ? ' · ' + presentation.label : '');
+      item.price.className = 'stock-price ' + tone(quote?.changePct);
+      item.value.textContent = fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2);
+      item.change.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : quote ? '涨跌幅未提供' : '等待行情';
+      item.warning.textContent = presentation.message;
+      item.warning.hidden = !quote || !presentation.warning;
+      item.percent.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
+      item.percent.className = 'stock-pct ' + tone(quote?.changePct);
+      item.remove?.setAttribute('aria-label', '移出 ' + stock.name);
+      if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
     }
   }
   $('stock-count').textContent = data.state.stocks.length;
 }
 function renderPortfolio() {
   const container = $('portfolio-list');
-  container.replaceChildren();
   const held = data.state.stocks.filter(stock => stock.cost > 0 && stock.shares > 0);
-  if (!held.length) container.append(element('p', '暂无持仓记录。可为任一自选设置成本和股数。', 'position-empty'));
-  for (const stock of held) {
-    const card = element('article', '', 'card portfolio-item');
-    const header = element('div', '', 'section-heading');
-    const title = element('div');
-    title.append(element('h2', stock.name), element('p', displaySymbol(stock.code) + ' · ' + currency(stock.code)));
-    const edit = element('button', '编辑 ↗', 'link-button');
-    edit.onclick = () => openPosition(stock.code);
-    header.append(title, edit);
-    const content = element('div'), entry = data.quotes[stock.code];
-    renderPosition(content, stock, entry);
-    const details = element('div', '', 'holding-details');
+  for (const [code, item] of portfolioCards) {
+    if (!held.some(stock => stock.code === code)) { item.card.remove(); portfolioCards.delete(code); }
+  }
+  const empty = container.querySelector('.portfolio-empty');
+  if (held.length) empty?.remove();
+  else if (!empty) container.append(element('p', '暂无持仓记录。可为任一自选设置成本和股数。', 'position-empty portfolio-empty'));
+  for (const [index, stock] of held.entries()) {
+    let item = portfolioCards.get(stock.code);
+    if (!item) {
+      const card = element('article', '', 'card portfolio-item');
+      const header = element('div', '', 'section-heading'), title = element('div');
+      item = {
+        card, name: element('h2'), content: element('div'),
+        details: element('div', '', 'holding-details'), status: element('p', '', 'footnote')
+      };
+      title.append(item.name, element('p', displaySymbol(stock.code) + ' · ' + currency(stock.code)));
+      const edit = element('button', '编辑 ↗', 'link-button');
+      edit.onclick = () => openPosition(stock.code);
+      header.append(title, edit);
+      card.append(header, item.content, item.details, item.status);
+      portfolioCards.set(stock.code, item);
+    }
+    const entry = data.quotes[stock.code];
+    item.name.textContent = stock.name;
+    renderPosition(item.content, stock, entry);
     const result = position(stock, entry?.quote);
-    details.append(element('span', settings().private ? '成本与股数已隐藏' : `成本 ${fmt(stock.cost, 3)} · ${stock.shares} 股`), element('span', settings().private || !result ? '' : signed(result.percent) + '%', tone(result?.percent)));
+    item.details.replaceChildren(element('span', settings().private ? '成本与股数已隐藏' : `成本 ${fmt(stock.cost, 3)} · ${stock.shares} 股`), element('span', settings().private || !result ? '' : signed(result.percent) + '%', tone(result?.percent)));
     const presentation = quotePresentation(entry, settings().interval);
-    card.title = presentation.detail;
-    card.append(header, content, details, element('p', presentation.summary, 'footnote'));
-    container.append(card);
+    item.card.title = presentation.detail;
+    item.status.textContent = presentation.summary;
+    if (container.children[index] !== item.card) container.insertBefore(item.card, container.children[index] || null);
   }
 }
 function renderCounts() {
@@ -220,6 +269,9 @@ function renderQuoteStatus() {
   $('connection').title = presentation.detail;
   $('footer-status').textContent = data.suspended ? '系统休眠，已暂停' : quiet() ? '安静办公中' : quote ? quote.market === 'us' ? presentation.basis : quote.time ? '源时间 ' + quote.time : '行情源未提供成交时间' : '等待行情';
   $('footer-status').title = presentation.detail;
+  $('refresh').disabled = Boolean(data.refreshing || data.suspended);
+  $('refresh').setAttribute('aria-busy', String(Boolean(data.refreshing && !data.suspended)));
+  $('refresh-label').textContent = data.suspended ? '已暂停' : data.refreshing ? '刷新中…' : '刷新行情';
 }
 function render() {
   if (!data?.state) return;
@@ -244,6 +296,7 @@ function render() {
 }
 function applySnapshot(next) {
   if (!next?.state) return;
+  if (refreshRequested && next.suspended) refreshRequested = false;
   const changedStock = data?.state.selected !== next.state.selected;
   const changedStocks = JSON.stringify(data?.state.stocks.map(stock => stock.code)) !== JSON.stringify(next.state.stocks.map(stock => stock.code));
   data = next;
@@ -252,6 +305,7 @@ function applySnapshot(next) {
   render();
 }
 function changeTab(next) {
+  tabScroll.set(tab, window.scrollY);
   tab = next;
   for (const button of document.querySelectorAll('[data-tab]')) {
     button.classList.toggle('active', button.dataset.tab === tab);
@@ -262,7 +316,7 @@ function changeTab(next) {
   $('page-subtitle').textContent = titles[tab][1];
   $('page-subtitle').hidden = !titles[tab][1];
   if (tab === 'settings') buildSettings();
-  window.scrollTo(0, 0);
+  window.scrollTo(0, tabScroll.get(next) || 0);
   syncMotion();
 }
 function selectStock(code) { perform(api.stock('select', { code })); }
@@ -283,32 +337,57 @@ function confirmRemove(stock) {
   openDialog('confirm-dialog');
 }
 function openSearch() {
+  if ($('search-dialog').open) { $('search-input').focus(); $('search-input').select(); return; }
+  ++searchEpoch;
+  clearTimeout(searchTimer);
+  searchComposing = false;
   $('search-input').value = '';
   $('search-results').replaceChildren();
-  $('search-message').textContent = '支持 A 股、港股和美股';
+  $('search-message').textContent = adding ? '正在验证行情…' : '支持 A 股、港股和美股';
+  setSearchBusy(adding);
   openDialog('search-dialog');
   $('search-input').focus();
 }
 function searchButton(stock) {
   const button = element('button', '', 'search-result');
+  button.dataset.symbol = stock.code;
   const title = element('div');
   title.append(element('strong', stock.name), element('small', displaySymbol(stock.code)));
-  button.append(title, element('span', '＋ 添加', 'link-button'));
+  const existing = data.state.stocks.some(item => item.code === stock.code);
+  button.append(title, element('span', existing ? '已在自选 · 盯盘' : '＋ 添加', 'link-button'));
   button.onclick = () => addStock(stock.code);
   return button;
 }
 let adding = false;
+function setSearchBusy(busy) {
+  $('search-dialog').setAttribute('aria-busy', String(busy));
+  for (const control of $('search-dialog').querySelectorAll('input, #search-form button, .quick-stocks button, .search-result')) control.disabled = busy;
+}
 async function addStock(code) {
   if (adding) return;
   adding = true;
+  const epoch = ++searchEpoch;
+  const existing = data.state.stocks.some(stock => stock.code === code);
+  const trigger = document.activeElement;
+  clearTimeout(searchTimer);
+  setSearchBusy(true);
   $('search-message').textContent = '正在验证行情…';
   try {
     await api.stock('add', { code });
-    $('search-dialog').close(); toast('已加入自选');
-  } catch (error) { $('search-message').textContent = error.message.replace(/^.*Error: /, ''); }
-  finally { adding = false; }
+    if (epoch === searchEpoch) $('search-dialog').close();
+    toast(existing ? '已切换盯盘' : '已加入自选');
+  } catch (error) {
+    if (epoch === searchEpoch) $('search-message').textContent = error.message.replace(/^.*Error: /, '');
+    else toast(error.message);
+  } finally {
+    adding = false; setSearchBusy(false);
+    if ($('search-dialog').open && epoch !== searchEpoch) search();
+    else if ($('search-dialog').open) trigger?.focus();
+  }
 }
 async function search() {
+  clearTimeout(searchTimer);
+  if (searchComposing || adding || !$('search-dialog').open) return;
   const epoch = ++searchEpoch;
   const query = $('search-input').value.trim();
   $('search-results').replaceChildren();
@@ -319,8 +398,13 @@ async function search() {
   try {
     const results = await api.search(query);
     if (epoch !== searchEpoch || !$('search-dialog').open) return;
+    const focusedCode = document.activeElement?.closest('.search-result')?.dataset.symbol;
     $('search-results').replaceChildren(...results.map(searchButton));
     if (direct && !results.some(stock => stock.code === direct)) $('search-results').prepend(searchButton({ code: direct, name: displaySymbol(direct) }));
+    if (focusedCode) {
+      const buttons = [...$('search-results').querySelectorAll('.search-result')];
+      (buttons.find(button => button.dataset.symbol === focusedCode) || buttons[0] || $('search-input')).focus();
+    }
     $('search-message').textContent = results.length || direct ? '选择股票加入自选' : '暂未找到，试试完整代码';
   } catch {
     if (epoch === searchEpoch) $('search-message').textContent = direct ? '名称搜索暂不可用，可按代码验证添加' : '搜索连接失败，请稍后重试';
@@ -411,6 +495,14 @@ function buildSettings() {
   } else if (settingsPanel === 'source') {
     buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === 'source' });
   } else if (settingsPanel === 'general') {
+    heading('版本更新');
+    settingRow('系统更新提醒', 'updateNotifications', 'checkbox', [], '仅在正式发布新版本时提醒一次；软件内始终显示更新入口');
+    const updateLabel = element('p', '', 'muted'); updateLabel.id = 'update-status'; container.append(updateLabel);
+    const check = element('button', '检查更新', 'button secondary'); check.id = 'check-update';
+    check.onclick = () => perform(api.updates('check'), paintUpdate); container.append(check);
+    settingsButton('查看更新记录', () => perform(api.updates('history'))); paintUpdate();
+    settingsButton('系统通知设置', () => perform(api.updates('permissions')));
+    heading('外观与使用');
     settingRow('应用外观', 'theme', 'select', themes);
     settingRow('静音', 'muted');
     settingRow('行情刷新', 'interval', 'select', intervals);
@@ -433,7 +525,7 @@ function buildSettings() {
   } else if (settingsPanel === 'alerts') {
     buildFeatureSettings();
   } else {
-    container.append(element('p', '牛来盯盘 Windows · ' + data.version, 'muted'));
+    container.append(element('p', '牛来盯盘电脑版 · ' + data.version, 'muted'));
     for (const paragraph of [
       '支持 A 股、港股和美股行情，默认使用新浪与腾讯接口，也可在“行情来源”中接入自己的 HTTP JSON 接口。美股区分盘前、常规和盘后报价。行情可能延迟或中断，交易时段按周历估算，节假日与停牌以交易所公告为准。',
       '自选、持仓、木鱼计数和设置保存在这台电脑。查询词和股票代码发送给行情提供方，成本、股数和计数仅在本机使用。',
@@ -545,6 +637,18 @@ api.onKnock(({ counts, reset }) => {
   }
 });
 api.onSnapshot(applySnapshot);
+api.onRefreshing(refreshing => {
+  if (!data) return;
+  data.refreshing = refreshing;
+  renderQuoteStatus();
+  if (refreshRequested && !refreshing) {
+    refreshRequested = false;
+    const entry = currentEntry(), health = quoteHealth(entry, settings().interval);
+    let message = health.warning ? '已获取报价，' + health.message : '行情已刷新';
+    if (entry?.error) message = entry.quote ? '刷新失败，已保留上次报价' : '暂未获取报价，请稍后重试';
+    toast(message);
+  }
+});
 api.onMamaVoice(({ volume }) => {
   if (data && lastMarketScene && settings().mamaSound && !settings().muted && !quiet()) {
     stopAudio(); mamaVoice.play(volume).catch(() => {});
@@ -554,7 +658,11 @@ for (const button of document.querySelectorAll('[data-tab]')) button.onclick = (
 document.querySelector('.brand').onclick = event => { event.preventDefault(); changeTab('home'); };
 for (const button of document.querySelectorAll('.add-stock')) button.onclick = openSearch;
 $('all-stocks').onclick = $('select-stock').onclick = () => changeTab('watchlist');
-$('refresh').onclick = () => { perform(api.refresh()); toast('正在刷新行情'); };
+$('refresh').onclick = async () => {
+  refreshRequested = true;
+  try { await api.refresh(); }
+  catch (error) { refreshRequested = false; toast(error.message); }
+};
 $('privacy-toggle').onclick = () => perform(api.settings({ private: !settings().private }));
 $('hide-dashboard').onclick = () => perform(api.window('hide'));
 $('open-quote').onclick = () => perform(api.window('external'));
@@ -588,15 +696,40 @@ $('position-form').onsubmit = event => {
 };
 $('clear-position').onclick = () => perform(api.stock('position', { code: positionCode, cost: 0, shares: 0 }), () => $('position-dialog').close());
 $('search-form').onsubmit = event => { event.preventDefault(); clearTimeout(searchTimer); search(); };
-$('search-input').oninput = () => { ++searchEpoch; clearTimeout(searchTimer); searchTimer = setTimeout(search, 350); };
-$('search-dialog').addEventListener('close', () => { ++searchEpoch; clearTimeout(searchTimer); });
+$('search-input').oninput = event => {
+  ++searchEpoch; clearTimeout(searchTimer);
+  $('search-results').replaceChildren();
+  $('search-message').textContent = $('search-input').value.trim() ? '正在搜索…' : '支持 A 股、港股和美股';
+  if (!event.isComposing && !searchComposing && $('search-input').value.trim()) searchTimer = setTimeout(search, 350);
+};
+$('search-input').addEventListener('compositionstart', () => { searchComposing = true; ++searchEpoch; clearTimeout(searchTimer); });
+$('search-input').addEventListener('compositionend', () => { searchComposing = false; clearTimeout(searchTimer); searchTimer = setTimeout(search, 350); });
+$('search-input').addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.isComposing && !searchComposing && event.keyCode !== 229) {
+    const first = $('search-results').querySelector('.search-result');
+    if (first) { event.preventDefault(); first.click(); }
+  }
+});
+$('search-dialog').addEventListener('keydown', event => {
+  if (event.isComposing || searchComposing || event.altKey || event.ctrlKey || event.metaKey || !['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+  if (event.target !== $('search-input') && !event.target.closest('.search-result')) return;
+  const buttons = [...$('search-results').querySelectorAll('.search-result:not(:disabled)')];
+  if (!buttons.length) return;
+  event.preventDefault();
+  const index = buttons.indexOf(document.activeElement);
+  const step = event.key === 'ArrowDown' ? 1 : -1;
+  let next = (index + step + buttons.length) % buttons.length;
+  if (index < 0) next = step > 0 ? 0 : buttons.length - 1;
+  buttons[next].focus();
+});
+$('search-dialog').addEventListener('close', () => { ++searchEpoch; searchComposing = false; clearTimeout(searchTimer); });
 for (const button of document.querySelectorAll('[data-code]')) button.onclick = () => addStock(button.dataset.code);
 let taps = [];
 $('pet').onclick = () => {
   const now = Date.now(); taps = taps.filter(at => now - at < 1150); taps.push(now);
   const id = taps.length >= 3 ? 'annoyed' : 'wave';
   if (id === 'annoyed') taps = [];
-  bull.replay(id); previewUntil = now + 3200; playPetVoice();
+  bull.interact(id); previewUntil = now + 3200; playPetVoice();
 };
 $('wood-tap').onclick = () => { knock(); if (settings().muyuSound && !settings().muted && !quiet()) { voice.volume = settings().volume; voice.play().catch(() => toast('声音未能播放')); } };
 $('wood-round').onclick = () => perform(api.newRound());
@@ -608,8 +741,9 @@ for (const spec of catalog) {
 }
 $('preview-floating').onclick = () => perform(api.window('preview', motionPreview));
 document.addEventListener('keydown', event => {
+  if (event.isComposing) return;
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch(); return; }
-  if ((event.ctrlKey || event.metaKey) && /^[1-4]$/.test(event.key)) { event.preventDefault(); changeTab(['home', 'watchlist', 'portfolio', 'muyu'][Number(event.key) - 1]); return; }
+  if ((event.ctrlKey || event.metaKey) && /^[1-4]$/.test(event.key) && !document.querySelector('dialog[open]')) { event.preventDefault(); changeTab(['home', 'watchlist', 'portfolio', 'muyu'][Number(event.key) - 1]); return; }
   if (event.code === 'Space' && tab === 'muyu' && !document.querySelector('dialog[open]') && !event.target.closest('input, select, button, textarea')) { event.preventDefault(); $('wood-tap').click(); }
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopAudio(); syncMotion(); });
@@ -621,6 +755,7 @@ for (const key of ['niulai:pet-settings', 'niulai:saved-stocks-v1', 'niulai:port
 }
 api.bootstrap(desktopState.migrateLegacy(legacyValues)).then(next => {
   applySnapshot(next);
+  api.updates('status').then(paintUpdate).catch(() => {});
   setInterval(() => { renderQuoteStatus(); updateMood(); processFeatures(); }, 1000);
   window.__NIULAI_RENDERER_READY__ = true;
 }).catch(error => toast('启动失败 · ' + error.message));
