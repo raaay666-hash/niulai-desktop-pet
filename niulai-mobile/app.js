@@ -1,5 +1,6 @@
 import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
 import hqManifest from '../assets/2d/frames/hq/manifest.json' with {type:'json'};
+import {RISE_LETTERING} from './rise-lettering.mjs';
 
 (() => {
   'use strict';
@@ -95,11 +96,12 @@ import hqManifest from '../assets/2d/frames/hq/manifest.json' with {type:'json'}
     if(!state.motion)return;
     if(!reduced.matches){if(!pages.length)pendingTap=true;else{framePlayer.state('muyu',performance.now(),true);if(!animationFrame)drawBull();}}
     const mark=document.createElement('span');mark.className='rise-mark';
-    mark.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="m3 26 9-9 6 4L28 7M19 7h9v9"/></svg><span>牛气➕1</span>';
+    mark.innerHTML=RISE_LETTERING;
+    mark.dataset.label='牛气+1';
     if(reduced.matches)mark.classList.add('still');
     mark.style.setProperty('--drift',(Math.random()*24-12)+'px');
     const layer=$('tap-feedback');if(layer.childElementCount>=4)layer.firstElementChild.remove();layer.append(mark);
-    mark.addEventListener('animationend',()=>mark.remove(),{once:true});setTimeout(()=>mark.remove(),950);
+    mark.addEventListener('animationend',()=>mark.remove(),{once:true});setTimeout(()=>mark.remove(),1200);
   }
   function stopHaptics(){if(typeof navigator.vibrate==='function')try{navigator.vibrate(0);}catch{}}
   function tap(automatic=false){if(state.total>=Number.MAX_SAFE_INTEGER)return;state.total++;state.session++;paintCounts();animateTap();playAudio();save();if(!automatic&&state.haptics&&typeof navigator.vibrate==='function')try{navigator.vibrate(18);}catch{}}

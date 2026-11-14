@@ -152,3 +152,10 @@
 - 最终通过完整目录 artifacts/niulai-public-muyu-hq-20261114 上传，37 个文件逐字节核对，单文件均小于 25 MiB；另保留两个 Deflate 备份 ZIP：niulai-public-muyu-hq-20261114-final.zip SHA-256 cbdffe8c22d552e5b33a4620b685e3d02ee1e228c9ebe36971161960aec23d56；niulai-public-muyu-hq-20261114-frames.zip SHA-256 c687bcdbb4eeb0bb58f40c162d98d91e8ca673aeb7188eb0d95a39a29401b4e0。
 - 官网资源 34/34、HEAD/Range 51/51、五个完整新包校验通过；追加木鱼不改变安装包及 Worker，复用已完成的整包校验。官网木鱼 14 项正式站检查通过；反馈 GET 405。更新清单与记录共用 release-history.json，接口 no-store，旧版下载继续可用。
 - 发布记录与平台验收范围见 docs/三端优化与正式发布-20261114.md；完整机器报告 outputs/polish-20261113/delivery.json，公开页面截图位于 outputs/polish-20261113/site。
+
+### 2026-11-14 官网牛气艺术字
+
+- 官网敲击反馈改为朱砂毛笔艺术字，使用现有 OFL 授权中文轮廓，重新绘制加号、数字 1 和轻扬笔锋；深色模式使用暖杏色。内联 SVG 保持高分屏清晰，不等待字体加载。
+- 调整上浮节奏、竖屏牛角间距与横屏位置；计数、音效、震动和减少动态效果设置保持原有行为。更新记录已补充，缓存升级为 niulai-mobile-v23-lettering。
+- Cloudflare niulai-muyu Production 上传 37/37、部署 Success。正式站 34 个公开文件哈希一致，五个新版下载 HEAD 和反馈 GET 405 正常；四种主题/尺寸视觉检查与 14 项线上木鱼检查通过。
+- 冻结目录 artifacts/niulai-public-lettering-20261114，证据与截图 outputs/website-lettering-20261114；旧部署与安装包保留。设计说明 docs/官网木鱼艺术字-20261114.md。

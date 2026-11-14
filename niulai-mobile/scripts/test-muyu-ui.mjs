@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {chromium} from '../../niulai-android/node_modules/playwright/index.mjs';
 
 const project=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const web=path.join(project,'dist'),out=path.resolve(project,'../outputs/polish-20261113/site/muyu');
+const web=path.join(project,'dist'),out=process.env.NIULAI_MUYU_QA_OUTPUT?path.resolve(process.env.NIULAI_MUYU_QA_OUTPUT):path.resolve(project,'../outputs/polish-20261113/site/muyu');
 await fs.mkdir(out,{recursive:true});
 const server=http.createServer(async(req,res)=>{
   let name=new URL(req.url,'http://localhost').pathname;if(name.endsWith('/'))name+='index.html';
