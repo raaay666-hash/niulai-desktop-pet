@@ -91,3 +91,12 @@ html{scroll-behavior:smooth;scroll-padding-top:26px}.download-page{--paper:color
 @media(max-width:700px){.platform-grid{grid-template-columns:1fr;gap:36px}.feature-overview{font-size:14px}.platform-heading h3{font-size:21px}.platform-features dd{font-size:13px}}
 
 .version-update { color: var(--muted); font-size: 13px; line-height: 1.8; margin: 0 0 24px; }
+.release-eyebrow { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+.release-timeline { max-width: 800px; margin: 0 auto; }
+.release-entry { border-top: 1px solid var(--line); padding: 34px 0 40px; }
+.release-entry time { display: inline-block; padding: 5px 12px; border-radius: 20px; background: var(--paper); color: var(--muted); font-size: 12px; }
+.release-entry h2 { margin: 18px 0 10px; font-size: clamp(23px,4vw,32px); letter-spacing: -.5px; }
+.release-platforms { color: var(--muted); font-size: 13px; }
+.release-entry ul { padding-left: 20px; margin-top: 24px; line-height: 1.95; font-size: 15px; }
+.release-entry li { padding-left: 4px; margin-bottom: 9px; }
+.release-footer { max-width: 800px; margin: 0 auto 60px; color: var(--muted); font-size: 14px; }

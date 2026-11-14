@@ -1,4 +1,5 @@
 import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
+import hqManifest from '../assets/2d/frames/hq/manifest.json' with {type:'json'};
 
 (() => {
   'use strict';
@@ -13,18 +14,26 @@ import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   let timer,saveTimer,toastTimer,context,audioBuffer,loadingAudio,lastAudioAt=-Infinity;
   const sources=new Set(),fallback=new Audio('assets/niulai-tap.wav');fallback.preload='auto';
-  const bullCanvas=$('bull-frames'),bullContext=bullCanvas.getContext('2d'),sheet=new Image();
-  let framePlayer=new FramePlayer(),animationFrame=0,lastDrawing=-1;
+  const bullCanvas=$('bull-frames'),bullContext=bullCanvas.getContext('2d');
+  let framePlayer=new FramePlayer(),animationFrame=0,lastDrawing=-1,pages=[],usingHQ=false,pendingTap=false;
   framePlayer.state('muyu');
+  function resizeBull(){
+    const size=Math.min(1024,Math.max(1,Math.round(bullCanvas.getBoundingClientRect().width*Math.min(devicePixelRatio||1,2))));
+    if(bullCanvas.width!==size||bullCanvas.height!==size){bullCanvas.width=bullCanvas.height=size;lastDrawing=-1;}
+    bullContext.imageSmoothingEnabled=true;bullContext.imageSmoothingQuality='high';
+  }
   function drawBull(now=performance.now()){
     animationFrame=0;
-    if(!sheet.complete||!sheet.naturalWidth)return;
+    if(!pages.length)return;
+    resizeBull();
     const moving=state.motion&&!reduced.matches&&!document.hidden;
     const index=framePlayer.frame(now,moving).index;
     if(index!==lastDrawing){
-      const width=sheet.naturalWidth/6,height=sheet.naturalHeight/4;
+      const pageFrames=usingHQ?hqManifest.pageFrames:24,columns=usingHQ?hqManifest.columns:6,rows=usingHQ?hqManifest.rows:4;
+      const sheet=pages[Math.floor(index/pageFrames)],local=index%pageFrames;
+      const width=sheet.naturalWidth/columns,height=sheet.naturalHeight/rows;
       bullContext.clearRect(0,0,bullCanvas.width,bullCanvas.height);
-      bullContext.drawImage(sheet,index%6*width,Math.floor(index/6)*height,width,height,0,0,bullCanvas.width,bullCanvas.height);
+      bullContext.drawImage(sheet,local%columns*width,Math.floor(local/columns)*height,width,height,0,0,bullCanvas.width,bullCanvas.height);
       lastDrawing=index;
     }
     if(moving&&framePlayer.knocking)animationFrame=requestAnimationFrame(drawBull);
@@ -33,9 +42,22 @@ import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
     framePlayer.pause(!state.motion||reduced.matches||document.hidden);
     cancelAnimationFrame(animationFrame);animationFrame=0;drawBull();
   }
-  sheet.onload=()=>{drawBull();$('bull').dataset.ready='true';};
-  sheet.onerror=()=>toast('动画加载失败，请刷新页面');
-  sheet.src='assets/muyu-frames.webp';
+  function loadDrawing(url){return new Promise((resolve,reject)=>{const image=new Image();image.onload=async()=>{try{if(image.decode)await image.decode();resolve(image);}catch(error){reject(error);}};image.onerror=reject;image.src=url;});}
+  async function loadBull(){
+    $('bull').setAttribute('aria-busy','true');
+    try{
+      const loaded=await Promise.all(hqManifest.sheets.muyu.pages.map(name=>loadDrawing('assets/muyu-hq/'+name)));
+      if(loaded.some(image=>image.naturalWidth!==hqManifest.frameSize*hqManifest.columns||image.naturalHeight!==hqManifest.frameSize*hqManifest.rows))throw Error('Invalid animation page');
+      pages=loaded;usingHQ=true;
+    }catch{
+      try{pages=[await loadDrawing('assets/muyu-frames.webp')];}catch{$('bull').setAttribute('aria-busy','false');toast('动画加载失败，请刷新页面');return;}
+    }
+    if(pendingTap&&state.motion&&!reduced.matches)framePlayer.state('muyu',performance.now(),true);
+    pendingTap=false;lastDrawing=-1;configureBull();$('bull').dataset.ready='true';$('bull').dataset.quality=usingHQ?'hq512':'fallback256';$('bull').setAttribute('aria-busy','false');
+  }
+  if(typeof ResizeObserver==='function')new ResizeObserver(()=>{if(!animationFrame)drawBull();}).observe(bullCanvas);
+  window.addEventListener('resize',()=>{if(!animationFrame)drawBull();});
+  loadBull();
   function toast(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),2200);}
   function persist(){try{const{total,sound,volume,tempo,motion,theme,haptics}=state;localStorage.setItem(KEY,JSON.stringify({total,sound,volume,tempo,motion,theme,haptics}));}catch{if(!persist.warned){persist.warned=true;toast('暂时无法保存，本次仍可正常敲击');}}}
   function save(){clearTimeout(saveTimer);saveTimer=setTimeout(persist,150);}
@@ -71,7 +93,7 @@ import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
   }
   function animateTap(){
     if(!state.motion)return;
-    if(!reduced.matches){framePlayer.state('muyu',performance.now(),true);if(!animationFrame)drawBull();}
+    if(!reduced.matches){if(!pages.length)pendingTap=true;else{framePlayer.state('muyu',performance.now(),true);if(!animationFrame)drawBull();}}
     const mark=document.createElement('span');mark.className='rise-mark';
     mark.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="m3 26 9-9 6 4L28 7M19 7h9v9"/></svg><span>牛气➕1</span>';
     if(reduced.matches)mark.classList.add('still');

@@ -144,3 +144,11 @@
 - 正式域名匿名检查 30 个静态文件与本地构建一致，12 个代理下载的 HEAD 与首尾 Range 共 36 项通过，四个新安装文件的整包大小与 SHA-256 通过。反馈 GET 返回 405、Allow POST。
 - 正式网页在 1280 与 390 像素宽度通过四个新版下载入口、更新说明、过往版本导航和无横向溢出检查。页面与下载区域截图位于 outputs/desktop-us-quotes-1.5.0/site。
 - 发布核验位于 outputs/desktop-us-quotes-1.5.0/site/publication-verification.json，完整交付状态位于 outputs/desktop-us-quotes-1.5.0/delivery.json。Windows 安装包未签名，Mac 尚未 Apple 公证。
+
+
+### 2026-11-14 三端动画与更新提醒正式发布
+
+- Windows/macOS 1.6.0、Android 1.4.0 正式上线；三端发布先经 Preview 35/35 和 Production Success，随后官网木鱼高清追加发布为 Production 37/37、Success。旧部署保留，摄影站未改动。
+- 最终通过完整目录 artifacts/niulai-public-muyu-hq-20261114 上传，37 个文件逐字节核对，单文件均小于 25 MiB；另保留两个 Deflate 备份 ZIP：niulai-public-muyu-hq-20261114-final.zip SHA-256 cbdffe8c22d552e5b33a4620b685e3d02ee1e228c9ebe36971161960aec23d56；niulai-public-muyu-hq-20261114-frames.zip SHA-256 c687bcdbb4eeb0bb58f40c162d98d91e8ca673aeb7188eb0d95a39a29401b4e0。
+- 官网资源 34/34、HEAD/Range 51/51、五个完整新包校验通过；追加木鱼不改变安装包及 Worker，复用已完成的整包校验。官网木鱼 14 项正式站检查通过；反馈 GET 405。更新清单与记录共用 release-history.json，接口 no-store，旧版下载继续可用。
+- 发布记录与平台验收范围见 docs/三端优化与正式发布-20261114.md；完整机器报告 outputs/polish-20261113/delivery.json，公开页面截图位于 outputs/polish-20261113/site。

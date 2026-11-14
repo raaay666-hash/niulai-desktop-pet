@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {chromium} from '../../niulai-android/node_modules/playwright/index.mjs';
 
 const project=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const web=path.join(project,'dist'),out=path.resolve(project,'../outputs/android/compat-1.3.2/website');
+const web=path.join(project,'dist'),out=path.resolve(project,'../outputs/polish-20261113/site/muyu');
 await fs.mkdir(out,{recursive:true});
 const server=http.createServer(async(req,res)=>{
   let name=new URL(req.url,'http://localhost').pathname;if(name.endsWith('/'))name+='index.html';
@@ -17,17 +17,26 @@ const server=http.createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});
+await context.addInitScript(()=>{window.muyuDraws=[];const draw=CanvasRenderingContext2D.prototype.drawImage;CanvasRenderingContext2D.prototype.drawImage=function(image,...args){if(this.canvas.id==='bull-frames')window.muyuDraws.push({url:image.src,args});return draw.call(this,image,...args);};});
 const page=await context.newPage(),errors=[],checks=[];
+const origin=process.env.NIULAI_MUYU_ORIGIN||`http://127.0.0.1:${server.address().port}`;
 page.on('pageerror',error=>errors.push(error.message));
 const pass=name=>{checks.push({name,passed:true});console.log('PASS '+name);};
 const count=id=>page.locator('#'+id).textContent().then(s=>Number(s.replaceAll(',','')));
 const drawing=()=>page.locator('#bull-frames').evaluate(canvas=>canvas.toDataURL());
 try{
-  await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.locator('#bull[data-ready=true]').waitFor();
+  await page.goto(origin+'/');await page.locator('#bull[data-ready=true]').waitFor();
+  assert.equal(await page.locator('#bull').getAttribute('data-quality'),'hq512');
+  const reference=await page.evaluate(async()=>{const live=document.getElementById('bull-frames'),image=new Image();image.src='assets/muyu-hq/muyu-00.webp';await image.decode();const expected=document.createElement('canvas');expected.width=expected.height=live.width;const ctx=expected.getContext('2d');ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,512,512,0,0,expected.width,expected.height);return{matches:expected.toDataURL()===live.toDataURL(),width:live.width,target:Math.round(live.getBoundingClientRect().width*Math.min(devicePixelRatio,2)),sourceWidth:image.naturalWidth};});
+  assert.equal(reference.matches,true);assert.equal(reference.width,reference.target);assert.equal(reference.sourceWidth,2048);
+  pass('the official 512px lossless first frame renders exactly at the high-DPI canvas size');
   const initial=await drawing();await page.locator('#bull').click();await page.waitForTimeout(130);
   assert.equal(await count('session-count'),1);assert.notEqual(await drawing(),initial);
   await page.screenshot({path:path.join(out,'muyu-tap.png')});await page.waitForTimeout(900);
   assert.equal(await drawing(),initial);pass('one website tap plays a complete stroke and returns to its resting drawing');
+  assert(await page.evaluate(()=>window.muyuDraws.some(draw=>draw.url.endsWith('/muyu-hq/muyu-01.webp'))));
+  const idleDraws=await page.evaluate(()=>window.muyuDraws.length);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.muyuDraws.length),idleDraws);
+  pass('a complete stroke draws both predecoded pages and resting animation stops repainting');
   await page.evaluate(()=>{for(let i=0;i<50;i++)document.getElementById('bull').click();});assert.equal(await count('session-count'),51);
   await page.waitForTimeout(950);const settled=await drawing();await page.waitForTimeout(180);assert.equal(await drawing(),settled);
   pass('fifty rapid taps keep all counts and settle without an unbounded animation queue');
@@ -55,7 +64,7 @@ try{
   const audioRange=await page.evaluate(async()=>{const r=await fetch('assets/niulai-tap.wav',{headers:{Range:'bytes=0-63'}});return{status:r.status,range:r.headers.get('content-range'),type:r.headers.get('content-type'),bytes:(await r.arrayBuffer()).byteLength};});
   assert.deepEqual(audioRange,{status:206,range:'bytes 0-63/71520',type:'audio/wav',bytes:64});await context.setOffline(false);
   pass('the cached short voice serves byte ranges for mobile media playback');
-  await page.goto(`http://127.0.0.1:${server.address().port}/download/`);
+  await page.goto(origin+'/download/');
   await page.getByRole('heading',{name:'总览',exact:true}).waitFor();
   assert.equal(await page.getByRole('heading',{name:'手机版',exact:true}).count(),1);
   assert.equal(await page.getByRole('heading',{name:'电脑版',exact:true}).count(),1);
@@ -66,6 +75,10 @@ try{
   assert(await page.locator('.platform-grid').evaluate(element=>getComputedStyle(element).gridTemplateColumns.split(' ').length===1));
   await page.screenshot({path:path.join(out,'platforms-mobile.png'),fullPage:true});
   pass('the overview and separate phone and desktop sections fit both viewports and omit the extra installer label');
+  const fallbackContext=await browser.newContext({serviceWorkers:'block'}),fallbackPage=await fallbackContext.newPage();
+  await fallbackPage.route('**/assets/muyu-hq/**',route=>route.abort());await fallbackPage.goto(origin+'/');await fallbackPage.locator('#bull[data-ready=true]').waitFor();
+  assert.equal(await fallbackPage.locator('#bull').getAttribute('data-quality'),'fallback256');await fallbackPage.locator('#bull').click();assert.equal(await fallbackPage.locator('#session-count').textContent(),'1');await fallbackContext.close();
+  pass('failed HQ downloads retain a working fallback and all taps still count');
   assert.deepEqual(errors,[]);pass('no website player runtime errors');
-  await fs.writeFile(path.join(out,'verification.json'),JSON.stringify({checks,errors,scope:'Built site tested in headless Edge. Website layout, settings and cumulative storage retained. No real feedback submitted.'},null,2));
+  await fs.writeFile(path.join(out,'verification.json'),JSON.stringify({origin,checks,errors,scope:'Headless Edge with 2x DPR. Website layout, settings and cumulative storage retained. No real feedback submitted.'},null,2));
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

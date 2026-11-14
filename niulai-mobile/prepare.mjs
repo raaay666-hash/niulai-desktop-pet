@@ -1,7 +1,8 @@
 import {mkdirSync,copyFileSync,cpSync,readFileSync,writeFileSync} from 'node:fs';
 import {build} from 'esbuild';
+import './scripts/build-updates.mjs';
 mkdirSync('dist',{recursive:true});
-for(const file of ['index.html','styles.css','theme.js','app.js','download.css','download.js','manifest.webmanifest','sw.js','_headers','_routes.json'])copyFileSync(file,'dist/'+file);
+for(const file of ['index.html','styles.css','theme.js','app.js','download.css','download.js','manifest.webmanifest','sw.js','updates.json','_headers','_routes.json'])copyFileSync(file,'dist/'+file);
 cpSync('download','dist/download',{recursive:true});
 const files=JSON.parse(readFileSync('download-files.json','utf8'));
 const worker=readFileSync('download-worker.mjs','utf8');
@@ -10,6 +11,8 @@ const feedback=readFileSync('feedback-api.mjs','utf8').replace(/^export /gm,'');
 writeFileSync('dist/_worker.js',feedback+'\n'+worker.replace("import {handleFeedback} from './feedback-api.mjs';",'').replace('/*__DOWNLOAD_FILES__*/ {}',JSON.stringify(files)));
 cpSync('assets','dist/assets',{recursive:true});
 copyFileSync('../assets/2d/frames/webp/muyu-v1.webp','dist/assets/muyu-frames.webp');
+mkdirSync('dist/assets/muyu-hq',{recursive:true});
+for(const name of ['muyu-00.webp','muyu-01.webp'])copyFileSync('../assets/2d/frames/hq/'+name,'dist/assets/muyu-hq/'+name);
 copyFileSync('../assets/audio/niulai-tap.wav','dist/assets/niulai-tap.wav');
 cpSync('android','dist/android',{recursive:true});
 await build({entryPoints:['app.js'],outfile:'dist/app.js',bundle:true,minify:true,format:'iife',target:['chrome90','safari14'],legalComments:'none'});
