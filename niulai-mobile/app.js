@@ -1,5 +1,6 @@
 import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
 import hqManifest from '../assets/2d/frames/hq/manifest.json' with {type:'json'};
+import {TAP_WORDMARK} from './tap-wordmark.mjs';
 
 (() => {
   'use strict';
@@ -98,7 +99,7 @@ import hqManifest from '../assets/2d/frames/hq/manifest.json' with {type:'json'}
     let mark=layer.firstElementChild;
     if(!mark){
       mark=document.createElement('span');mark.className='rise-mark';
-      mark.innerHTML='<span class="rise-label">牛气</span><span class="rise-value">+1</span>';
+      mark.innerHTML=TAP_WORDMARK;
       if(reduced.matches)mark.classList.add('still');
       layer.append(mark);
       mark.addEventListener('animationend',()=>mark.remove(),{once:true});
