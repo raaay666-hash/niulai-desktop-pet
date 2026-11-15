@@ -38,13 +38,20 @@ try{
   const idleDraws=await page.evaluate(()=>window.muyuDraws.length);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.muyuDraws.length),idleDraws);
   pass('a complete stroke draws both predecoded pages and resting animation stops repainting');
   await page.evaluate(()=>{for(let i=0;i<50;i++)document.getElementById('bull').click();});assert.equal(await count('session-count'),51);
+  assert.equal(await page.locator('.rise-mark').count(),1);
+  await page.waitForTimeout(250);
+  const beforeRepeat=await count('session-count');await page.locator('#bull').click();assert.equal(await count('session-count'),beforeRepeat+1);
+  assert.equal(await page.locator('.rise-mark').count(),1);
+  assert.equal(await page.locator('.rise-mark').evaluate(mark=>getComputedStyle(mark).opacity),'1');
   await page.waitForTimeout(950);const settled=await drawing();await page.waitForTimeout(180);assert.equal(await drawing(),settled);
+  assert.equal(await page.locator('.rise-mark').count(),0);
   pass('fifty rapid taps keep all counts and settle without an unbounded animation queue');
-  await page.reload();await page.locator('#bull[data-ready=true]').waitFor();assert.equal(await count('total-count'),51);assert.equal(await count('session-count'),0);
+  await page.reload();await page.locator('#bull[data-ready=true]').waitFor();assert.equal(await count('total-count'),52);assert.equal(await count('session-count'),0);
   pass('the existing cumulative count storage survives reload');
   await page.locator('#settings-open').click();await page.locator('#motion').uncheck();await page.locator('#sound-toggle').uncheck();await page.locator('#settings-dialog .dialog-header button').click();
   await page.locator('#bull').click();const still=await drawing();await page.waitForTimeout(450);assert.equal(await drawing(),still);
   pass('the existing motion and sound switches remain effective');
+  assert.equal(await page.locator('.rise-mark').count(),0);
   await page.locator('#settings-open').click();await page.locator('#motion').check();await page.locator('[data-tempo="800"]').click();const beforeAuto=await count('session-count');
   await page.locator('#auto-toggle').check();await page.waitForTimeout(1800);await page.locator('#auto-toggle').uncheck();assert.equal(await count('session-count'),beforeAuto+3);
   const stopped=await count('session-count');await page.waitForTimeout(950);assert.equal(await count('session-count'),stopped);
@@ -79,6 +86,11 @@ try{
   await fallbackPage.route('**/assets/muyu-hq/**',route=>route.abort());await fallbackPage.goto(origin+'/');await fallbackPage.locator('#bull[data-ready=true]').waitFor();
   assert.equal(await fallbackPage.locator('#bull').getAttribute('data-quality'),'fallback256');await fallbackPage.locator('#bull').click();assert.equal(await fallbackPage.locator('#session-count').textContent(),'1');await fallbackContext.close();
   pass('failed HQ downloads retain a working fallback and all taps still count');
+  const reducedContext=await browser.newContext({reducedMotion:'reduce',serviceWorkers:'block'}),reducedPage=await reducedContext.newPage();
+  await reducedPage.goto(origin+'/');await reducedPage.locator('#bull[data-ready=true]').waitFor();await reducedPage.locator('#bull').click();
+  assert.equal(await reducedPage.locator('.rise-mark').count(),1);assert.equal(await reducedPage.locator('.rise-mark').evaluate(mark=>getComputedStyle(mark).animationName),'none');
+  await reducedPage.waitForTimeout(1300);assert.equal(await reducedPage.locator('.rise-mark').count(),0);await reducedContext.close();
+  pass('reduced motion keeps feedback static and removes it after its short display');
   assert.deepEqual(errors,[]);pass('no website player runtime errors');
   await fs.writeFile(path.join(out,'verification.json'),JSON.stringify({origin,checks,errors,scope:'Headless Edge with 2x DPR. Website layout, settings and cumulative storage retained. No real feedback submitted.'},null,2));
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

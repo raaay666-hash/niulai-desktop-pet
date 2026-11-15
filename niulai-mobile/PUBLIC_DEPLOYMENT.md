@@ -159,3 +159,11 @@
 - 调整上浮节奏、竖屏牛角间距与横屏位置；计数、音效、震动和减少动态效果设置保持原有行为。更新记录已补充，缓存升级为 niulai-mobile-v23-lettering。
 - Cloudflare niulai-muyu Production 上传 37/37、部署 Success。正式站 34 个公开文件哈希一致，五个新版下载 HEAD 和反馈 GET 405 正常；四种主题/尺寸视觉检查与 14 项线上木鱼检查通过。
 - 冻结目录 artifacts/niulai-public-lettering-20261114，证据与截图 outputs/website-lettering-20261114；旧部署与安装包保留。设计说明 docs/官网木鱼艺术字-20261114.md。
+
+### 2026-11-15 官网敲击提示风格修正
+
+- 根据用户反馈，将毛笔大字改为与界面一致的无衬线小号提示，沿用主题颜色、圆角和细边框。连点保持单条可见提示，每次点击独立计数；减少动态效果时静态显示并清理。
+- 更新记录新增独立的官网条目。应用版本、安装包及 updates.json 保持原样，更新清单 SHA-256 为 0458d78cee793ebd2c8d0bded02f9212d3395a31e0ce6ba9a6b8ff1a3bd590a7。缓存升级为 niulai-mobile-v24-feedback。
+- Cloudflare niulai-muyu Production 上传 37/37，部署显示 Success。34 个公开资源逐文件 SHA-256 核验通过，5 个新版安装包 HEAD 大小及摘要正常，反馈 GET 405。Worker、路由和响应头与原发布一致。
+- 本地及正式域名各 15 项浏览器回归通过，四种尺寸/主题截图无溢出，覆盖连点、计数保存、声音与动效开关、自动敲击、离线、高清回退和减少动态效果。实体手机未新增验收。
+- 冻结目录 artifacts/niulai-public-feedback-20261115；正式站截图、部署证据与机器报告位于 outputs/website-feedback-20261115。设计记录 docs/官网敲击反馈-20261115.md。旧版艺术字记录和发布目录保留供追溯。

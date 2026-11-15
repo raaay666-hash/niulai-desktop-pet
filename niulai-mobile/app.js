@@ -1,6 +1,5 @@
 import {FramePlayer} from '../niulai-android/web/frame-player.mjs';
 import hqManifest from '../assets/2d/frames/hq/manifest.json' with {type:'json'};
-import {RISE_LETTERING} from './rise-lettering.mjs';
 
 (() => {
   'use strict';
@@ -13,7 +12,7 @@ import {RISE_LETTERING} from './rise-lettering.mjs';
     theme:['system','light','dark'].includes(stored.theme)?stored.theme:'system',haptics:stored.haptics!==false
   };
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  let timer,saveTimer,toastTimer,context,audioBuffer,loadingAudio,lastAudioAt=-Infinity;
+  let timer,saveTimer,toastTimer,feedbackTimer,context,audioBuffer,loadingAudio,lastAudioAt=-Infinity;
   const sources=new Set(),fallback=new Audio('assets/niulai-tap.wav');fallback.preload='auto';
   const bullCanvas=$('bull-frames'),bullContext=bullCanvas.getContext('2d');
   let framePlayer=new FramePlayer(),animationFrame=0,lastDrawing=-1,pages=[],usingHQ=false,pendingTap=false;
@@ -95,13 +94,19 @@ import {RISE_LETTERING} from './rise-lettering.mjs';
   function animateTap(){
     if(!state.motion)return;
     if(!reduced.matches){if(!pages.length)pendingTap=true;else{framePlayer.state('muyu',performance.now(),true);if(!animationFrame)drawBull();}}
-    const mark=document.createElement('span');mark.className='rise-mark';
-    mark.innerHTML=RISE_LETTERING;
-    mark.dataset.label='牛气+1';
-    if(reduced.matches)mark.classList.add('still');
-    mark.style.setProperty('--drift',(Math.random()*24-12)+'px');
-    const layer=$('tap-feedback');if(layer.childElementCount>=4)layer.firstElementChild.remove();layer.append(mark);
-    mark.addEventListener('animationend',()=>mark.remove(),{once:true});setTimeout(()=>mark.remove(),1200);
+    const layer=$('tap-feedback');
+    let mark=layer.firstElementChild;
+    if(!mark){
+      mark=document.createElement('span');mark.className='rise-mark';
+      mark.innerHTML='<span class="rise-label">牛气</span><span class="rise-value">+1</span>';
+      if(reduced.matches)mark.classList.add('still');
+      layer.append(mark);
+      mark.addEventListener('animationend',()=>mark.remove(),{once:true});
+    }else{
+      // Keep rapid taps readable without stacking labels or replaying the fade-in.
+      for(const animation of mark.getAnimations())animation.currentTime=Math.min(animation.currentTime??0,180);
+    }
+    clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>mark.remove(),1200);
   }
   function stopHaptics(){if(typeof navigator.vibrate==='function')try{navigator.vibrate(0);}catch{}}
   function tap(automatic=false){if(state.total>=Number.MAX_SAFE_INTEGER)return;state.total++;state.session++;paintCounts();animateTap();playAudio();save();if(!automatic&&state.haptics&&typeof navigator.vibrate==='function')try{navigator.vibrate(18);}catch{}}
