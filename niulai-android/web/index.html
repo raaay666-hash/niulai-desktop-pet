@@ -65,10 +65,14 @@
   <section class="settings-section" id="island-settings" data-settings-panel="island" role="tabpanel" aria-labelledby="settings-tab-island"><h3>灵动岛</h3>
     <div class="island-demo"><canvas id="island-mini" width="80" height="80" aria-label="微缩牛来"></canvas><div><small id="island-demo-name">牛来盯盘</small><strong id="island-demo-value">—</strong></div><b id="island-demo-percent">—</b></div>
     <div class="setting-row"><label for="islandEnabled">开启灵动岛</label><input id="islandEnabled" type="checkbox" role="switch"></div>
-    <button id="preview-island" class="text-button full">预览悬浮灵动岛 · 10 秒</button>
+    <div class="setting-row"><label for="islandMode">显示方式</label><select id="islandMode"><option value="auto">自动选择系统支持</option><option value="system">系统灵动岛 / 实时通知</option><option value="floating">顶部悬浮窗</option></select></div>
+    <p id="island-system-status" class="subtext" role="status"></p>
+    <button id="island-notification-settings" class="text-button full">系统实时通知权限</button>
+    <button id="island-check-status" class="text-button full">检查系统接入状态</button>
+    <button id="preview-island" class="text-button full">预览灵动岛 · 10 秒</button>
     <div class="setting-row"><label for="islandContent">显示内容</label><select id="islandContent"><option value="market">股票行情</option><option value="muyu">木鱼计数</option></select></div>
     <div id="island-market-settings">
-      <div class="setting-row"><label for="islandSymbol">显示股票</label><select id="islandSymbol"><option value="">跟随当前自选</option></select></div>
+    <div class="setting-row"><label for="islandSymbol">显示股票</label><select id="islandSymbol"><option value="">跟随当前自选</option></select></div>
       <div class="setting-row"><label for="islandPrice">显示价格</label><input id="islandPrice" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandPercent">显示涨跌幅</label><input id="islandPercent" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandHoldings">展开时显示持仓</label><input id="islandHoldings" type="checkbox" role="switch"></div>
     </div>
     <div class="setting-row"><label for="islandCount">显示木鱼计数</label><input id="islandCount" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandBull">显示牛来</label><input id="islandBull" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandMotion">岛内动画</label><input id="islandMotion" type="checkbox" role="switch"></div>
@@ -76,8 +80,8 @@
     <div class="setting-row"><label for="islandInterval">行情刷新</label><select id="islandInterval"><option value="5">每 5 秒</option><option value="10">每 10 秒</option><option value="30">每 30 秒</option></select></div>
     <div class="setting-row"><label for="islandPlacement">前摄位置</label><select id="islandPlacement"><option value="auto">自动识别开孔</option><option value="manual">手动校准</option><option value="below">系统栏下方</option></select></div>
     <div class="setting-row"><label for="islandCameraInteraction">前摄交互</label><input id="islandCameraInteraction" type="checkbox" role="switch"></div>
-    <p id="camera-status" class="subtext"></p><button id="camera-permission" class="text-button full">前往系统开启前摄交互</button>
-    <div id="camera-manual"><div class="setting-range"><label for="islandCameraX">前摄水平位置<span id="islandCameraX-value"></span></label><input id="islandCameraX" type="range" min="0" max="100" step="1"></div><div class="setting-range"><label for="islandCameraWidth">开孔宽度<span id="islandCameraWidth-value"></span></label><input id="islandCameraWidth" type="range" min="12" max="200" step="2"></div><div class="setting-range"><label for="islandCameraHeight">开孔高度<span id="islandCameraHeight-value"></span></label><input id="islandCameraHeight" type="range" min="12" max="80" step="2"></div></div>
+    <p id="camera-status" data-floating-island class="subtext"></p><button id="camera-permission" data-floating-island class="text-button full">前往系统开启前摄交互</button>
+    <div id="camera-manual" data-floating-island><div class="setting-range"><label for="islandCameraX">前摄水平位置<span id="islandCameraX-value"></span></label><input id="islandCameraX" type="range" min="0" max="100" step="1"></div><div class="setting-range"><label for="islandCameraWidth">开孔宽度<span id="islandCameraWidth-value"></span></label><input id="islandCameraWidth" type="range" min="12" max="200" step="2"></div><div class="setting-range"><label for="islandCameraHeight">开孔高度<span id="islandCameraHeight-value"></span></label><input id="islandCameraHeight" type="range" min="12" max="80" step="2"></div></div>
     <div class="setting-range"><label for="islandWidth">宽度<span id="islandWidth-value"></span></label><input id="islandWidth" type="range" min="200" max="360" step="8"></div><div class="setting-range"><label for="islandOffsetY">垂直微调<span id="islandOffsetY-value"></span></label><input id="islandOffsetY" type="range" min="-24" max="160" step="2"></div><div class="setting-range"><label for="islandOffsetX">水平微调<span id="islandOffsetX-value"></span></label><input id="islandOffsetX" type="range" min="-160" max="160" step="2"></div>
     <div class="setting-row"><label for="islandAutoCollapse">展开后 10 秒自动收起</label><input id="islandAutoCollapse" type="checkbox" role="switch"></div><div class="setting-row"><label for="islandHideInApp">打开牛来时隐藏</label><input id="islandHideInApp" type="checkbox" role="switch"></div>
     <p class="subtext">轻触展开，横滑切换自选，下滑展开、上滑收起，长按打开牛来。木鱼岛轻触计数。前摄贴合使用黑色外观，按当前屏幕开孔重新排布。</p>

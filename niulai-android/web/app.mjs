@@ -530,8 +530,35 @@ function paintFeatureSettings() {
   const cameraReady = window.NiulaiNative?.cameraInteractionReady?.() || false;
   $('camera-status').textContent = cameraReady && state.islandCameraInteraction ? '前摄交互已开启。位置识别有误时，可选择手动校准。' : '要在摄像头周围点击和滑动，请在系统无障碍设置中开启“牛来前摄交互”。';
   $('camera-permission').hidden = cameraReady;
+  paintIslandStatus();
   paintIslandPreview();
 }
+
+function paintIslandStatus() {
+  let info = {};
+  try { info = JSON.parse(window.NiulaiNative?.islandStatus?.() || '{}'); } catch {}
+  const system = state.islandMode === 'system' || state.islandMode === 'auto' && info.supported;
+  let status = '顶部悬浮窗模式';
+  if (system) {
+    if (!window.NiulaiNative?.islandStatus) status = '请在安装版中检查系统实时通知能力';
+    else if (!info.notifications) status = '请开启牛来的通知权限和“系统灵动岛行情”通知通道';
+    else if (info.promoted) status = '已获得系统实时通知提升，岛的外观与展开由系统管理';
+    else if (info.sdk < 36 && info.focusProtocol < 3) status = '当前系统尚未提供 Android 16 实时通知或小米超级岛接口';
+    else if (info.sdk < 36 && !info.xiaomiConfigured) status = '当前系统需接入小米超级岛服务，等待开发者配置 App ID 与服务授权';
+    else if (info.sdk >= 36 && !info.promotionAllowed) status = '系统实时通知提升权限尚未开启，可前往系统通知设置检查';
+    else if (info.posted) status = '已发送系统实时通知，系统尚未确认提升状态';
+    else status = '系统实时通知模式，可开启后预览，或返回桌面查看';
+  }
+  $('island-system-status').textContent = status;
+  $('island-notification-settings').hidden = !system;
+  for (const control of document.querySelectorAll('[data-floating-island]')) {
+    control.hidden = Boolean(system) || control.id === 'camera-manual' && state.islandPlacement !== 'manual' || control.id === 'camera-permission' && Boolean(window.NiulaiNative?.cameraInteractionReady?.());
+  }
+  $('preview-island').textContent = system ? '发送系统岛预览 · 10 秒' : '预览悬浮窗 · 10 秒';
+}
+
+$('island-check-status').onclick = paintIslandStatus;
+$('island-notification-settings').onclick = () => window.NiulaiNative?.islandSettings?.();
 
 for (const [key, fallback] of Object.entries(featureDefaults)) {
   const element = $(key);
@@ -541,8 +568,8 @@ for (const [key, fallback] of Object.entries(featureDefaults)) {
     state[key] = typeof fallback === 'boolean' ? element.checked : typeof fallback === 'number' || key === 'islandInterval' ? Number(element.value) : element.value;
     Object.assign(state, cleanFeatures(state));
     persist(); applySettings(); syncPet();
-    if (key === 'petEnabled' || key === 'islandEnabled') {
-      if (window.NiulaiNative?.setOverlayEnabled) window.NiulaiNative.setOverlayEnabled(key === 'petEnabled' ? 'pet' : 'island', state[key]);
+    if (key === 'petEnabled' || key === 'islandEnabled' || key === 'islandMode' && state.islandEnabled) {
+      if (window.NiulaiNative?.setOverlayEnabled) window.NiulaiNative.setOverlayEnabled(key === 'petEnabled' ? 'pet' : 'island', key === 'islandMode' ? true : state[key]);
       else toast('请在安卓安装版中开启悬浮功能');
     }
   };

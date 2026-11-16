@@ -14,7 +14,7 @@ import org.json.*;
 public class PetService extends Service {
     static final String CONFIG = "art.niulai.CONFIG", CHANGED = "art.niulai.PET_CHANGED", STOP = "art.niulai.STOP";
     static final String APP_VISIBLE = "art.niulai.APP_VISIBLE", CLOSE_PET = "art.niulai.CLOSE_PET", CLOSE_ISLAND = "art.niulai.CLOSE_ISLAND";
-    public static volatile boolean running, petShowing, islandShowing, appVisible;
+    public static volatile boolean running, petShowing, islandShowing, systemIslandActive, appVisible;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager wm;
     private WindowManager islandWm;
@@ -34,6 +34,8 @@ public class PetService extends Service {
     private JSONObject config = new JSONObject();
     private String symbol = "s_sh000001", islandSymbol = "s_sh000001";
     private boolean collapsed, receiverRegistered;
+    private boolean systemIsland, systemIslandVisible;
+    private String notificationKey = "";
     private long previewUntil;
     private MuyuSound woodSound;
     private android.animation.ValueAnimator islandAnimator;
@@ -47,6 +49,7 @@ public class PetService extends Service {
             if (MuyuStore.CHANGED.equals(action)) {
                 pet.countsChanged();
                 island.countsChanged();
+                updateSystemNotification();
             } else if (Intent.ACTION_CONFIGURATION_CHANGED.equals(action)) {
                 configure();
                 StackWidgetProvider.refreshAll(PetService.this);
@@ -61,11 +64,12 @@ public class PetService extends Service {
         Notification notification = AndroidCompat.notification(this);
         if (Build.VERSION.SDK_INT >= 34) startForeground(100, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(100, notification);
-        if (!AndroidCompat.overlays(this)) { stopSelf(); return; }
+        JSONObject initialState = AppState.load(this);
+        if (!AndroidCompat.overlays(this) && !(initialState.optBoolean("islandEnabled") && SystemIsland.use(this, initialState))) { stopSelf(); return; }
         running = true;
         wm = (WindowManager)getSystemService(WINDOW_SERVICE);
         islandWm = wm;
-        if (Build.VERSION.SDK_INT >= 28 && Build.VERSION.SDK_INT < 30) {
+        if (Build.VERSION.SDK_INT >= 28 && Build.VERSION.SDK_INT < 30 && AndroidCompat.overlays(this)) {
             cutoutProbe = new View(this);
             WindowManager.LayoutParams probe = parameters(-1, -1, "Niulai Camera Geometry");
             probe.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
@@ -109,11 +113,13 @@ public class PetService extends Service {
             pet.update(quote, error);
             if (islandSymbol.equals(symbol)) island.update(quote, error);
             if (quote != null && error == null) PetConfig.cache(this, NativeQuoteFeed.json(quote));
+            updateSystemNotification();
         });
         islandFeed = new NativeQuoteFeed((quote, error) -> {
             secondaryQuote = quote;
             secondaryError = error;
             island.update(quote, error);
+            updateSystemNotification();
         });
         IntentFilter filter = new IntentFilter();
         for (String action : new String[]{Intent.ACTION_SCREEN_OFF, Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT,
@@ -147,6 +153,7 @@ public class PetService extends Service {
             }
             PetConfig.configure(this, state.toString());
             config = new JSONObject(PetConfig.json(this));
+            systemIsland = SystemIsland.use(this, config);
             refreshIslandHost();
             String nextSymbol = config.optString("symbol", "s_sh000001");
             if (!symbol.equals(nextSymbol)) { primaryQuote = null; primaryError = null; }
@@ -174,14 +181,14 @@ public class PetService extends Service {
 
     private void attachSurfaces() {
         try {
-            if (config.optBoolean("petEnabled") && !petShowing) {
+            if (config.optBoolean("petEnabled") && AndroidCompat.overlays(this) && !petShowing) {
                 clampPet(); wm.addView(root, petParams); petShowing = true;
             } else if (!config.optBoolean("petEnabled") && petShowing) {
                 wm.removeView(root); petShowing = false;
             }
-            if (config.optBoolean("islandEnabled") && !islandShowing) {
+            if (config.optBoolean("islandEnabled") && !systemIsland && AndroidCompat.overlays(this) && !islandShowing) {
                 placeIsland(); updateBridge(); islandWm.addView(island, islandParams); islandShowing = true;
-            } else if (!config.optBoolean("islandEnabled") && islandShowing) {
+            } else if ((!config.optBoolean("islandEnabled") || systemIsland) && islandShowing) {
                 islandWm.removeView(island); islandShowing = false; removeBridge();
             }
         } catch (RuntimeException e) { android.util.Log.w("NiulaiPet", "Floating window unavailable", e); stopSelf(); }
@@ -239,7 +246,7 @@ public class PetService extends Service {
     }
 
     private void refreshIslandHost() {
-        FrontCameraService next = config.optBoolean("islandCameraInteraction") && !config.optString("islandPlacement", "auto").equals("below") ? FrontCameraService.connected : null;
+        FrontCameraService next = !systemIsland && config.optBoolean("islandCameraInteraction") && !config.optString("islandPlacement", "auto").equals("below") ? FrontCameraService.connected : null;
         if (next != cameraHost) {
             if (islandShowing) { islandWm.removeView(island); islandShowing = false; }
             removeBridge(); cameraHost = next;
@@ -280,7 +287,7 @@ public class PetService extends Service {
     }
 
     private void updateWindows() {
-        if (!AndroidCompat.overlays(this)) { stopSelf(); return; }
+        if (!AndroidCompat.overlays(this)) { if (!systemIsland) stopSelf(); return; }
         try {
             if (petShowing) wm.updateViewLayout(root, petParams);
             if (islandShowing) { islandWm.updateViewLayout(island, islandParams); updateBridge(); }
@@ -294,6 +301,7 @@ public class PetService extends Service {
         boolean preview = SystemClock.uptimeMillis() < previewUntil;
         boolean petVisible = screen && petShowing && (!appVisible || !config.optBoolean("petHideInApp", true) || preview);
         boolean islandVisible = screen && islandShowing && (!appVisible || !config.optBoolean("islandHideInApp", true) || preview);
+        systemIslandVisible = screen && systemIsland && config.optBoolean("islandEnabled") && (!appVisible || !config.optBoolean("islandHideInApp", true) || preview);
         root.setVisibility(petVisible ? View.VISIBLE : View.INVISIBLE);
         island.setVisibility(islandVisible ? View.VISIBLE : View.INVISIBLE);
         if (cameraBridge != null) cameraBridge.setVisibility(islandVisible ? View.VISIBLE : View.INVISIBLE);
@@ -301,10 +309,23 @@ public class PetService extends Service {
         island.active(islandVisible);
         boolean petMarket = !"muyu".equals(config.optString("petMode"));
         boolean islandMarket = !"muyu".equals(config.optString("islandContent"));
-        feed.setActive((petVisible && petMarket) || (islandVisible && islandMarket && islandSymbol.equals(symbol)));
-        islandFeed.setActive(islandVisible && islandMarket && !islandSymbol.equals(symbol));
+        feed.setActive((petVisible && petMarket) || ((islandVisible || systemIslandVisible) && islandMarket && islandSymbol.equals(symbol)));
+        islandFeed.setActive((islandVisible || systemIslandVisible) && islandMarket && !islandSymbol.equals(symbol));
+        updateSystemNotification();
         if (!screen) woodSound.stop();
         android.util.Log.i("NiulaiPet", "visible=" + petVisible + ";island=" + islandVisible);
+    }
+
+    private void updateSystemNotification() {
+        if (feed == null) return;
+        NativeMarket.Quote quote = islandSymbol.equals(symbol) ? primaryQuote : secondaryQuote;
+        String error = islandSymbol.equals(symbol) ? primaryError : secondaryError;
+        String key = systemIslandVisible ? config.toString() + ":" + islandSymbol + ":" + (quote == null ? "waiting" : quote.received) + ":" + error + ":" + MuyuStore.read(this).optLong("session") : "service";
+        if (key.equals(notificationKey)) return;
+        notificationKey = key;
+        Notification notification = systemIslandVisible ? SystemIsland.create(this, config, quote, error) : AndroidCompat.notification(this);
+        getSystemService(NotificationManager.class).notify(SystemIsland.NOTIFICATION_ID, notification);
+        systemIslandActive = systemIsland && config.optBoolean("islandEnabled");
     }
 
     private void togglePet() {
@@ -355,7 +376,7 @@ public class PetService extends Service {
     private void closeFeature(String key) {
         AppState.feature(this, key, false);
         configure();
-        if (!petShowing && !islandShowing) stopSelf();
+        if (!petShowing && !islandShowing && !(systemIsland && config.optBoolean("islandEnabled"))) stopSelf();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -364,6 +385,8 @@ public class PetService extends Service {
             AppState.feature(this, "petEnabled", false); AppState.feature(this, "islandEnabled", false); stopSelf();
         } else if (CLOSE_PET.equals(action)) closeFeature("petEnabled");
         else if (CLOSE_ISLAND.equals(action)) closeFeature("islandEnabled");
+        else if ("art.niulai.ISLAND_PREVIOUS".equals(action)) selectIsland(-1);
+        else if ("art.niulai.ISLAND_NEXT".equals(action)) selectIsland(1);
         else if ("art.niulai.PREVIEW".equals(action) && pet != null) {
             previewUntil = SystemClock.uptimeMillis() + 6000;
             pet.preview(intent.getStringExtra("motion"));
@@ -409,6 +432,7 @@ public class PetService extends Service {
 
     @Override public void onDestroy() {
         running = false;
+        systemIslandActive = false;
         if(islandAnimator!=null)islandAnimator.cancel();
         handler.removeCallbacksAndMessages(null);
         if (feed != null) feed.close();

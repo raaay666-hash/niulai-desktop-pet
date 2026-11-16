@@ -25,6 +25,8 @@ final class FeatureOptions {
         to.put("islandOffsetY", bounded(from, "islandOffsetY", 0, -24, 160));
         String placement = from.optString("islandPlacement", "auto");
         to.put("islandPlacement", placement.equals("manual") || placement.equals("below") ? placement : "auto");
+        String mode = from.optString("islandMode", "auto");
+        to.put("islandMode", mode.equals("system") || mode.equals("floating") ? mode : "auto");
         to.put("islandCameraX", bounded(from, "islandCameraX", 50, 0, 100));
         to.put("islandCameraWidth", bounded(from, "islandCameraWidth", 24, 12, 200));
         to.put("islandCameraHeight", bounded(from, "islandCameraHeight", 28, 12, 80));

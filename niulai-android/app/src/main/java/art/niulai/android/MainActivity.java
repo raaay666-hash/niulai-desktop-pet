@@ -92,7 +92,8 @@ public class MainActivity extends Activity {
     }
     private void requestFeature(String feature) {
         requestedFeature="island".equals(feature)?"island":"pet";
-        if (!AndroidCompat.overlays(this)) {
+        boolean systemIsland = requestedFeature.equals("island") && SystemIsland.use(this, AppState.load(this));
+        if (!systemIsland && !AndroidCompat.overlays(this)) {
             pendingPet = true;
             try { startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName()))); }
             catch (Exception e) { pendingPet=false; Toast.makeText(this,"请在应用设置中允许牛来显示悬浮窗",Toast.LENGTH_LONG).show(); }
@@ -106,7 +107,14 @@ public class MainActivity extends Activity {
         try { AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",true);AndroidCompat.startPet(this); notifyPetState(); }
         catch (Exception e) { Toast.makeText(this,"桌宠未能启动，请检查悬浮窗和后台运行权限",Toast.LENGTH_LONG).show(); }
     }
-    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] grants) { super.onRequestPermissionsResult(code,permissions,grants); if(code==42 && Settings.canDrawOverlays(this)) launchPet(); if(code==77)publishUpdate(); }
+    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] grants) {
+        super.onRequestPermissionsResult(code,permissions,grants);
+        if (code == 42) {
+            boolean systemIsland = requestedFeature.equals("island") && SystemIsland.use(this, AppState.load(this));
+            if (systemIsland || Settings.canDrawOverlays(this)) launchPet();
+        }
+        if(code==77)publishUpdate();
+    }
     public class MarketBridge {
         @JavascriptInterface public String updateStatus(){return updates.status();}
         @JavascriptInterface public void checkUpdates(){runOnUiThread(()->updates.check(true));}
@@ -128,6 +136,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void setOverlayEnabled(String feature,boolean enabled){runOnUiThread(()->setOverlayEnabledNative(feature,enabled));}
         @JavascriptInterface public boolean systemDark(){return Appearance.systemDark(MainActivity.this);}
         @JavascriptInterface public boolean cameraInteractionReady(){return FrontCameraService.connected != null;}
+        @JavascriptInterface public String islandStatus(){return SystemIsland.status(MainActivity.this).toString();}
+        @JavascriptInterface public void islandSettings(){runOnUiThread(()->{
+            Intent settings = new Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS", Uri.parse("package:" + getPackageName()));
+            if (Build.VERSION.SDK_INT < 36 || settings.resolveActivity(getPackageManager()) == null) settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            try { startActivity(settings); } catch (RuntimeException error) { supportSettingsNative("app"); }
+        });}
         @JavascriptInterface public void cameraInteractionSettings(){runOnUiThread(()->{
             try { Intent settings = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS); startActivity(settings); }
             catch (RuntimeException error) { Toast.makeText(MainActivity.this,"请在系统无障碍设置中开启牛来前摄交互",Toast.LENGTH_LONG).show(); }
@@ -135,7 +149,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String muyuCounts(){return MuyuStore.read(MainActivity.this).toString();}
         @JavascriptInterface public String tapMuyu(){return MuyuStore.tap(MainActivity.this).toString();}
         @JavascriptInterface public String newMuyuRound(){return MuyuStore.newRound(MainActivity.this).toString();}
-        @JavascriptInterface public void previewIsland(){runOnUiThread(()->{if(PetService.islandShowing)startService(new Intent(MainActivity.this,PetService.class).setAction("art.niulai.ISLAND_PREVIEW"));else Toast.makeText(MainActivity.this,"请先开启灵动岛",Toast.LENGTH_SHORT).show();});}
+        @JavascriptInterface public void previewIsland(){runOnUiThread(()->{if(PetService.islandShowing || PetService.systemIslandActive)startService(new Intent(MainActivity.this,PetService.class).setAction("art.niulai.ISLAND_PREVIEW"));else Toast.makeText(MainActivity.this,"请先开启灵动岛",Toast.LENGTH_SHORT).show();});}
         @JavascriptInterface public void goHome() { runOnUiThread(()->startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK))); }
         @JavascriptInterface public void pinWidget() {runOnUiThread(()->pinWidgetNative());}
         @JavascriptInterface public String deviceInfo() { try { JSONObject o=new JSONObject(); o.put("brand",Build.MANUFACTURER); o.put("model",Build.MODEL); o.put("sdk",Build.VERSION.SDK_INT);o.put("android",Build.VERSION.RELEASE); o.put("overlay",Settings.canDrawOverlays(MainActivity.this)); return o.toString(); }catch(Exception e){return "{}";} }
@@ -158,7 +172,7 @@ public class MainActivity extends Activity {
     }
     void pinWidgetNative(){AppWidgetManager m=getSystemService(AppWidgetManager.class);try{if(m.isRequestPinAppWidgetSupported()){m.requestPinAppWidget(new ComponentName(this,StackWidgetProvider.class),null,null);Toast.makeText(this,"请在系统弹窗中确认添加",Toast.LENGTH_LONG).show();return;}}catch(RuntimeException ignored){}Toast.makeText(this,"请长按桌面空白处，进入小组件，找到牛来盯盘",Toast.LENGTH_LONG).show();}
     void supportSettingsNative(String kind){try{startActivity("battery".equals(kind)?new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS):new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}catch(Exception e){Toast.makeText(this,"请在系统设置中搜索牛来盯盘",Toast.LENGTH_LONG).show();}}
-    @Override protected void onResume() { super.onResume();if(updates!=null){updates.check(false);publishUpdate();}JSONObject resumeState=AppState.load(this);if(!pendingPet&&!PetService.running&&AndroidCompat.overlays(this)&&(resumeState.optBoolean("petEnabled")||resumeState.optBoolean("islandEnabled")))AndroidCompat.startPet(this);PetService.appVisible=true;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));StackWidgetProvider.refreshAll(this);js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");if(panel!=null)panel.resume();if(gateway!=null) gateway.setActive(true); if(web!=null){web.onResume();js("window.__niulaiLifecycle && window.__niulaiLifecycle(true)");}notifyPetState();if(pendingPet){pendingPet=false;if(AndroidCompat.overlays(this))requestFeature(requestedFeature);else{AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",false);notifyPetState();}} }
+    @Override protected void onResume() { super.onResume();if(updates!=null){updates.check(false);publishUpdate();}JSONObject resumeState=AppState.load(this);if(!pendingPet&&!PetService.running&&(AndroidCompat.overlays(this)||(resumeState.optBoolean("islandEnabled")&&SystemIsland.use(this,resumeState)))&&(resumeState.optBoolean("petEnabled")||resumeState.optBoolean("islandEnabled")))AndroidCompat.startPet(this);PetService.appVisible=true;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));StackWidgetProvider.refreshAll(this);js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");if(panel!=null)panel.resume();if(gateway!=null) gateway.setActive(true); if(web!=null){web.onResume();js("window.__niulaiLifecycle && window.__niulaiLifecycle(true)");}notifyPetState();if(pendingPet){pendingPet=false;if(AndroidCompat.overlays(this))requestFeature(requestedFeature);else{AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",false);notifyPetState();}} }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(pendingPet&&AndroidCompat.overlays(this)){pendingPet=false;requestFeature(requestedFeature);}}
     @Override protected void onPause() {PetService.appVisible=false;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));if(panel!=null)panel.pause();if(gateway!=null)gateway.setActive(false);if(web!=null){js("window.__niulaiLifecycle && window.__niulaiLifecycle(false)");web.onPause();}super.onPause(); }
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){super.onConfigurationChanged(configuration);JSONObject state=AppState.load(this);applyAppearance(Appearance.dark(this,state.optString("theme","system")));if(panel!=null)panel.refreshAppearance();js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");StackWidgetProvider.refreshAll(this);}

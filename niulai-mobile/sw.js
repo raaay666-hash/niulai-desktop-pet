@@ -1,4 +1,4 @@
-const CACHE='niulai-mobile-v25-wordmark';
+const CACHE='niulai-mobile-v26-chart170';
 const FILES=['./','index.html','styles.css','styles.css?v=20261115-wordmark','theme.js','app.js','app.js?v=20261115-wordmark','download/','download/history/','download/updates/','download.css?v=20261114-polish160','download.js?v=20261114-polish160','assets/fonts/niulai-brush.ttf','manifest.webmanifest','assets/head.png','assets/desktop-cow-chinrest.png','assets/niulai.mp3','assets/niulai-tap.wav','assets/muyu-frames.webp','assets/muyu-hq/muyu-00.webp','assets/muyu-hq/muyu-01.webp','assets/icon-180.png','assets/icon-192.png','assets/icon-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('niulai-mobile-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});

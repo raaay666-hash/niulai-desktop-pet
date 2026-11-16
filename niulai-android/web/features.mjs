@@ -7,7 +7,7 @@ export const featureDefaults = {
   islandPercent: true, islandBull: true, islandCount: true, islandHoldings: false,
   islandHideInApp: true, islandMotion: true, islandAutoCollapse: true, islandSymbol: '',
   islandWidth: 264, islandOffsetX: 0, islandOffsetY: 0, islandInterval: 5,
-  islandPlacement: 'auto', islandCameraInteraction: false, islandCameraX: 50,
+  islandMode: 'auto', islandPlacement: 'auto', islandCameraInteraction: false, islandCameraX: 50,
   islandCameraWidth: 24, islandCameraHeight: 28,
   widgetTheme: 'system', widgetSparkline: true, widgetBull: true
 };
@@ -26,6 +26,7 @@ export function cleanFeatures(raw = {}) {
     if (Number.isFinite(value)) clean[key] = Math.max(min, Math.min(max, Math.round(value)));
   }
   clean.islandPlacement = ['auto', 'manual', 'below'].includes(raw.islandPlacement) ? raw.islandPlacement : 'auto';
+  clean.islandMode = ['auto', 'system', 'floating'].includes(raw.islandMode) ? raw.islandMode : 'auto';
   clean.islandInterval = [5, 10, 30].includes(raw.islandInterval) ? raw.islandInterval : 5;
   clean.islandSymbol = raw.islandSymbol && symbols.normalizeMarketSymbol(raw.islandSymbol) === raw.islandSymbol ? raw.islandSymbol : '';
   return clean;
