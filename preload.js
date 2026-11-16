@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
   settings: patch => ipcRenderer.invoke('desktop:settings', patch),
   stock: (operation, payload) => ipcRenderer.invoke('desktop:stock', operation, payload),
   search: query => ipcRenderer.invoke('desktop:search', query),
+  chartHistory: value => ipcRenderer.invoke('desktop:chart-history', value),
   refresh: () => ipcRenderer.invoke('desktop:refresh'),
   updates: operation => ipcRenderer.invoke('desktop:updates', operation),
   onUpdate: callback => subscribe('desktop:update', callback),

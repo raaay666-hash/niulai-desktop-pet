@@ -73,7 +73,9 @@ $apk = Join-Path $release "Niulai-Android-$version.apk"
 & (Join-Path $java 'java.exe') -jar (Join-Path $tools 'lib/apksigner.jar') sign --ks $KeyStore --ks-key-alias $KeyAlias --ks-pass env:NIULAI_KEY_PASSWORD --out $apk $aligned; Check 'APK signing'
 & (Join-Path $java 'java.exe') -jar (Join-Path $tools 'lib/apksigner.jar') verify --verbose --print-certs $apk; Check 'Signature verification'
 & (Join-Path $tools 'zipalign.exe') -c -p 4 $apk; Check 'Final alignment'
-$hash = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+$hasher = [Security.Cryptography.SHA256]::Create()
+try { $hash = [BitConverter]::ToString($hasher.ComputeHash([IO.File]::ReadAllBytes($apk))).Replace('-', '').ToLowerInvariant() }
+finally { $hasher.Dispose() }
 Set-Content -LiteralPath (Join-Path $release "Niulai-Android-$version.apk.sha256") -Value "$hash  Niulai-Android-$version.apk" -Encoding ascii
 Write-Output "APK ready: $apk"
 Write-Output "SHA256: $hash"

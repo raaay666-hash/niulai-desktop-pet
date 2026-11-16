@@ -7,13 +7,14 @@ import { cropSprite, catalog } from './bull-motion.mjs';
 import { DesktopBullMotion as BullMotion } from '../../renderer-modules/desktop-crying-motion.js';
 import { featureDefaults, cleanFeatures, localCounts } from './features.mjs';
 import { TapVoice } from './tap-voice.mjs';
+import { MarketChart } from '../../renderer-modules/market-chart.js';
 
 const $ = id => document.getElementById(id);
 window.__niulaiUpdate = value => {
   $('update-banner').hidden = !value.available;
   $('update-title').textContent = '牛来盯盘 ' + (value.version || '') + ' 已发布';
   $('update-note').textContent = (value.notes || []).slice(0, 2).join(' · ');
-  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.4.0'));
+  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.5.0'));
   $('check-update').disabled = Boolean(value.checking);
   $('update-notifications').checked = value.enabled !== false;
   $('update-permission').textContent = value.permission ? '系统通知设置' : '开启系统通知';
@@ -27,6 +28,7 @@ try { window.__niulaiUpdate(JSON.parse(window.NiulaiNative?.updateStatus?.() || 
 try { const restored=window.NiulaiNative?.restoreAppState?.(); if(restored)localStorage.setItem('niulai:android:v1',restored); } catch {}
 const state = loadState(localStorage);
 const quotes = new Map();
+const marketChart = new MarketChart($('market-chart'), value => request('history', value));
 const audio = { rise: new Audio('assets/niulai.mp3'), fall: new Audio('assets/mama.mp3') };
 const woodAudio = new TapVoice('assets/niulai-tap.wav');
 woodAudio.volume = .65;
@@ -195,6 +197,7 @@ function render() {
   $('refresh').setAttribute('aria-busy', String(busy));
   $('refresh').textContent = busy ? '↻ 正在更新' : '↻ 刷新行情';
   renderPosition($('home-position'), stock, q); renderLists(); renderPortfolio();
+  marketChart.update(stock.code, active && tab === 'home' && !document.documentElement.classList.contains('cover'));
   if(document.documentElement.classList.contains('cover')&&state.private)$('stack-position').replaceChildren(text('p','•••• · 展开手机，在内屏查看持仓。','subtext'));else renderPosition($('stack-position'),stock,q);
   $('market-caption').textContent=marketSession(stock.code);
   $('market-details').textContent=q?`昨收 ${fmt(q.prevClose,3)} · ${currency(stock.code)}。${q.time?'行情源时间 '+q.time:'接口未提供行情时间；获取时间不代表成交时间。'}`:'等待连接，暂无可展示的行情。';
@@ -354,7 +357,8 @@ function openPosition(code = state.selected) {
 }
 for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => changeTab(button.dataset.tab);
 for (const button of document.querySelectorAll('.add-stock')) button.onclick = openSearch;
-$('select-stock').onclick = () => changeTab('watchlist'); $('refresh').onclick = refresh;
+$('select-stock').onclick = () => changeTab('watchlist');
+$('refresh').onclick = () => { if (!marketChart.loading) marketChart.load(true); refresh(); };
 $('settings-open').onclick = () => openSettings();
 for (const button of document.querySelectorAll('[data-settings]')) {
   button.onclick = () => selectSettings(button.dataset.settings);

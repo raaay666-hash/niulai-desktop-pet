@@ -1,4 +1,5 @@
 * { box-sizing: border-box; }
+.cover #market-chart { display: none; }
 html {
   color-scheme: light;
   --bg: #f4f5f7; --paper: #fff; --ink: #242b36; --muted: #677489;

@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>牛来盯盘</title>
   <link rel="stylesheet" href="desktop.css">
+  <link rel="stylesheet" href="renderer-modules/market-chart.css">
 </head>
 <body>
   <aside class="sidebar">
@@ -19,7 +20,7 @@
     <div class="sidebar-bottom">
       <button id="hide-dashboard"><span data-icon="desktop"></span>收起到托盘</button>
       <button data-tab="settings"><span data-icon="settings"></span>设置</button>
-      <span class="version">电脑版 <span id="app-version">1.6.0</span></span>
+      <span class="version">电脑版 <span id="app-version">1.7.0</span></span>
     </div>
   </aside>
   <div class="workspace">
@@ -34,6 +35,7 @@
               <div class="pet-scene"><span id="pet-state" class="pet-state">等待行情</span><button id="pet" aria-label="摸摸牛来"><canvas id="bull" width="384" height="384"></canvas></button><span id="pet-message">点击牛来互动</span></div>
               <div class="hero-footer"><span id="connection" class="connection" role="status">正在连接行情…</span><button id="motions-open" class="link-button">动作预览 ↗</button></div>
             </article>
+            <section id="market-chart" aria-label="历史 K 线"></section>
             <div class="subgrid">
               <article class="card position-card"><div class="section-heading"><h2>当前持仓</h2><button id="edit-position" class="link-button">编辑 ↗</button></div><div id="home-position"></div><p class="footnote">按原币估算，未计交易费用。</p></article>
               <article class="card chart-card"><div class="section-heading"><h2>最近报价</h2><span id="sample-count" class="muted">等待采样</span></div><canvas id="sparkline" width="600" height="150" aria-label="当前股票最近获取的报价曲线"></canvas><div class="chart-caption"><span id="sample-start">—</span><span id="sample-end">—</span></div><p class="footnote">本次运行采样</p></article>

@@ -30,6 +30,9 @@ final class QuoteGateway {
                 endpoint = "https://hq.sinajs.cn/list=" + value; referer = "https://finance.sina.com.cn/";
             } else if ("fallback".equals(kind) && value.matches("(?:s_(?:sh|sz)[0-9]{6}|hk[0-9]{5}|us[A-Z][A-Z0-9.-]{0,11})(?:,(?:s_(?:sh|sz)[0-9]{6}|hk[0-9]{5}|us[A-Z][A-Z0-9.-]{0,11})){0,19}")) {
                 endpoint = "https://qt.gtimg.cn/q=" + value; referer = "https://gu.qq.com/";
+            } else if ("history".equals(kind) && value.matches("(?:(?:sh|sz)[0-9]{6}|hk[0-9]{5}|us[A-Z][A-Z0-9.-]{0,20}),(?:day|week|month)")) {
+                String[] parts = value.split(",");
+                endpoint = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=" + URLEncoder.encode(parts[0] + "," + parts[1] + ",,,240,qfq", "UTF-8"); referer = "https://gu.qq.com/";
             } else if ("search".equals(kind) && value.trim().length() >= 1 && value.length() <= 40) {
                 endpoint = "https://smartbox.gtimg.cn/s3/?t=all&q=" + URLEncoder.encode(value.trim(), "UTF-8"); referer = "https://gu.qq.com/";
             } else { finish(id, null, "请求参数无效"); return; }

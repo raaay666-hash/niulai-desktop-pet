@@ -7,6 +7,7 @@ const root = path.resolve(project, '..');
 const output = path.join(project, 'build/web');
 await fs.mkdir(path.join(output, 'assets'), { recursive: true });
 for (const file of ['index.html', 'styles.css', 'compat.js']) await fs.copyFile(path.join(project, 'web', file), path.join(output, file));
+await fs.copyFile(path.join(root, 'renderer-modules/market-chart.css'), path.join(output, 'market-chart.css'));
 for (const obsolete of ['pet.html','pet.css','pet.js']) await fs.rm(path.join(output,obsolete),{force:true});
 for (const [from, to] of [
   ['assets/2d/bull-window-v2.png', 'bull-window-v2.png'],

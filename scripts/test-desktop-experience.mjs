@@ -63,7 +63,9 @@ try {
     globalThis.fetch = async url => {
       const address = new URL(url);
       let text;
-      if (address.hostname === 'smartbox.gtimg.cn') {
+      if (address.hostname === 'web.ifzq.gtimg.cn') {
+        text = JSON.stringify({ code: 0, data: {} });
+      } else if (address.hostname === 'smartbox.gtimg.cn') {
         const query = address.searchParams.get('q');
         globalThis.__searchQueries.push(query);
         await new Promise(resolve => setTimeout(resolve, query === 'slow' ? 800 : 120));

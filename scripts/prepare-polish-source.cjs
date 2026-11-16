@@ -7,7 +7,7 @@ const selected=['package.json','package-lock.json','pnpm-lock.yaml','main.js','p
 selected.push('README.md','niulai-android/README.md');
 if(fs.existsSync(path.join(root,'docs/三端优化与正式发布-20261114.md')))selected.push('docs/三端优化与正式发布-20261114.md');
 for(const file of selected){const source=path.join(root,file),target=path.join(destination,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.cpSync(source,target,{recursive:true,filter:p=>!excluded.has(path.basename(p))&&!/\.(p12|jks|keystore|apk|log|pyc)$/.test(p)});}
-const archive=path.join(root,'release/polish-20261113/win-unpacked/resources/app.asar');
+const archive=path.join(root,process.argv[2]||'release/polish-20261113','win-unpacked/resources/app.asar');
 const files=asar.listPackage(archive).map(file=>file.replace(/^[\\/]/,'')).filter(file=>!asar.statFile(archive,file).files).map(file=>{const data=asar.extractFile(archive,file);return{name:file.replaceAll('\\','/'),bytes:data.length,sha256:crypto.createHash('sha256').update(data).digest('hex')};});
 const version=require('../package.json').version;
 const report={version,reference:'Verified Windows '+version+' application',files};

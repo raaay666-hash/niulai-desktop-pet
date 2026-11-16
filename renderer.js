@@ -9,6 +9,7 @@ import { DailySessionTracker } from './renderer-modules/daily-session.js';
 import { AlertTriggerEngine } from './renderer-modules/alert-trigger-engine.js';
 import { isQuietOfficeActive } from './renderer-modules/quiet-office.js';
 import { buildQuoteSourceSettings } from './renderer-modules/quote-source-settings.js';
+import { MarketChart } from './renderer-modules/market-chart.js';
 
 let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
 let liveMood = 'loading', previewUntil = 0, motionPreview = 'loading';
@@ -33,6 +34,7 @@ function paintUpdate(value = updateStatus) {
 $('update-download').onclick = () => perform(api.updates('download'));
 api.onUpdate(paintUpdate);
 const moods = new MarketMood();
+const marketChart = new MarketChart($('market-chart'), value => api.chartHistory(value));
 const bull = makeMotion($('bull'));
 const wood = makeMotion($('wood-canvas'));
 const gallery = makeMotion($('motion-canvas'));
@@ -292,6 +294,7 @@ function render() {
   $('sample-start').textContent = time(samples[0]?.at);
   $('sample-end').textContent = time(samples.at(-1)?.at);
   drawSparkline($('sparkline'), samples, getComputedStyle(document.documentElement).getPropertyValue(quote?.changePct < 0 ? '--fall' : '--rise'));
+  marketChart.update(stock.code, tab === 'home' && !document.hidden && !data.suspended);
   updateMood(); renderSettingsPreview(); processFeatures();
 }
 function applySnapshot(next) {
@@ -317,6 +320,7 @@ function changeTab(next) {
   $('page-subtitle').hidden = !titles[tab][1];
   if (tab === 'settings') buildSettings();
   window.scrollTo(0, tabScroll.get(next) || 0);
+  marketChart.update(data.state.selected, tab === 'home' && !document.hidden && !data.suspended);
   syncMotion();
 }
 function selectStock(code) { perform(api.stock('select', { code })); }
@@ -660,6 +664,7 @@ for (const button of document.querySelectorAll('.add-stock')) button.onclick = o
 $('all-stocks').onclick = $('select-stock').onclick = () => changeTab('watchlist');
 $('refresh').onclick = async () => {
   refreshRequested = true;
+  if (tab === 'home' && !marketChart.loading) marketChart.load(true);
   try { await api.refresh(); }
   catch (error) { refreshRequested = false; toast(error.message); }
 };
@@ -746,7 +751,11 @@ document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && /^[1-4]$/.test(event.key) && !document.querySelector('dialog[open]')) { event.preventDefault(); changeTab(['home', 'watchlist', 'portfolio', 'muyu'][Number(event.key) - 1]); return; }
   if (event.code === 'Space' && tab === 'muyu' && !document.querySelector('dialog[open]') && !event.target.closest('input, select, button, textarea')) { event.preventDefault(); $('wood-tap').click(); }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopAudio(); syncMotion(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAudio();
+  if (data) marketChart.update(data.state.selected, tab === 'home' && !document.hidden && !data.suspended);
+  syncMotion();
+});
 window.addEventListener('online', () => perform(api.refresh()));
 paintIcons();
 const legacyValues = {};

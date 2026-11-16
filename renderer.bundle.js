@@ -277,17 +277,17 @@
         const parts = match[1].split(",");
         const market = marketForSymbol2(symbol);
         const layout = market === MARKET.HK ? { name: 1, price: 6, change: 7, changePct: 8, prevClose: 3, volume: 12, amount: 11, date: 17, time: 18 } : market === MARKET.US ? { name: 0, price: 1, change: 4, changePct: 2, prevClose: 26, volume: 10, amount: 12, time: 3 } : { name: 0, price: 1, change: 2, changePct: 3, volume: 4, amount: 5, time: 31 };
-        const price = Number.parseFloat(parts[layout.price]);
+        const price2 = Number.parseFloat(parts[layout.price]);
         const change = Number.parseFloat(parts[layout.change]);
         const changePct = Number.parseFloat(parts[layout.changePct]);
-        if (![price, change, changePct].every(Number.isFinite)) return null;
+        if (![price2, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[layout.prevClose]);
         const quote = {
           code: symbol,
           name: parts[layout.name] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
-          price,
+          price: price2,
           change,
-          prevClose: Number.isFinite(providedPrevClose) ? providedPrevClose : price - change,
+          prevClose: Number.isFinite(providedPrevClose) ? providedPrevClose : price2 - change,
           changePct,
           volume: parts[layout.volume] || "",
           amount: parts[layout.amount] || "",
@@ -299,7 +299,7 @@
         const providerUpdatedAt = parseQuoteTime(parts[3], "s_sh000001", now);
         const reference = providerUpdatedAt ?? now;
         const regular = {
-          price,
+          price: price2,
           change,
           changePct,
           prevClose: quote.prevClose,
@@ -343,17 +343,17 @@
         const parts = match[1].split("~");
         const market = marketForSymbol2(symbol);
         const detailed = market !== MARKET.CN;
-        const price = Number.parseFloat(parts[3]);
+        const price2 = Number.parseFloat(parts[3]);
         const change = Number.parseFloat(parts[detailed ? 31 : 4]);
         const changePct = Number.parseFloat(parts[detailed ? 32 : 5]);
-        if (![price, change, changePct].every(Number.isFinite)) return null;
+        if (![price2, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[4]);
         const quote = {
           code: symbol,
           name: parts[1] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
-          price,
+          price: price2,
           change,
-          prevClose: detailed && Number.isFinite(providedPrevClose) ? providedPrevClose : price - change,
+          prevClose: detailed && Number.isFinite(providedPrevClose) ? providedPrevClose : price2 - change,
           changePct,
           volume: parts[6] || "",
           amount: parts[detailed ? 37 : 7] || "",
@@ -365,7 +365,7 @@
           quote.session = "regular";
           quote.quotedAt = parseQuoteTime(quote.time, symbol);
           quote.dayPrevClose = quote.prevClose;
-          quote.regular = { price, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
+          quote.regular = { price: price2, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
         }
         return quote;
       }
@@ -6788,8 +6788,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     test.onclick = () => run(async () => {
       const result = await api2.quoteSource("test", payload());
       const presentation = quotePresentation(result, Number(controls.interval.value));
-      const percent = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + "%" : "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B";
-      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent} \xB7 ${presentation.summary}`;
+      const percent2 = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + "%" : "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B";
+      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent2} \xB7 ${presentation.summary}`;
     });
     form.onsubmit = (event) => {
       event.preventDefault();
@@ -6801,6 +6801,346 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       });
     };
   }
+
+  // niulai-android/web/market-chart-data.mjs
+  var chartPeriods = { day: "\u65E5 K", week: "\u5468 K", month: "\u6708 K" };
+  function chartSymbol(code) {
+    const normalized = normalizeMarketSymbol(code);
+    if (!normalized) throw new Error("\u80A1\u7968\u4EE3\u7801\u65E0\u6548");
+    if (normalized.startsWith("s_")) return normalized.slice(2);
+    if (normalized.startsWith("rt_")) return normalized.slice(3);
+    return "us" + normalized.slice(3).toUpperCase();
+  }
+  function parseChartResponse(text, symbol, period) {
+    if (!Object.prototype.hasOwnProperty.call(chartPeriods, period)) throw new Error("K \u7EBF\u5468\u671F\u65E0\u6548");
+    const response = JSON.parse(text);
+    const data2 = response?.data?.[symbol];
+    if (response.code !== 0 || !data2) throw new Error("\u5386\u53F2\u884C\u60C5\u6682\u4E0D\u53EF\u7528");
+    const adjusted = Array.isArray(data2["qfq" + period]);
+    const rows = adjusted ? data2["qfq" + period] : data2[period];
+    const unique = /* @__PURE__ */ new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!Array.isArray(row) || !/^\d{4}-\d{2}-\d{2}$/.test(row[0])) continue;
+      const [date, ...values] = row;
+      const dateAt = Date.parse(date + "T00:00:00Z");
+      if (!Number.isFinite(dateAt) || new Date(dateAt).toISOString().slice(0, 10) !== date) continue;
+      const [open, close, high, low] = values.slice(0, 4).map((value) => value === "" || value == null ? NaN : Number(value));
+      if (![open, close, high, low].every(Number.isFinite) || low > Math.min(open, close) || high < Math.max(open, close)) continue;
+      const volume = values[4] === "" || values[4] == null ? NaN : Number(values[4]);
+      unique.set(date, { date, open, close, high, low, volume: Number.isFinite(volume) && volume >= 0 ? volume : null });
+    }
+    const bars = [...unique.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const exchangeSymbol = data2.qt?.[symbol]?.[2];
+    const resolved = symbol.startsWith("us") && typeof exchangeSymbol === "string" && /^[A-Z][A-Z0-9.-]{0,20}\.(?:OQ|N|AMEX)$/.test(exchangeSymbol) ? "us" + exchangeSymbol : symbol;
+    return { bars, adjusted, resolved, volumeUnit: /^(sh|sz)/.test(symbol) ? "\u624B" : "\u80A1" };
+  }
+  async function loadChart(request, code, period) {
+    const symbol = chartSymbol(code);
+    let result = parseChartResponse(await request(symbol + "," + period), symbol, period);
+    if (result.resolved !== symbol) {
+      result = parseChartResponse(await request(result.resolved + "," + period), result.resolved, period);
+    }
+    if (!result.bars.length) throw new Error("\u884C\u60C5\u6E90\u6682\u672A\u63D0\u4F9B\u8BE5\u6807\u7684\u7684\u5386\u53F2 K \u7EBF");
+    return { ...result, received: Date.now(), code, period };
+  }
+  function movingAverage(bars, index, size) {
+    if (index + 1 < size) return null;
+    let sum = 0;
+    for (let cursor = index - size + 1; cursor <= index; cursor++) sum += bars[cursor].close;
+    return sum / size;
+  }
+  function chartChange(bars, index) {
+    const previous = bars[index - 1]?.close;
+    return Number.isFinite(previous) && previous !== 0 ? (bars[index].close - previous) / Math.abs(previous) * 100 : null;
+  }
+  function compactVolume(value) {
+    if (!Number.isFinite(value)) return "\u2014";
+    if (value >= 1e8) return (value / 1e8).toFixed(2) + "\u4EBF";
+    if (value >= 1e4) return (value / 1e4).toFixed(2) + "\u4E07";
+    return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+
+  // renderer-modules/market-chart.js
+  var price = (value) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "\u2014";
+  var percent = (value) => Number.isFinite(value) ? (value > 0 ? "+" : "") + value.toFixed(2) + "%" : "\u2014";
+  var averageColors = ["#bf840d", "#6f7fe8", "#ba68b2"];
+  var MarketChart = class {
+    constructor(root, request) {
+      this.root = root;
+      this.request = request;
+      this.period = "day";
+      this.code = "";
+      this.epoch = 0;
+      this.count = 60;
+      this.offset = 0;
+      this.hover = null;
+      this.cache = /* @__PURE__ */ new Map();
+      root.classList.add("market-chart");
+      root.innerHTML = `
+      <div class="market-chart-heading"><h2>\u884C\u60C5\u8D70\u52BF</h2><div class="market-periods" role="group" aria-label="K \u7EBF\u5468\u671F">${Object.entries(chartPeriods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === "day"}">${label}</button>`).join("")}</div></div>
+      <div class="market-chart-toolbar"><span class="market-chart-basis"></span><div><button type="button" data-zoom="out" aria-label="\u7F29\u5C0F K \u7EBF">\u2212</button><button type="button" data-zoom="in" aria-label="\u653E\u5927 K \u7EBF">\uFF0B</button><button type="button" class="market-latest">\u6700\u8FD1</button><button type="button" class="market-retry" aria-label="\u5237\u65B0\u5386\u53F2 K \u7EBF">\u5237\u65B0</button></div></div>
+      <div class="market-chart-stats" aria-live="off"></div>
+      <div class="market-ma" aria-label="\u79FB\u52A8\u5E73\u5747\u7EBF"></div>
+      <div class="market-plot"><canvas tabindex="0" role="img" aria-label="\u80A1\u7968 K \u7EBF\u548C\u6210\u4EA4\u91CF\uFF0C\u5DE6\u53F3\u65B9\u5411\u952E\u67E5\u770B\uFF0CHome \u548C End \u8DF3\u81F3\u9996\u5C3E"></canvas><div class="market-chart-empty" role="status"></div></div>
+      <div class="market-chart-range"><input type="range" min="0" max="0" value="0" step="1" aria-label="\u6D4F\u89C8\u5386\u53F2 K \u7EBF\u533A\u95F4"></div>
+      <p class="market-chart-source" role="status"></p>`;
+      this.canvas = root.querySelector("canvas");
+      this.status = root.querySelector(".market-chart-source");
+      this.empty = root.querySelector(".market-chart-empty");
+      this.range = root.querySelector("input");
+      root.querySelectorAll("[data-period]").forEach((button) => button.onclick = () => {
+        this.period = button.dataset.period;
+        this.offset = 0;
+        this.hover = null;
+        this.load();
+      });
+      root.querySelector(".market-retry").onclick = () => this.load(true);
+      root.querySelector(".market-latest").onclick = () => {
+        this.offset = 0;
+        this.hover = null;
+        this.draw();
+      };
+      root.querySelectorAll("[data-zoom]").forEach((button) => button.onclick = () => {
+        this.count = Math.max(20, Math.min(160, this.count + (button.dataset.zoom === "in" ? -20 : 20)));
+        this.hover = null;
+        this.draw();
+      });
+      this.range.oninput = () => {
+        this.offset = Number(this.range.max) - Number(this.range.value);
+        this.hover = null;
+        this.draw();
+      };
+      this.canvas.addEventListener("pointermove", (event) => this.point(event));
+      this.canvas.addEventListener("pointerdown", (event) => {
+        this.canvas.focus({ preventScroll: true });
+        this.point(event);
+      });
+      this.canvas.addEventListener("pointerleave", (event) => {
+        if (event.pointerType !== "touch") {
+          this.hover = null;
+          this.draw();
+        }
+      });
+      this.canvas.addEventListener("keydown", (event) => this.key(event));
+      if (typeof ResizeObserver === "function") {
+        this.resize = new ResizeObserver(() => this.draw());
+        this.resize.observe(root);
+      } else {
+        window.addEventListener("resize", () => this.draw());
+      }
+      this.theme = new MutationObserver(() => this.draw());
+      this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    }
+    update(code, active = true) {
+      const changed = this.code !== code;
+      const resumed = active && !this.active;
+      this.active = active;
+      if (changed) {
+        this.code = code;
+        this.result = null;
+        this.loading = false;
+        this.offset = 0;
+        this.hover = null;
+        this.lastAttempt = 0;
+        ++this.epoch;
+      }
+      if (!active) return;
+      if (changed || !this.loading && (resumed || Date.now() - (this.lastAttempt || 0) >= 6e4)) this.load();
+      else this.draw();
+    }
+    async load(force = false) {
+      const ticket = ++this.epoch;
+      const code = this.code, period = this.period, key = code + "," + period;
+      if (!code || !this.active) return;
+      this.lastAttempt = Date.now();
+      this.result = this.cache.get(key) || null;
+      this.loading = false;
+      this.error = "";
+      this.draw();
+      if (!force && this.result && Date.now() - this.result.received < 6e4) return;
+      this.loading = true;
+      this.draw();
+      try {
+        const result = await loadChart(this.request, code, period);
+        if (ticket !== this.epoch) return;
+        this.cache.delete(key);
+        this.cache.set(key, result);
+        if (this.cache.size > 40) this.cache.delete(this.cache.keys().next().value);
+        this.result = result;
+      } catch (error) {
+        if (ticket !== this.epoch) return;
+        this.error = String(error.message || "\u5386\u53F2\u884C\u60C5\u8FDE\u63A5\u5931\u8D25").replace(/^Error invoking remote method '[^']+': Error: /, "");
+      } finally {
+        if (ticket === this.epoch) {
+          this.loading = false;
+          this.draw();
+        }
+      }
+    }
+    point(event) {
+      if (!this.geometry) return;
+      const { left, width } = this.canvas.getBoundingClientRect();
+      const { start, size, plotWidth } = this.geometry;
+      const x = (event.clientX - left) * this.geometry.width / width;
+      this.hover = start + Math.max(0, Math.min(size - 1, Math.floor((x - 8) / plotWidth * size)));
+      this.draw();
+    }
+    key(event) {
+      const bars = this.result?.bars;
+      if (!bars?.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      let index = this.hover ?? bars.length - this.offset - 1;
+      if (event.key === "Home") index = 0;
+      else if (event.key === "End") index = bars.length - 1;
+      else index += event.key === "ArrowLeft" ? -1 : 1;
+      this.hover = Math.max(0, Math.min(bars.length - 1, index));
+      if (this.hover < this.geometry.start) this.offset = bars.length - this.count - this.hover;
+      if (this.hover >= this.geometry.start + this.geometry.size) this.offset = bars.length - this.hover - 1;
+      this.draw();
+    }
+    draw() {
+      const bars = this.result?.bars || [];
+      const ready = bars.length > 0;
+      this.root.setAttribute("aria-busy", String(Boolean(this.loading)));
+      for (const button of this.root.querySelectorAll("[data-period]")) button.setAttribute("aria-pressed", String(button.dataset.period === this.period));
+      this.root.querySelector(".market-retry").disabled = Boolean(this.loading);
+      this.root.querySelector(".market-chart-basis").textContent = ready ? (this.result.adjusted ? "\u524D\u590D\u6743" : "\u4E0D\u590D\u6743") + " \xB7 \u6210\u4EA4\u91CF/" + this.result.volumeUnit : "";
+      this.empty.hidden = ready;
+      this.empty.textContent = this.loading ? "\u6B63\u5728\u83B7\u53D6\u5386\u53F2 K \u7EBF\u2026" : this.error || "\u7B49\u5F85\u5386\u53F2\u884C\u60C5";
+      this.status.textContent = this.loading ? "\u6B63\u5728\u66F4\u65B0\u817E\u8BAF\u5386\u53F2\u884C\u60C5\u2026" : this.error ? this.error + (ready ? " \xB7 \u4FDD\u7559\u4E0A\u6B21\u6570\u636E" : " \xB7 \u70B9\u51FB\u5237\u65B0\u91CD\u8BD5") : ready ? "\u817E\u8BAF\u5386\u53F2\u884C\u60C5 \xB7 \u622A\u81F3 " + bars[bars.length - 1].date + " \xB7 \u83B7\u53D6\u4E8E " + new Date(this.result.received).toLocaleTimeString("zh-CN", { hour12: false }) : "";
+      this.offset = Math.max(0, Math.min(Math.max(0, bars.length - this.count), this.offset));
+      this.range.max = String(Math.max(0, bars.length - this.count));
+      this.range.value = String(Number(this.range.max) - this.offset);
+      this.range.disabled = !ready || bars.length <= this.count;
+      this.root.querySelector('[data-zoom="in"]').disabled = !ready || this.count <= 20;
+      this.root.querySelector('[data-zoom="out"]').disabled = !ready || this.count >= 160;
+      this.root.querySelector(".market-latest").disabled = !ready || this.offset === 0;
+      const width = this.canvas.clientWidth;
+      if (!width) return;
+      const height = 300, ratio = Math.min(devicePixelRatio || 1, 3);
+      this.canvas.width = Math.round(width * ratio);
+      this.canvas.height = Math.round(height * ratio);
+      const ctx = this.canvas.getContext("2d");
+      ctx.scale(ratio, ratio);
+      this.geometry = null;
+      const stats = this.root.querySelector(".market-chart-stats");
+      const ma = this.root.querySelector(".market-ma");
+      if (!ready) {
+        stats.replaceChildren();
+        ma.replaceChildren();
+        return;
+      }
+      const end = bars.length - this.offset, start = Math.max(0, end - this.count);
+      const visible = bars.slice(start, end), size = visible.length;
+      const selected = Math.max(start, Math.min(end - 1, this.hover ?? end - 1));
+      const bar = bars[selected];
+      stats.replaceChildren();
+      for (const [label, value] of [["\u65E5\u671F", bar.date], ["\u5F00", price(bar.open)], ["\u9AD8", price(bar.high)], ["\u4F4E", price(bar.low)], ["\u6536", price(bar.close)], ["\u6DA8\u8DCC", percent(chartChange(bars, selected))], ["\u91CF", compactVolume(bar.volume) + this.result.volumeUnit]]) {
+        const cell = document.createElement("span");
+        const small = document.createElement("small");
+        small.textContent = label;
+        const strong = document.createElement("b");
+        strong.textContent = value;
+        cell.append(small, strong);
+        stats.append(cell);
+      }
+      ma.replaceChildren();
+      for (const [index, length] of [5, 10, 20].entries()) {
+        const label = document.createElement("span");
+        label.className = "market-ma-" + index;
+        label.textContent = "MA" + length + " " + price(movingAverage(bars, selected, length));
+        ma.append(label);
+      }
+      const style = getComputedStyle(this.root);
+      const color = (name) => style.getPropertyValue(name).trim();
+      const ink = color("--chart-ink"), muted = color("--muted"), line = color("--line");
+      const rise = color("--chart-rise"), fall = color("--chart-fall");
+      const left = 8, right = 68, top = 12, bottom = 210, volumeTop = 235, volumeBottom = 278;
+      const plotWidth = Math.max(20, width - left - right), step = plotWidth / size;
+      const values = [];
+      for (const item of visible) values.push(item.low, item.high);
+      for (let index = start; index < end; index++) {
+        for (const length of [5, 10, 20]) {
+          const value = movingAverage(bars, index, length);
+          if (value != null) values.push(value);
+        }
+      }
+      const rawMin = Math.min(...values), rawMax = Math.max(...values);
+      const padding = Math.max((rawMax - rawMin) * 0.08, Math.abs(rawMax) * 2e-3, 0.01);
+      const min = rawMin - padding, max = rawMax + padding;
+      const y = (value) => bottom - (value - min) / (max - min) * (bottom - top);
+      const x = (index) => left + (index - start + 0.5) * step;
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      for (let index = 0; index <= 4; index++) {
+        const value = min + (max - min) * index / 4, py = y(value);
+        ctx.strokeStyle = line;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(left, py);
+        ctx.lineTo(left + plotWidth, py);
+        ctx.stroke();
+        ctx.fillStyle = muted;
+        ctx.fillText(price(value), left + plotWidth + 7, py);
+      }
+      const maxVolume = Math.max(1, ...visible.map((item) => item.volume || 0));
+      ctx.fillStyle = muted;
+      ctx.fillText("\u6210\u4EA4\u91CF", left, volumeTop - 10);
+      ctx.textAlign = "right";
+      ctx.fillText(compactVolume(maxVolume), width - 3, volumeTop);
+      ctx.textAlign = "left";
+      for (let index = start; index < end; index++) {
+        const item = bars[index], px = x(index), body = Math.max(1, step * 0.62);
+        ctx.strokeStyle = ctx.fillStyle = item.close >= item.open ? rise : fall;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px, y(item.high));
+        ctx.lineTo(px, y(item.low));
+        ctx.stroke();
+        const py = Math.min(y(item.open), y(item.close)), bodyHeight = Math.max(1, Math.abs(y(item.close) - y(item.open)));
+        if (item.close > item.open && body > 3) ctx.strokeRect(px - body / 2, py, body, bodyHeight);
+        else ctx.fillRect(px - body / 2, py, body, bodyHeight);
+        if (item.volume != null) ctx.fillRect(px - body / 2, volumeBottom - item.volume / maxVolume * (volumeBottom - volumeTop), body, Math.max(1, item.volume / maxVolume * (volumeBottom - volumeTop)));
+      }
+      for (const [lineIndex, length] of [5, 10, 20].entries()) {
+        ctx.beginPath();
+        ctx.strokeStyle = averageColors[lineIndex];
+        ctx.lineWidth = 1.2;
+        let begun = false;
+        for (let index = start; index < end; index++) {
+          const value = movingAverage(bars, index, length);
+          if (value == null) continue;
+          if (begun) ctx.lineTo(x(index), y(value));
+          else {
+            ctx.moveTo(x(index), y(value));
+            begun = true;
+          }
+        }
+        ctx.stroke();
+      }
+      if (this.hover != null) {
+        ctx.strokeStyle = muted;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x(selected), top);
+        ctx.lineTo(x(selected), volumeBottom);
+        ctx.moveTo(left, y(bar.close));
+        ctx.lineTo(left + plotWidth, y(bar.close));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = ink;
+        ctx.beginPath();
+        ctx.arc(x(selected), y(bar.close), 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = muted;
+      ctx.fillText(visible[0].date, left, 294);
+      ctx.textAlign = "right";
+      ctx.fillText(visible[visible.length - 1].date, left + plotWidth, 294);
+      this.canvas.setAttribute("aria-label", `${this.code} ${chartPeriods[this.period]}\uFF0C${bar.date}\uFF0C\u5F00 ${price(bar.open)}\uFF0C\u9AD8 ${price(bar.high)}\uFF0C\u4F4E ${price(bar.low)}\uFF0C\u6536 ${price(bar.close)}\uFF0C\u6210\u4EA4\u91CF ${compactVolume(bar.volume)}${this.result.volumeUnit}\u3002\u5DE6\u53F3\u65B9\u5411\u952E\u67E5\u770B\uFF0CHome \u548C End \u8DF3\u81F3\u9996\u5C3E`);
+      this.geometry = { start, size, plotWidth, width };
+    }
+  };
 
   // renderer.js
   var data;
@@ -6839,6 +7179,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   $("update-download").onclick = () => perform(api.updates("download"));
   api.onUpdate(paintUpdate);
   var moods = new MarketMood();
+  var marketChart = new MarketChart($("market-chart"), (value) => api.chartHistory(value));
   var bull = makeMotion($("bull"));
   var wood = makeMotion($("wood-canvas"));
   var gallery = makeMotion($("motion-canvas"));
@@ -6975,11 +7316,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         if (!item) {
           const row = element("div", "", "stock-row");
           const button = element("button", "", "stock-main");
-          const name = element("div"), price = element("div");
+          const name = element("div"), price2 = element("div");
           item = {
             row,
             button,
-            price,
+            price: price2,
             name: element("strong"),
             code: element("small"),
             value: element("strong"),
@@ -6988,8 +7329,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
             percent: element("span")
           };
           name.append(item.name, item.code);
-          price.append(item.value, item.change, item.warning);
-          button.append(name, price);
+          price2.append(item.value, item.change, item.warning);
+          button.append(name, price2);
           if (full) button.append(item.percent);
           button.onclick = () => selectStock(stock.code);
           row.append(button);
@@ -7134,6 +7475,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("sample-start").textContent = time(samples[0]?.at);
     $("sample-end").textContent = time(samples.at(-1)?.at);
     drawSparkline($("sparkline"), samples, getComputedStyle(document.documentElement).getPropertyValue(quote?.changePct < 0 ? "--fall" : "--rise"));
+    marketChart.update(stock.code, tab === "home" && !document.hidden && !data.suspended);
     updateMood();
     renderSettingsPreview();
     processFeatures();
@@ -7165,6 +7507,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("page-subtitle").hidden = !titles[tab][1];
     if (tab === "settings") buildSettings();
     window.scrollTo(0, tabScroll.get(next) || 0);
+    marketChart.update(data.state.selected, tab === "home" && !document.hidden && !data.suspended);
     syncMotion();
   }
   function selectStock(code) {
@@ -7325,10 +7668,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       canvas.width = canvas.height = 100;
       const name = element("small");
       name.id = "preview-name";
-      const price = element("b");
-      price.id = "preview-price";
+      const price2 = element("b");
+      price2.id = "preview-price";
       const values = element("div");
-      values.append(name, price);
+      values.append(name, price2);
       const pct = element("span");
       pct.id = "preview-pct";
       preview.append(canvas, values, pct);
@@ -7623,6 +7966,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   $("all-stocks").onclick = $("select-stock").onclick = () => changeTab("watchlist");
   $("refresh").onclick = async () => {
     refreshRequested = true;
+    if (tab === "home" && !marketChart.loading) marketChart.load(true);
     try {
       await api.refresh();
     } catch (error) {
@@ -7761,6 +8105,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAudio();
+    if (data) marketChart.update(data.state.selected, tab === "home" && !document.hidden && !data.suspended);
     syncMotion();
   });
   window.addEventListener("online", () => perform(api.refresh()));

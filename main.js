@@ -344,6 +344,14 @@ handle('desktop:search', async (_event, query) => {
   if (!value) return [];
   return parseTencentSuggestions(await requestText('https://smartbox.gtimg.cn/s3/?t=all&q=' + encodeURIComponent(value), 'https://gu.qq.com/'));
 });
+handle('desktop:chart-history', async (_event, value) => {
+  if (suspended) throw new Error('系统休眠，行情已暂停');
+  if (typeof value !== 'string' || !/^(?:(?:sh|sz)[0-9]{6}|hk[0-9]{5}|us[A-Z][A-Z0-9.-]{0,20}),(?:day|week|month)$/.test(value)) throw new Error('历史行情参数无效');
+  const [symbol, period] = value.split(',');
+  try {
+    return await requestText('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + encodeURIComponent(symbol + ',' + period + ',,,240,qfq'), 'https://gu.qq.com/');
+  } catch { throw new Error('历史行情连接失败，请稍后重试'); }
+});
 handle('desktop:refresh', () => { schedulePoll(0); return true; });
 handle('desktop:quote-source', async (event, operation, payload = {}) => {
   if (event.sender !== dashboard?.webContents) throw new Error('请在主面板配置行情来源');
