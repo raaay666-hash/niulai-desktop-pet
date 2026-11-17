@@ -167,3 +167,19 @@
 - Cloudflare niulai-muyu Production 上传 37/37，部署显示 Success。34 个公开资源逐文件 SHA-256 核验通过，5 个新版安装包 HEAD 大小及摘要正常，反馈 GET 405。Worker、路由和响应头与原发布一致。
 - 本地及正式域名各 15 项浏览器回归通过，四种尺寸/主题截图无溢出，覆盖连点、计数保存、声音与动效开关、自动敲击、离线、高清回退和减少动态效果。实体手机未新增验收。
 - 冻结目录 artifacts/niulai-public-feedback-20261115；正式站截图、部署证据与机器报告位于 outputs/website-feedback-20261115。设计记录 docs/官网敲击反馈-20261115.md。旧版艺术字记录和发布目录保留供追溯。
+
+
+### 2026-11-16 历史 K 线与系统实时通知更新
+
+- Windows/macOS 1.7.0、Android 1.5.0 已在 https://niulai.raaay.art/download/ 正式提供下载，更新记录和软件更新清单同步发布。
+- Cloudflare Pages niulai-muyu Production 37/37 上传成功，部署显示 Success，部署地址 https://39573536.niulai-muyu.pages.dev。
+- 34 个公开静态资源、66 项 HEAD/Range 与五个新版完整安装包的大小和 SHA-256 校验通过。更新清单使用 no-store，上一正式版本识别更新，当前版本无误报。反馈 GET 返回 405、Allow POST。
+- 验收报告 ../outputs/market-chart-20261116/site/publication-verification.json，交付清单 ../outputs/market-chart-20261116/delivery.json。
+
+
+### 2026-11-17 软件内反馈与文案调整
+
+- 正式下载入口 https://niulai.raaay.art/download/ 已提供 Windows/macOS 1.7.1、Android 1.5.1。五个包和五个校验文件已发布到 GitHub v1.7.1。
+- 预览发布和 Production 各 37/37 文件上传成功，Cloudflare 显示 Success。34 个公开文件逐字节匹配，27 个代理文件的 HEAD 与首尾 Range 共 81 项通过，五个新版安装包从正式域名完整下载并核对大小和 SHA-256。
+- 更新清单、更新记录和历史下载同步，旧版客户端可识别本次更新，当前版无误报。电脑版网关完成一条维护测试反馈，联系方式为空，相同提交编号的重试回执一致。
+- 发布目录 ../artifacts/niulai-public-feedback-20261117。交付清单 ../outputs/feedback-20261117/delivery.json，正式域名报告 ../outputs/feedback-20261117/site/publication-verification.json。
