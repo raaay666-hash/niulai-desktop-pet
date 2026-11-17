@@ -59,8 +59,12 @@ async function refresh(now, body) {
   }, now, { timeout: 25000 });
 }
 async function overlay(kind) {
-  await page.waitForTimeout(200);
-  const surface = app.windows().find(window => window.url().includes('kind=' + kind));
+  const deadline = Date.now() + 15000;
+  let surface;
+  while (!surface && Date.now() < deadline) {
+    surface = app.windows().find(window => window.url().includes('kind=' + kind));
+    if (!surface) await page.waitForTimeout(50);
+  }
   assert.ok(surface, 'Overlay ' + kind);
   await surface.waitForFunction(() => window.__NIULAI_RENDERER_READY__);
   return surface;
