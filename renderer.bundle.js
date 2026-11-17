@@ -6096,6 +6096,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     context.stroke();
   }
   var paths = {
+    feedback: '<path d="M5 4h14a2 2 0 012 2v10a2 2 0 01-2 2h-7l-5 3v-3H5a2 2 0 01-2-2V6a2 2 0 012-2zM7 9h10M7 13h7"/>',
     home: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     chart: '<path d="M3 17l6-6 4 3 8-9M16 5h5v5M3 21h18"/>',
     wallet: '<rect x="3" y="6" width="18" height="15" rx="2"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/>',
@@ -7142,6 +7143,77 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }
   };
 
+  // renderer-modules/feedback-form.js
+  function createFeedbackForm({ submit, context, open }) {
+    const dialog = document.getElementById("feedback-dialog");
+    const form = document.getElementById("feedback-form");
+    const status = document.getElementById("feedback-status");
+    const send = document.getElementById("feedback-send");
+    const message = document.getElementById("feedback-message");
+    const success = document.getElementById("feedback-success");
+    const fields = [...form.querySelectorAll("input, textarea, select")];
+    let busy = false;
+    let clientId;
+    form.addEventListener("input", () => {
+      if (!busy) clientId = void 0;
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (busy || !form.reportValidity()) return;
+      if (Array.from(message.value.trim()).length < 5) {
+        status.textContent = "\u8BF7\u81F3\u5C11\u586B\u5199 5 \u4E2A\u5B57";
+        message.focus();
+        return;
+      }
+      if (!clientId) {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = bytes[6] & 15 | 64;
+        bytes[8] = bytes[8] & 63 | 128;
+        const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+        clientId = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+      }
+      const value = {
+        kind: document.getElementById("feedback-kind").value,
+        message: message.value.trim(),
+        contact: document.getElementById("feedback-contact").value.trim(),
+        clientId
+      };
+      busy = true;
+      send.disabled = true;
+      send.textContent = "\u6B63\u5728\u63D0\u4EA4\u2026";
+      form.setAttribute("aria-busy", "true");
+      fields.forEach((field) => field.disabled = true);
+      status.textContent = "";
+      try {
+        await submit(value);
+        form.hidden = true;
+        success.hidden = false;
+        if (dialog.open) document.getElementById("feedback-done").focus();
+        form.reset();
+        clientId = void 0;
+      } catch (error) {
+        status.textContent = (error.message || "\u63D0\u4EA4\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5").replace(/^Error invoking remote method '[^']+': Error: /, "");
+      } finally {
+        busy = false;
+        send.disabled = false;
+        send.textContent = "\u63D0\u4EA4\u53CD\u9988";
+        form.setAttribute("aria-busy", "false");
+        fields.forEach((field) => field.disabled = false);
+      }
+    });
+    document.getElementById("feedback-done").onclick = () => dialog.close();
+    return () => {
+      document.getElementById("feedback-context").textContent = "\u968F\u53CD\u9988\u9644\u4E0A \u725B\u6765\u76EF\u76D8 " + context();
+      if (!busy && form.hidden) {
+        form.hidden = false;
+        success.hidden = true;
+        status.textContent = "";
+      }
+      open();
+      if (!busy) message.focus();
+    };
+  }
+
   // renderer.js
   var data;
   var tab = "home";
@@ -7167,6 +7239,12 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var portfolioCards = /* @__PURE__ */ new Map();
   var tabScroll = /* @__PURE__ */ new Map();
   var updateStatus = { available: false, checking: false };
+  var openFeedback = createFeedbackForm({
+    submit: (value) => api.feedback(value),
+    context: () => data.version + " \xB7 " + (navigator.userAgent.includes("Mac") ? "macOS" : "Windows"),
+    open: () => openDialog("feedback-dialog")
+  });
+  $("feedback-open").onclick = openFeedback;
   function paintUpdate(value = updateStatus) {
     updateStatus = value;
     $("update-banner").hidden = !value.available;
@@ -7389,7 +7467,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
           status: element("p", "", "footnote")
         };
         title.append(item.name, element("p", displaySymbol(stock.code) + " \xB7 " + currency(stock.code)));
-        const edit = element("button", "\u7F16\u8F91 \u2197", "link-button");
+        const edit = element("button", "\u7F16\u8F91", "link-button");
         edit.onclick = () => openPosition(stock.code);
         header.append(title, edit);
         card.append(header, item.content, item.details, item.status);
@@ -7677,13 +7755,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       preview.append(canvas, values, pct);
       container.append(preview);
       mini = makeMotion(canvas, true);
-      container.append(element("p", "\u684C\u9762\u60AC\u6D6E\u884C\u60C5\u6761\u3002\u70B9\u51FB\u5C55\u5F00\uFF0C\u6EDA\u8F6E\u5207\u6362\u81EA\u9009\uFF0C\u62D6\u52A8\u5DE6\u4FA7\u624B\u67C4\u8C03\u6574\u4F4D\u7F6E\u3002", "muted"));
+      container.append(element("p", "\u70B9\u51FB\u5C55\u5F00\uFF0C\u6EDA\u8F6E\u5207\u6362\u81EA\u9009\u3002\u62D6\u52A8\u5DE6\u4FA7\u624B\u67C4\u79FB\u52A8\u3002", "muted"));
       settingRow("\u5F00\u542F\u60AC\u6D6E\u7A97", "islandEnabled");
       settingRow("\u663E\u793A\u5185\u5BB9", "islandContent", "select", modes);
       settingRow("\u663E\u793A\u80A1\u7968", "islandSymbol", "select", [["", "\u8DDF\u968F\u5F53\u524D\u81EA\u9009"], ...data.state.stocks.map((stock) => [stock.code, stock.name])]);
       settingRow("\u663E\u793A\u4EF7\u683C", "islandPrice");
       settingRow("\u663E\u793A\u6DA8\u8DCC\u5E45", "islandPercent");
-      settingRow("\u5C55\u5F00\u663E\u793A\u6301\u4ED3", "islandHoldings", "checkbox", [], "\u6301\u4ED3\u91D1\u989D\u9075\u5FAA\u9690\u79C1\u5F00\u5173");
+      settingRow("\u5C55\u5F00\u663E\u793A\u6301\u4ED3", "islandHoldings", "checkbox", [], "\u5F00\u542F\u9690\u79C1\u6A21\u5F0F\u540E\u9690\u85CF\u91D1\u989D");
       settingRow("\u663E\u793A\u725B\u6765", "islandBull");
       settingRow("\u5C9B\u5185\u52A8\u753B", "islandMotion");
       settingRow("\u663E\u793A\u6728\u9C7C\u8BA1\u6570", "islandCount");
@@ -7710,9 +7788,9 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       settingRow("\u725B\u6C14\uFF0B1 \u52A8\u6548", "muyuEffects");
       settingRow("\u663E\u793A\u60AC\u6D6E\u8BA1\u6570", "muyuCount");
       settingsButton("\u6253\u5F00\u6728\u9C7C", () => changeTab("muyu"));
-      container.append(element("p", "\u6240\u6709\u7A97\u53E3\u5171\u7528\u672C\u8F6E\u3001\u4ECA\u65E5\u548C\u7D2F\u8BA1\u8BA1\u6570\u3002\u5FEB\u901F\u8FDE\u70B9\u4FDD\u7559\u6BCF\u6B21\u8BA1\u6570\uFF0C\u52A8\u4F5C\u6309\u8282\u62CD\u8854\u63A5\u3002", "footnote"));
+      container.append(element("p", "\u5404\u7A97\u53E3\u5171\u7528\u8BA1\u6570\uFF0C\u6BCF\u6B21\u6572\u51FB\u90FD\u4F1A\u8BB0\u5F55\u3002", "footnote"));
     } else if (settingsPanel === "widget") {
-      container.append(element("p", "\u72EC\u7ACB\u7684\u684C\u9762\u60AC\u6D6E\u5361\u7247\uFF0C\u652F\u6301\u684C\u5BA0\u3001\u884C\u60C5\u3001\u6301\u4ED3\u4E0E\u4F11\u606F\u56DB\u4E2A\u573A\u666F\u3002", "muted"));
+      container.append(element("p", "\u684C\u5BA0\u3001\u884C\u60C5\u3001\u6301\u4ED3\u3001\u4F11\u606F\uFF0C\u56DB\u4E2A\u573A\u666F\u53EF\u4EE5\u5207\u6362\u3002", "muted"));
       settingRow("\u5F00\u542F\u684C\u9762\u5361\u7247", "widgetEnabled");
       settingRow("\u5361\u7247\u5916\u89C2", "widgetTheme", "select", themes);
       settingRow("\u663E\u793A\u6700\u8FD1\u62A5\u4EF7\u66F2\u7EBF", "widgetSparkline");
@@ -7724,7 +7802,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === "source" });
     } else if (settingsPanel === "general") {
       heading("\u7248\u672C\u66F4\u65B0");
-      settingRow("\u7CFB\u7EDF\u66F4\u65B0\u63D0\u9192", "updateNotifications", "checkbox", [], "\u4EC5\u5728\u6B63\u5F0F\u53D1\u5E03\u65B0\u7248\u672C\u65F6\u63D0\u9192\u4E00\u6B21\uFF1B\u8F6F\u4EF6\u5185\u59CB\u7EC8\u663E\u793A\u66F4\u65B0\u5165\u53E3");
+      settingRow("\u7CFB\u7EDF\u66F4\u65B0\u63D0\u9192", "updateNotifications", "checkbox", [], "\u6709\u65B0\u7248\u672C\u65F6\u63D0\u9192\u4E00\u6B21");
       const updateLabel = element("p", "", "muted");
       updateLabel.id = "update-status";
       container.append(updateLabel);
@@ -7766,10 +7844,12 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       buildFeatureSettings();
     } else {
       container.append(element("p", "\u725B\u6765\u76EF\u76D8\u7535\u8111\u7248 \xB7 " + data.version, "muted"));
+      settingsButton("\u95EE\u9898\u4E0E\u5EFA\u8BAE", openFeedback);
       for (const paragraph of [
-        "\u652F\u6301 A \u80A1\u3001\u6E2F\u80A1\u548C\u7F8E\u80A1\u884C\u60C5\uFF0C\u9ED8\u8BA4\u4F7F\u7528\u65B0\u6D6A\u4E0E\u817E\u8BAF\u63A5\u53E3\uFF0C\u4E5F\u53EF\u5728\u201C\u884C\u60C5\u6765\u6E90\u201D\u4E2D\u63A5\u5165\u81EA\u5DF1\u7684 HTTP JSON \u63A5\u53E3\u3002\u7F8E\u80A1\u533A\u5206\u76D8\u524D\u3001\u5E38\u89C4\u548C\u76D8\u540E\u62A5\u4EF7\u3002\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\u6216\u4E2D\u65AD\uFF0C\u4EA4\u6613\u65F6\u6BB5\u6309\u5468\u5386\u4F30\u7B97\uFF0C\u8282\u5047\u65E5\u4E0E\u505C\u724C\u4EE5\u4EA4\u6613\u6240\u516C\u544A\u4E3A\u51C6\u3002",
-        "\u81EA\u9009\u3001\u6301\u4ED3\u3001\u6728\u9C7C\u8BA1\u6570\u548C\u8BBE\u7F6E\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111\u3002\u67E5\u8BE2\u8BCD\u548C\u80A1\u7968\u4EE3\u7801\u53D1\u9001\u7ED9\u884C\u60C5\u63D0\u4F9B\u65B9\uFF0C\u6210\u672C\u3001\u80A1\u6570\u548C\u8BA1\u6570\u4EC5\u5728\u672C\u673A\u4F7F\u7528\u3002",
-        "Ctrl + K \u641C\u7D22\u80A1\u7968\uFF0CCtrl + 1\u20134 \u5207\u6362\u9875\u9762\uFF0CEsc \u5173\u95ED\u5F39\u7A97\u3002\u6728\u9C7C\u9875\u9762\u652F\u6301\u7A7A\u683C\u6572\u51FB\u3002"
+        "A \u80A1\u3001\u6E2F\u80A1\u3001\u7F8E\u80A1\u884C\u60C5\u6765\u81EA\u65B0\u6D6A\u548C\u817E\u8BAF\u3002\u7F8E\u80A1\u6807\u6CE8\u76D8\u524D\u3001\u5E38\u89C4\u548C\u76D8\u540E\u62A5\u4EF7\u3002\u53EF\u5728\u201C\u884C\u60C5\u6765\u6E90\u201D\u4E2D\u914D\u7F6E\u81EA\u5DF1\u7684\u63A5\u53E3\u3002",
+        "\u81EA\u9009\u3001\u6301\u4ED3\u3001\u6728\u9C7C\u8BA1\u6570\u548C\u8BBE\u7F6E\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111\u3002\u641C\u7D22\u8BCD\u548C\u80A1\u7968\u4EE3\u7801\u4F1A\u53D1\u9001\u7ED9\u884C\u60C5\u63D0\u4F9B\u65B9\u3002",
+        "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\u6216\u4E2D\u65AD\u3002\u8282\u5047\u65E5\u3001\u505C\u724C\u548C\u4EA4\u6613\u65F6\u95F4\u4EE5\u4EA4\u6613\u6240\u516C\u544A\u4E3A\u51C6\u3002",
+        "Ctrl + K \u641C\u7D22\uFF0CCtrl + 1\u20134 \u5207\u6362\u9875\u9762\uFF0CEsc \u5173\u95ED\u5F39\u7A97\u3002\u6728\u9C7C\u9875\u6309\u7A7A\u683C\u6572\u51FB\u3002"
       ]) container.append(element("p", paragraph, "footnote"));
     }
     syncControls();

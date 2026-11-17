@@ -4,7 +4,7 @@ html {
   color-scheme: light;
   --bg: #f4f5f7; --paper: #fff; --ink: #242b36; --muted: #677489;
   --line: #e6ebf2; --accent: #3879ef; --red: #cc4148; --green: #22836d;
-  --chip: #edf0f5; --active: #edf3ff; --stage: #edf3ff; --shadow: 0 4px 20px #26395807;
+  --chip: #edf0f5; --active: #edf3ff; --stage: #edf3ff; --shadow: none;
   background: var(--bg); color: var(--ink);
   font-family: "Roboto", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -240,7 +240,7 @@ html.no-motion *, html.paused * { animation: none !important; transition: none !
 button, input, select { touch-action: manipulation; }
 .icon-button { width: 44px; height: 44px; min-height: 44px; }
 .hero, .stock-list, .position-card, .portfolio-item { box-shadow: var(--shadow); }
-.hero { background: linear-gradient(140deg, var(--paper) 60%, var(--stage)); }
+.hero { background: var(--paper); }
 .pet { width: 174px; height: 174px; margin-left: -87px; bottom: 0; }
 .pet-scene { overflow: visible; }
 .bubble { top: -12px; }
@@ -267,3 +267,7 @@ dialog { overscroll-behavior: contain; }
 .update-banner .text-button { color: var(--accent); padding-left: 0; }
 #general-settings h3 { margin-top: 20px; }
 @media (prefers-reduced-motion: reduce) { .stock-row { transition: none; } }
+
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.topbar-actions .text-button { color: var(--muted); padding: 0 4px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 359px) { .brand h1 { font-size: 18px; } .topbar-actions { gap: 4px; } }

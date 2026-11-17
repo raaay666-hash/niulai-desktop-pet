@@ -8,13 +8,25 @@ import { DesktopBullMotion as BullMotion } from '../../renderer-modules/desktop-
 import { featureDefaults, cleanFeatures, localCounts } from './features.mjs';
 import { TapVoice } from './tap-voice.mjs';
 import { MarketChart } from '../../renderer-modules/market-chart.js';
+import { createFeedbackForm } from '../../renderer-modules/feedback-form.js';
 
 const $ = id => document.getElementById(id);
+const openFeedback = createFeedbackForm({
+  submit: value => request('feedback', JSON.stringify(value)),
+  context: () => (JSON.parse(window.NiulaiNative?.updateStatus?.() || '{}').current || '1.5.1') + ' · Android',
+  open: () => {
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+    $('feedback-dialog').showModal();
+    syncMotionVisibility();
+  }
+});
+$('feedback-open').onclick = openFeedback;
+$('about-feedback').onclick = openFeedback;
 window.__niulaiUpdate = value => {
   $('update-banner').hidden = !value.available;
   $('update-title').textContent = '牛来盯盘 ' + (value.version || '') + ' 已发布';
   $('update-note').textContent = (value.notes || []).slice(0, 2).join(' · ');
-  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.5.0'));
+  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.5.1'));
   $('check-update').disabled = Boolean(value.checking);
   $('update-notifications').checked = value.enabled !== false;
   $('update-permission').textContent = value.permission ? '系统通知设置' : '开启系统通知';
@@ -171,7 +183,7 @@ function renderPortfolio() {
     let card = portfolioCards.get(stock.code);
     if (!card) {
       card = text('article', '', 'portfolio-item');
-      const title = text('button', ''); title.append(text('strong', ''), text('small', `${displaySymbol(stock.code)} · 编辑 ↗`)); title.onclick = () => openPosition(stock.code);
+      const title = text('button', ''); title.append(text('strong', ''), text('small', `${displaySymbol(stock.code)} · 编辑`)); title.onclick = () => openPosition(stock.code);
       card.append(title, document.createElement('div'), text('p', '', 'subtext')); portfolioCards.set(stock.code, card); container.append(card);
     }
     card.firstElementChild.firstElementChild.textContent = stock.name;
@@ -307,7 +319,7 @@ function openSearch() { $('search-dialog').showModal(); $('search-input').focus(
 function resultButton(stock, label) {
   const b = text('button', '', 'result'); const n = document.createElement('div');
   n.append(text('strong', stock.name), text('small', `${displaySymbol(stock.code)} · ${{ cn: 'A 股', hk: '港股', us: '美股' }[marketForSymbol(stock.code)]}`));
-  b.append(n, text('span', label || (state.stocks.some(s => s.code === stock.code) ? '去盯盘 ↗' : '＋ 自选')));
+  b.append(n, text('span', label || (state.stocks.some(s => s.code === stock.code) ? '去盯盘' : '＋ 自选')));
   b.onclick = () => addStock(stock); return b;
 }
 async function search() {

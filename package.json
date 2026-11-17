@@ -1,9 +1,9 @@
 {
   "name": "niulai-desktop-pet",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "支持 A 股、港股、美股的二维桌宠与桌面盯盘面板",
   "main": "main.js",
-  "author": "Codex",
+  "author": "Ray",
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -25,7 +25,8 @@
     "dist:mac:universal": "node scripts/build-renderer.js && electron-builder --mac --universal",
     "dist:mac:arm64": "node scripts/build-renderer.js && electron-builder --mac --arm64",
     "dist:mac:x64": "node scripts/build-renderer.js && electron-builder --mac --x64",
-    "test:hq": "node scripts/test-desktop-hq.mjs"
+    "test:hq": "node scripts/test-desktop-hq.mjs",
+    "test:feedback": "node scripts/build-renderer.js && node niulai-android/scripts/prepare.mjs && node scripts/test-feedback.mjs"
   },
   "dependencies": {},
   "devDependencies": {
@@ -160,7 +161,9 @@
       "assets/2d/frames/hq/idle-07.webp",
       "assets/2d/frames/hq/idle-08.webp",
       "main-modules/update-policy.cjs",
-      "main-modules/update-checker.cjs"
+      "main-modules/update-checker.cjs",
+      "main-modules/feedback.cjs",
+      "renderer-modules/feedback-form.css"
     ],
     "electronLanguages": [
       "zh-CN",

@@ -17,6 +17,8 @@ public class MainActivity extends Activity {
     private WebView web;
     private QuoteGateway gateway;
     private UpdateChecker updates;
+    private Feedback feedback;
+    void showFeedback() { feedback.show(); }
     private boolean nativeUpdateRequested;
     private void publishUpdate(){
         js("window.__niulaiUpdate && window.__niulaiUpdate("+updates.status()+")");
@@ -46,6 +48,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         updates = new UpdateChecker(this, this::publishUpdate);
+        feedback = new Feedback(this);
         if(Build.VERSION.SDK_INT>=30)getWindow().setDecorFitsSystemWindows(false);
         int cream = background; getWindow().setStatusBarColor(cream); getWindow().setNavigationBarColor(cream);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
@@ -121,7 +124,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void updateNotifications(boolean enabled){runOnUiThread(()->updates.enabled(enabled));}
         @JavascriptInterface public void updatePermission(){runOnUiThread(()->MainActivity.this.updatePermission());}
         @JavascriptInterface public void openUpdates(boolean history){runOnUiThread(()->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(history?UpdateChecker.SITE+"/download/updates/":UpdateChecker.DOWNLOAD))));}
-        @JavascriptInterface public void request(String id,String kind,String value) { if(gateway!=null)gateway.request(id,kind,value); }
+        @JavascriptInterface public void request(String id,String kind,String value) {
+            if (id == null || !id.matches("[0-9]{1,10}")) return;
+            if ("feedback".equals(kind)) runOnUiThread(() -> feedback.submit(value, (receipt, error) -> js("window.__niulaiResult(" + JSONObject.quote(id) + "," + (receipt == null ? "null" : JSONObject.quote(receipt)) + "," + (error == null ? "null" : JSONObject.quote(error)) + ")")));
+            else if(gateway!=null)gateway.request(id,kind,value);
+        }
         @JavascriptInterface public String restoreAppState(){return AppState.existing(MainActivity.this);}
         @JavascriptInterface public void storeAppState(String raw){AppState.save(MainActivity.this,raw);}
         @JavascriptInterface public void compatibilityUI(){runOnUiThread(()->{PetConfig.prefs(MainActivity.this).edit().putBoolean("force_native",true).apply();showCompatibilityUI();});}
@@ -179,5 +186,5 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){handleBack();}
     private void handleBack(){if(web==null){moveTaskToBack(true);return;}web.evaluateJavascript("window.__niulaiBack && window.__niulaiBack()",value->{if(!"true".equals(value))moveTaskToBack(true);});}
     @Override protected void onSaveInstanceState(Bundle out){out.putBoolean("pendingPet",pendingPet);out.putString("feature",requestedFeature);super.onSaveInstanceState(out);}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(updates!=null)updates.close();if(receiverRegistered)unregisterReceiver(petChanged);if(panel!=null)panel.close();if(gateway!=null)gateway.close();if(web!=null){web.removeJavascriptInterface("NiulaiNative");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(updates!=null)updates.close();if(feedback!=null)feedback.close();if(receiverRegistered)unregisterReceiver(petChanged);if(panel!=null)panel.close();if(gateway!=null)gateway.close();if(web!=null){web.removeJavascriptInterface("NiulaiNative");web.destroy();web=null;}super.onDestroy();}
 }

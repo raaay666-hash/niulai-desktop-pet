@@ -72,6 +72,7 @@ export function drawSparkline(canvas, samples, color) {
 }
 
 const paths = {
+  feedback: '<path d="M5 4h14a2 2 0 012 2v10a2 2 0 01-2 2h-7l-5 3v-3H5a2 2 0 01-2-2V6a2 2 0 012-2zM7 9h10M7 13h7"/>',
   home: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   chart: '<path d="M3 17l6-6 4 3 8-9M16 5h5v5M3 21h18"/>',
   wallet: '<rect x="3" y="6" width="18" height="15" rx="2"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/>',

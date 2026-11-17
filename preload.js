@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
   search: query => ipcRenderer.invoke('desktop:search', query),
   chartHistory: value => ipcRenderer.invoke('desktop:chart-history', value),
   refresh: () => ipcRenderer.invoke('desktop:refresh'),
+  feedback: value => ipcRenderer.invoke('desktop:feedback', value),
   updates: operation => ipcRenderer.invoke('desktop:updates', operation),
   onUpdate: callback => subscribe('desktop:update', callback),
   quoteSource: (operation, payload) => ipcRenderer.invoke('desktop:quote-source', operation, payload),

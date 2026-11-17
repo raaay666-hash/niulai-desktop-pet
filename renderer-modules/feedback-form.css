@@ -1,0 +1,19 @@
+#feedback-dialog { width: 480px; }
+#feedback-dialog form { display: grid; gap: 10px; }
+#feedback-dialog label { font-size: 13px; font-weight: 600; }
+#feedback-dialog label span, #feedback-context { color: var(--muted); font-weight: 400; }
+#feedback-dialog textarea, #feedback-dialog input, #feedback-dialog select {
+  width: 100%; min-width: 0; font: inherit; color: inherit;
+  background: var(--surface, var(--paper)); border: 1px solid var(--line);
+  border-radius: 8px; padding: 11px 12px;
+}
+#feedback-dialog textarea { min-height: 140px; resize: vertical; line-height: 1.6; }
+#feedback-dialog :is(textarea, input, select):focus { outline: 2px solid var(--blue, var(--accent)); outline-offset: 2px; }
+#feedback-dialog :is(textarea, input)::placeholder { color: var(--muted); opacity: 1; }
+#feedback-dialog #feedback-contact { margin-bottom: 4px; }
+#feedback-context { font-size: 12px; line-height: 1.6; }
+#feedback-status { color: var(--rise, var(--red)); font-size: 13px; line-height: 1.6; }
+#feedback-status:empty { display: none; }
+#feedback-send, #feedback-done { min-height: 44px; margin-top: 6px; }
+#feedback-success p { margin: 8px 0 20px; color: var(--muted); line-height: 1.6; }
+#feedback-dialog { max-width: calc(100vw - 28px); }

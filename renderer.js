@@ -10,6 +10,7 @@ import { AlertTriggerEngine } from './renderer-modules/alert-trigger-engine.js';
 import { isQuietOfficeActive } from './renderer-modules/quiet-office.js';
 import { buildQuoteSourceSettings } from './renderer-modules/quote-source-settings.js';
 import { MarketChart } from './renderer-modules/market-chart.js';
+import { createFeedbackForm } from './renderer-modules/feedback-form.js';
 
 let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
 let liveMood = 'loading', previewUntil = 0, motionPreview = 'loading';
@@ -22,6 +23,12 @@ const stockRows = { 'home-stocks': new Map(), 'watch-stocks': new Map() };
 const portfolioCards = new Map();
 const tabScroll = new Map();
 let updateStatus = { available: false, checking: false };
+const openFeedback = createFeedbackForm({
+  submit: value => api.feedback(value),
+  context: () => data.version + ' · ' + (navigator.userAgent.includes('Mac') ? 'macOS' : 'Windows'),
+  open: () => openDialog('feedback-dialog')
+});
+$('feedback-open').onclick = openFeedback;
 function paintUpdate(value = updateStatus) {
   updateStatus = value;
   $('update-banner').hidden = !value.available;
@@ -211,7 +218,7 @@ function renderPortfolio() {
         details: element('div', '', 'holding-details'), status: element('p', '', 'footnote')
       };
       title.append(item.name, element('p', displaySymbol(stock.code) + ' · ' + currency(stock.code)));
-      const edit = element('button', '编辑 ↗', 'link-button');
+      const edit = element('button', '编辑', 'link-button');
       edit.onclick = () => openPosition(stock.code);
       header.append(title, edit);
       card.append(header, item.content, item.details, item.status);
@@ -462,12 +469,12 @@ function buildSettings() {
     const pct = element('span'); pct.id = 'preview-pct';
     preview.append(canvas, values, pct); container.append(preview);
     mini = makeMotion(canvas, true);
-    container.append(element('p', '桌面悬浮行情条。点击展开，滚轮切换自选，拖动左侧手柄调整位置。', 'muted'));
+    container.append(element('p', '点击展开，滚轮切换自选。拖动左侧手柄移动。', 'muted'));
     settingRow('开启悬浮窗', 'islandEnabled');
     settingRow('显示内容', 'islandContent', 'select', modes);
     settingRow('显示股票', 'islandSymbol', 'select', [['', '跟随当前自选'], ...data.state.stocks.map(stock => [stock.code, stock.name])]);
     settingRow('显示价格', 'islandPrice'); settingRow('显示涨跌幅', 'islandPercent');
-    settingRow('展开显示持仓', 'islandHoldings', 'checkbox', [], '持仓金额遵循隐私开关');
+    settingRow('展开显示持仓', 'islandHoldings', 'checkbox', [], '开启隐私模式后隐藏金额');
     settingRow('显示牛来', 'islandBull'); settingRow('岛内动画', 'islandMotion');
     settingRow('显示木鱼计数', 'islandCount');
     settingRow('外观', 'islandTheme', 'select', themes);
@@ -488,9 +495,9 @@ function buildSettings() {
   } else if (settingsPanel === 'muyu') {
     settingRow('敲击音效', 'muyuSound'); settingRow('牛气＋1 动效', 'muyuEffects'); settingRow('显示悬浮计数', 'muyuCount');
     settingsButton('打开木鱼', () => changeTab('muyu'));
-    container.append(element('p', '所有窗口共用本轮、今日和累计计数。快速连点保留每次计数，动作按节拍衔接。', 'footnote'));
+    container.append(element('p', '各窗口共用计数，每次敲击都会记录。', 'footnote'));
   } else if (settingsPanel === 'widget') {
-    container.append(element('p', '独立的桌面悬浮卡片，支持桌宠、行情、持仓与休息四个场景。', 'muted'));
+    container.append(element('p', '桌宠、行情、持仓、休息，四个场景可以切换。', 'muted'));
     settingRow('开启桌面卡片', 'widgetEnabled');
     settingRow('卡片外观', 'widgetTheme', 'select', themes);
     settingRow('显示最近报价曲线', 'widgetSparkline'); settingRow('显示牛来', 'widgetBull');
@@ -500,7 +507,7 @@ function buildSettings() {
     buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === 'source' });
   } else if (settingsPanel === 'general') {
     heading('版本更新');
-    settingRow('系统更新提醒', 'updateNotifications', 'checkbox', [], '仅在正式发布新版本时提醒一次；软件内始终显示更新入口');
+    settingRow('系统更新提醒', 'updateNotifications', 'checkbox', [], '有新版本时提醒一次');
     const updateLabel = element('p', '', 'muted'); updateLabel.id = 'update-status'; container.append(updateLabel);
     const check = element('button', '检查更新', 'button secondary'); check.id = 'check-update';
     check.onclick = () => perform(api.updates('check'), paintUpdate); container.append(check);
@@ -530,10 +537,12 @@ function buildSettings() {
     buildFeatureSettings();
   } else {
     container.append(element('p', '牛来盯盘电脑版 · ' + data.version, 'muted'));
+    settingsButton('问题与建议', openFeedback);
     for (const paragraph of [
-      '支持 A 股、港股和美股行情，默认使用新浪与腾讯接口，也可在“行情来源”中接入自己的 HTTP JSON 接口。美股区分盘前、常规和盘后报价。行情可能延迟或中断，交易时段按周历估算，节假日与停牌以交易所公告为准。',
-      '自选、持仓、木鱼计数和设置保存在这台电脑。查询词和股票代码发送给行情提供方，成本、股数和计数仅在本机使用。',
-      'Ctrl + K 搜索股票，Ctrl + 1–4 切换页面，Esc 关闭弹窗。木鱼页面支持空格敲击。'
+      'A 股、港股、美股行情来自新浪和腾讯。美股标注盘前、常规和盘后报价。可在“行情来源”中配置自己的接口。',
+      '自选、持仓、木鱼计数和设置保存在这台电脑。搜索词和股票代码会发送给行情提供方。',
+      '公开行情可能延迟或中断。节假日、停牌和交易时间以交易所公告为准。',
+      'Ctrl + K 搜索，Ctrl + 1–4 切换页面，Esc 关闭弹窗。木鱼页按空格敲击。'
     ]) container.append(element('p', paragraph, 'footnote'));
   }
   syncControls(); renderSettingsPreview(); syncMotion();

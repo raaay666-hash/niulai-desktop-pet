@@ -10,7 +10,7 @@ export function request(kind, value) {
   return new Promise((resolve, reject) => {
     if (!window.NiulaiNative) { reject(new Error('请在安卓应用中连接行情')); return; }
     const id = String(++sequence);
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error('连接超时，请重试')); }, 16000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('连接超时，请重试')); }, kind === 'feedback' ? 25000 : 16000);
     pending.set(id, { resolve, reject, timer });
     try { window.NiulaiNative.request(id, kind, value); }
     catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }

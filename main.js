@@ -10,6 +10,7 @@ const { CryingReaction } = require('./main-modules/crying-reaction.cjs');
 const { defaultSourceConfig, normalizeSourceConfig, fetchCustomQuote, fetchCustomQuotes } = require('./main-modules/custom-quotes.cjs');
 const { createUpdateChecker } = require('./main-modules/update-checker.cjs');
 const { OFFICIAL } = require('./main-modules/update-policy.cjs');
+const { submitFeedback } = require('./main-modules/feedback.cjs');
 let updater, updateTimer;
 
 const argument = prefix => (process.argv.find(value => value.startsWith(prefix)) || '').slice(prefix.length);
@@ -424,6 +425,7 @@ function playMarketReaction() {
     }
   }
 }
+handle('desktop:feedback', (_event, value) => submitFeedback(value, app.getVersion() + ' · ' + ({ win32: 'Windows', darwin: 'macOS' }[process.platform] || process.platform) + ' ' + process.arch));
 handle('desktop:window', async (event, action, value) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   const kind = window.overlayKind;
