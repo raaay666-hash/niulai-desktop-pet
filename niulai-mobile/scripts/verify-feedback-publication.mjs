@@ -22,6 +22,18 @@ async function fetchWithRetry(url, { timeoutMs = 45000, ...options } = {}) {
     console.log('Retrying public verification request ' + url);
   }
 }
+async function readWithRetry(url, options = {}) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetchWithRetry(url, options);
+      const bytes = options.method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer());
+      return { response, bytes };
+    } catch (error) {
+      if (attempt === 2) throw error;
+      console.log('Retrying complete response ' + url);
+    }
+  }
+}
 const report = { checkedAt: new Date().toISOString(), origin, assets: [], ranges: [], fullDownloads: [], feedback: null, passed: false };
 let reuseInstallers = false;
 if (process.env.NIULAI_REUSE_INSTALLERS === '1' && !process.env.NIULAI_PUBLIC_ORIGIN) {
@@ -55,8 +67,7 @@ walk(dist);
 try {
   for (let offset = 0; offset < files.length; offset += 4) {
     await Promise.all(files.slice(offset, offset + 4).map(async file => {
-      const response = await fetchWithRetry(origin + '/' + file, { headers: { 'Cache-Control': 'no-cache' }, timeoutMs: 45000 });
-      const bytes = Buffer.from(await response.arrayBuffer());
+      const { response, bytes } = await readWithRetry(origin + '/' + file, { headers: { 'Cache-Control': 'no-cache' }, timeoutMs: 45000 });
       const result = { file, status: response.status, bytes: bytes.length, matchesLocal: sha(bytes) === sha(fs.readFileSync(path.join(dist, file))) };
       report.assets.push(result);
       assert.equal(result.status, 200, file);
@@ -73,11 +84,13 @@ try {
     assert.equal(publishedUpdate(updates, platform, older).available, true);
   }
   report.updates = { versions: Object.fromEntries(Object.entries(updates.releases).map(([key, release]) => [key, release.version])), cacheControl: updatesResponse.headers.get('Cache-Control'), policyPassed: true };
-  for (const [name, expected] of Object.entries(metadata)) {
+  const downloadEntries = Object.entries(metadata);
+  for (let offset = 0; offset < downloadEntries.length; offset += 4) {
+    const outcomes = await Promise.allSettled(downloadEntries.slice(offset, offset + 4).map(async ([name, expected]) => {
     for (const mode of ['HEAD', 'first', 'last']) {
       const start = mode === 'last' ? expected.size - 256 : 0;
       const end = mode === 'last' ? expected.size - 1 : 63;
-      const response = await fetchWithRetry(origin + '/files/' + name, {
+      const { response, bytes } = await readWithRetry(origin + '/files/' + name, {
         method: mode === 'HEAD' ? 'HEAD' : 'GET',
         headers: mode === 'HEAD' ? {} : { Range: `bytes=${start}-${end}` },
         timeoutMs: 45000
@@ -91,9 +104,11 @@ try {
       };
       assert.equal(result.status, mode === 'HEAD' ? 200 : 206, name + ' ' + mode);
       for (const key of ['sameOrigin', 'attachment', 'shaMatches', 'lengthMatches']) assert.equal(result[key], true, name + ' ' + mode + ' ' + key);
-      if (mode !== 'HEAD') assert.equal((await response.arrayBuffer()).byteLength, end - start + 1);
+      if (mode !== 'HEAD') assert.equal(bytes.byteLength, end - start + 1);
       report.ranges.push(result);
     }
+    }));
+    for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
   }
   console.log('Download headers and byte ranges verified: ' + report.ranges.length);
   for (const name of (process.env.NIULAI_PUBLIC_ORIGIN || reuseInstallers ? [] : ['Niulai-1.7.1-Setup-x64.exe', 'Niulai-1.7.1-portable-x64.exe', 'Niulai-1.7.1-mac-arm64.dmg', 'Niulai-1.7.1-mac-x64.dmg', 'Niulai-Android-1.5.1.apk'])) {
