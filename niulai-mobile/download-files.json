@@ -126,5 +126,35 @@
     "sha256": "02ab4688fb4f7f4705bf437d106c4e60b008fe2e63c486977511930f7332c14b",
     "type": "application/vnd.android.package-archive",
     "release": "v1.7.0"
+  },
+  "Niulai-1.7.1-Setup-x64.exe": {
+    "size": 263665819,
+    "sha256": "da57413c8947d06414bc3ae4f6084472f9711d36bce3e44e0d1ab050843e5150",
+    "type": "application/vnd.microsoft.portable-executable",
+    "release": "v1.7.1"
+  },
+  "Niulai-1.7.1-portable-x64.exe": {
+    "size": 263133053,
+    "sha256": "cbaadf5733e306c967f7833ea3dccc94cbb4c6b9120389a698d703d1c39cf7a8",
+    "type": "application/vnd.microsoft.portable-executable",
+    "release": "v1.7.1"
+  },
+  "Niulai-1.7.1-mac-arm64.dmg": {
+    "size": 280681247,
+    "sha256": "b64e42ae3671362007ccc9579828a86a62a8ae527c992c0e91ffc0896b53e02c",
+    "type": "application/x-apple-diskimage",
+    "release": "v1.7.1"
+  },
+  "Niulai-1.7.1-mac-x64.dmg": {
+    "size": 284387085,
+    "sha256": "074bb8038d4286a3ffea810abe6f90ae8da3d1def2478660d71285cc3a74e8a8",
+    "type": "application/x-apple-diskimage",
+    "release": "v1.7.1"
+  },
+  "Niulai-Android-1.5.1.apk": {
+    "size": 132523402,
+    "sha256": "04375d8f5bf5452d3de05075a07e8deec81ff2f6b317a020657cad48c60ab659",
+    "type": "application/vnd.android.package-archive",
+    "release": "v1.7.1"
   }
 }
