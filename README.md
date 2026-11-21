@@ -1,10 +1,11 @@
 # 牛来盯盘
 
-电脑版当前版本 `1.6.0`，Android 为 `1.4.0`。Electron 二维桌宠与盯盘主面板，支持 A 股、港股和美股。正式下载与每次更新内容见 [官网](https://niulai.raaay.art/download/) 和 [更新记录](https://niulai.raaay.art/download/updates/)。
+当前仓库的 Windows/macOS 构建版本为 `1.8.0`。牛来提供二维桌宠和 A 股、港股、美股盯盘。正式发布版本见 [官网](https://niulai.raaay.art/download/) 和 [更新记录](https://niulai.raaay.art/download/updates/)。
 
 ## 功能
 
 - 双栏主面板与侧栏导航，集中查看行情、自选与持仓。
+- 桌面盯盘包含常规分时、日/周/月 K 线、前复权与不复权、盘口指标和 A 股公开五档。K 线下方随股票更新个股新闻，支持国际媒体筛选、外语标题翻译和关注通知。
 - 15 组高清逐帧角色动画，覆盖 27 种行情与互动状态；统一颜色、无损分页、插帧与高分屏绘制。
 - 软件内更新提示、手动检查和可控制的系统通知；先安装本版后获得后续正式版本提醒。
 - 木鱼支持点击、空格、本轮、今日与累计计数，所有窗口共享。
@@ -37,9 +38,9 @@ npm run test:desktop
 npm run dist:win
 ```
 
-Windows 输出安装版 `release/Niulai-1.6.0-Setup-x64.exe` 与免安装版 `release/牛来盯盘-1.6.0-portable-x64.exe`。
+Windows 安装包与免安装包输出到 `release/`。
 
-macOS 构建需在 macOS 运行。
+macOS DMG 构建需在 macOS 运行。本地也可用 `scripts/build-macos-preview.py` 将已经验证的桌面 ASAR 与同版本官方 Electron 运行时组合成临时签名的 `.app.zip`，适合分架构体验。
 
 ```sh
 npm run dist:mac:universal
@@ -59,3 +60,29 @@ npm run dist:mac:x64
 - `scripts/build-renderer.js` 构建两份浏览器脚本，并检查被移除的依赖。
 
 公开行情可能延迟或中断，常规时段按周历估算。成本、股数、计数和设置仅保存在本机。
+
+## 电脑版财经新闻
+
+在所选股票的 K 线下查看个股新闻，点击标题在浏览器打开原文。国际媒体页通过 Google News RSS 检索限定媒体的英文、日文、法文和德文版内容，覆盖随语言、标的和新闻发布情况变化。显示新闻标题、媒体和发布时间。自动翻译默认开启，由 Google 翻译服务处理新闻标题，可在「通知与翻译」关闭。服务不可用时继续显示原文。
+
+点「关注新闻」加入关注列表，最多关注 12 只。开启「已关注股票的系统通知」后可打开系统权限设置并发送测试通知。程序在运行期间约每五分钟分批检查，首次获取建立基线，之后每只股票在一次检查中只发一条汇总通知。点击通知会回到该股票的新闻区。
+
+## 电脑版自有走势与盘口
+
+在 **设置 → 行情来源** 配置已有权限的 HTTP JSON 行情接口。报价接口可额外提供 `open`、`high`、`low`、`volume`、`volumeUnit` 和 `amount`。成交额以标的原币计，成交量单位为 `股` 或 `手`。通过字段映射将盘口对象指向 `orderBook` 或实际路径。每侧显示源提供的前 20 个有效价格档位。
+
+```json
+{
+  "unit": "股",
+  "timestamp": "2026-11-20T15:00:00Z",
+  "bids": [{ "price": 100.00, "size": 500 }],
+  "asks": [{ "price": 100.02, "size": 300 }]
+}
+```
+
+走势接口可选，与报价接口共用协议、主机、端口和鉴权。示例路径为 `/series?symbol={symbol}&period={period}&adjustment={adjustment}`，设置中填写完整地址。返回顶层 JSON 对象，`symbol` 对应请求标的，`period` 为 `minute`、`day`、`week` 或 `month`，`adjustment` 为 `raw` 或 `qfq`，并返回 `volumeUnit`。走势地址留空时，图表使用公开源。配置地址后的失败回退遵循行情来源设置。
+
+- K 线返回 `bars` 数组。每条包含 `date`（YYYY-MM-DD）、`open`、`high`、`low`、`close` 和 `volume`。前复权值可以为负。日线、周线和月线在服务端按各自周期生成。
+- 分时使用 `adjustment: "raw"`，返回 `date`（交易日，YYYY-MM-DD）、`previousClose`、`session` 和 `points`。时段用 `session.open` 和 `session.close`，有午休时同时传 `breakStart` 和 `breakEnd`。每条分钟点包含 `time`、`price`、`volume`，时间使用该市场当地的 HH:mm，成交量使用该点对应区间的增量。
+
+该接口用于轮询有权限的数据快照。交易所实时深度、逐笔数据和完整历史的覆盖范围由实际数据许可和服务商决定。

@@ -113,3 +113,10 @@
 "assets/2d/frames/hq/idle-08.webp" -text
 "main-modules/update-policy.cjs" -text
 "main-modules/update-checker.cjs" -text
+"main-modules/feedback.cjs" -text
+"main-modules/market-insights.cjs" -text
+"main-modules/market-news.cjs" -text
+"renderer-modules/feedback-form.css" -text
+"renderer-modules/market-chart.css" -text
+"renderer-modules/market-insights.css" -text
+"renderer-modules/market-panels.css" -text

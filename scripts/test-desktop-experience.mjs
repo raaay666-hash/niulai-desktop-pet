@@ -70,13 +70,13 @@ try {
         globalThis.__searchQueries.push(query);
         await new Promise(resolve => setTimeout(resolve, query === 'slow' ? 800 : 120));
         text = query === 'slow' ? 'v_hint="sh~600001~Old result~~GP";' : 'v_hint="sh~600519~Moutai~~GP^sz~000001~PingAn~~GP";';
-      } else {
+      } else if (address.hostname === 'hq.sinajs.cn') {
         globalThis.__quoteRequests++;
         await new Promise(resolve => setTimeout(resolve, globalThis.__quoteDelay));
         if (globalThis.__offline) throw new Error('Controlled offline fixture');
         const codes = (String(url).split('list=')[1] || '').split(',');
         text = codes.map(code => `var hq_str_${code}="QA ${code},${100 + globalThis.__quoteRequests},1,1,100,100";`).join('\n');
-      }
+      } else text = '';
       return { ok: true, arrayBuffer: async () => new TextEncoder().encode(text) };
     };
   });

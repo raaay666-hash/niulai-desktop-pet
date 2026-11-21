@@ -277,17 +277,17 @@
         const parts = match[1].split(",");
         const market = marketForSymbol2(symbol);
         const layout = market === MARKET.HK ? { name: 1, price: 6, change: 7, changePct: 8, prevClose: 3, volume: 12, amount: 11, date: 17, time: 18 } : market === MARKET.US ? { name: 0, price: 1, change: 4, changePct: 2, prevClose: 26, volume: 10, amount: 12, time: 3 } : { name: 0, price: 1, change: 2, changePct: 3, volume: 4, amount: 5, time: 31 };
-        const price2 = Number.parseFloat(parts[layout.price]);
+        const price = Number.parseFloat(parts[layout.price]);
         const change = Number.parseFloat(parts[layout.change]);
         const changePct = Number.parseFloat(parts[layout.changePct]);
-        if (![price2, change, changePct].every(Number.isFinite)) return null;
+        if (![price, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[layout.prevClose]);
         const quote = {
           code: symbol,
           name: parts[layout.name] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
-          price: price2,
+          price,
           change,
-          prevClose: Number.isFinite(providedPrevClose) ? providedPrevClose : price2 - change,
+          prevClose: Number.isFinite(providedPrevClose) ? providedPrevClose : price - change,
           changePct,
           volume: parts[layout.volume] || "",
           amount: parts[layout.amount] || "",
@@ -299,7 +299,7 @@
         const providerUpdatedAt = parseQuoteTime(parts[3], "s_sh000001", now);
         const reference = providerUpdatedAt ?? now;
         const regular = {
-          price: price2,
+          price,
           change,
           changePct,
           prevClose: quote.prevClose,
@@ -335,25 +335,27 @@
           amount: ""
         };
       }
-      function parseTencentQuote2(text, symbol) {
-        const providerSymbol = quoteProviderSymbol2(symbol, "tencent");
+      function tencentQuoteParts(text, providerSymbol) {
         const escaped = providerSymbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`v_${escaped}="([^"]*)"`));
-        if (!match || !match[1]) return null;
-        const parts = match[1].split("~");
+        return match?.[1]?.split("~") || null;
+      }
+      function parseTencentQuote2(text, symbol) {
+        const parts = tencentQuoteParts(text, quoteProviderSymbol2(symbol, "tencent"));
+        if (!parts) return null;
         const market = marketForSymbol2(symbol);
         const detailed = market !== MARKET.CN;
-        const price2 = Number.parseFloat(parts[3]);
+        const price = Number.parseFloat(parts[3]);
         const change = Number.parseFloat(parts[detailed ? 31 : 4]);
         const changePct = Number.parseFloat(parts[detailed ? 32 : 5]);
-        if (![price2, change, changePct].every(Number.isFinite)) return null;
+        if (![price, change, changePct].every(Number.isFinite)) return null;
         const providedPrevClose = Number.parseFloat(parts[4]);
         const quote = {
           code: symbol,
           name: parts[1] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ""),
-          price: price2,
+          price,
           change,
-          prevClose: detailed && Number.isFinite(providedPrevClose) ? providedPrevClose : price2 - change,
+          prevClose: detailed && Number.isFinite(providedPrevClose) ? providedPrevClose : price - change,
           changePct,
           volume: parts[6] || "",
           amount: parts[detailed ? 37 : 7] || "",
@@ -365,11 +367,11 @@
           quote.session = "regular";
           quote.quotedAt = parseQuoteTime(quote.time, symbol);
           quote.dayPrevClose = quote.prevClose;
-          quote.regular = { price: price2, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
+          quote.regular = { price, change, changePct, prevClose: quote.prevClose, time: quote.time, quotedAt: quote.quotedAt };
         }
         return quote;
       }
-      module.exports = { parseSinaQuote: parseSinaQuote2, parseTencentQuote: parseTencentQuote2 };
+      module.exports = { parseSinaQuote: parseSinaQuote2, parseTencentQuote: parseTencentQuote2, tencentQuoteParts };
     }
   });
 
@@ -427,6 +429,7 @@
         { code: "s_sz399001", name: "\u6DF1\u8BC1\u6210\u6307", cost: 0, shares: 0 },
         { code: "s_sz399006", name: "\u521B\u4E1A\u677F\u6307", cost: 0, shares: 0 }
       ];
+      var MAX_NEWS_FOLLOWS = 12;
       var positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : 0;
       var clamp2 = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
       function normalizeSettings(raw = {}) {
@@ -476,7 +479,12 @@
           stocks,
           selected: stocks.some((stock) => stock.code === selected) ? selected : stocks[0].code,
           settings: normalizeSettings(raw.settings),
-          alerts: alerts2
+          alerts: alerts2,
+          news: {
+            followed: [...new Set(Array.isArray(raw.news?.followed) ? raw.news.followed.filter((code) => stocks.some((stock) => stock.code === code)) : [])].slice(0, MAX_NEWS_FOLLOWS),
+            notifications: raw.news?.notifications === true,
+            autoTranslate: raw.news?.autoTranslate !== false
+          }
         };
       }
       function migrateLegacy(values = {}) {
@@ -524,7 +532,7 @@
         for (const key of ["total", "today", "session"]) counts[key] = Math.min(Number.MAX_SAFE_INTEGER, counts[key] + 1);
         return counts;
       }
-      module.exports = { DEFAULTS, DEFAULT_STOCKS, normalizeSettings, normalizeState, migrateLegacy, normalizeCounts, tapCounts };
+      module.exports = { DEFAULTS, DEFAULT_STOCKS, MAX_NEWS_FOLLOWS, normalizeSettings, normalizeState, migrateLegacy, normalizeCounts, tapCounts };
     }
   });
 
@@ -6021,6 +6029,10 @@
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
   var fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "\u2014";
+  var marketPrice = (value, code = "") => Number.isFinite(value) ? value.toLocaleString("en-US", {
+    minimumFractionDigits: code.startsWith("rt_hk") ? 3 : 2,
+    maximumFractionDigits: 4
+  }) : "\u2014";
   var signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${fmt(Math.abs(value), digits)}` : "\u2014";
   var tone = (value) => value > 0 ? "rise" : value < 0 ? "fall" : "neutral";
   var time = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false }) : "\u2014";
@@ -6240,10 +6252,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.audio = new Audio("assets/audio/mama.mp3");
       this.epoch = 0;
     }
-    async play(volume) {
+    async play(volume2) {
       this.stop();
       const epoch = this.epoch;
-      const target = Math.max(0, Math.min(1, volume)) * 0.2;
+      const target = Math.max(0, Math.min(1, volume2)) * 0.2;
       this.audio.volume = 0;
       await this.audio.play();
       const started = performance.now();
@@ -6688,6 +6700,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const address = input(fields, "url", "\u62A5\u4EF7\u63A5\u53E3\u5730\u5740", config.url);
     address.placeholder = "https://example.com/quote?symbol={symbol}";
     fields.append(element("p", "\u5730\u5740\u652F\u6301 {symbol}\u3001{ticker}\u3001{code}\u3001{market}\u3001{exchange}\u3002\u672C\u5730\u8F6C\u63A5\u670D\u52A1\u4E5F\u53EF\u4F7F\u7528 HTTP \u5730\u5740\u3002", "footnote"));
+    input(fields, "seriesUrl", "\u5206\u65F6\u4E0E K \u7EBF\u63A5\u53E3\u5730\u5740\uFF08\u9009\u586B\uFF09", config.seriesUrl).placeholder = "https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}";
+    fields.append(element("p", "\u8D70\u52BF\u63A5\u53E3\u4E0E\u62A5\u4EF7\u63A5\u53E3\u5171\u7528\u57DF\u540D\u3001\u7AEF\u53E3\u548C\u9274\u6743\u3002\u81EA\u6709\u8D70\u52BF\u5730\u5740\u7559\u7A7A\u65F6\uFF0C\u5206\u65F6\u548C K \u7EBF\u7EE7\u7EED\u663E\u793A\u516C\u5F00\u884C\u60C5\u3002", "footnote"));
     const marketGroup = element("div", "", "source-markets");
     marketGroup.append(element("span", "\u9002\u7528\u5E02\u573A"));
     const markets = [];
@@ -6714,13 +6728,35 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     input(mapping, "dataPath", "\u62A5\u4EF7\u5BF9\u8C61\u8DEF\u5F84\uFF0C\u9876\u5C42\u5BF9\u8C61\u7559\u7A7A", config.dataPath).placeholder = "\u4F8B\u5982 data.quote \u6216 data[0]";
     mapping.append(element("p", "\u5B57\u6BB5\u652F\u6301 price\u3001quote.price\u3001data[0].price \u6216 /Global Quote/05. price\u3002\u53EF\u9009\u5B57\u6BB5\u7559\u7A7A\u8868\u793A\u4E0D\u8BFB\u53D6\u3002", "footnote"));
     const mappingGrid = element("div", "", "source-grid");
-    const labels = { price: "\u73B0\u4EF7", prevClose: "\u6DA8\u8DCC\u6BD4\u8F83\u57FA\u51C6\u4EF7", change: "\u6DA8\u8DCC\u989D", changePct: "\u6DA8\u8DCC\u5E45\uFF0C\u767E\u5206\u6570", timestamp: "\u62A5\u4EF7\u65F6\u95F4", session: "\u4EA4\u6613\u65F6\u6BB5", name: "\u80A1\u7968\u540D\u79F0", symbol: "\u80A1\u7968\u4EE3\u7801", regularPrice: "\u5E38\u89C4\u6536\u76D8\u4EF7", dayPrevClose: "\u4ECA\u65E5\u76C8\u4E8F\u57FA\u51C6\u4EF7" };
+    const labels = {
+      price: "\u73B0\u4EF7",
+      prevClose: "\u6DA8\u8DCC\u6BD4\u8F83\u57FA\u51C6\u4EF7",
+      change: "\u6DA8\u8DCC\u989D",
+      changePct: "\u6DA8\u8DCC\u5E45\uFF0C\u767E\u5206\u6570",
+      timestamp: "\u62A5\u4EF7\u65F6\u95F4",
+      session: "\u4EA4\u6613\u65F6\u6BB5",
+      name: "\u80A1\u7968\u540D\u79F0",
+      symbol: "\u80A1\u7968\u4EE3\u7801",
+      regularPrice: "\u5E38\u89C4\u6536\u76D8\u4EF7",
+      dayPrevClose: "\u4ECA\u65E5\u76C8\u4E8F\u57FA\u51C6\u4EF7",
+      open: "\u5F00\u76D8\u4EF7",
+      high: "\u6700\u9AD8\u4EF7",
+      low: "\u6700\u4F4E\u4EF7",
+      volume: "\u6210\u4EA4\u91CF",
+      volumeUnit: "\u6210\u4EA4\u91CF\u5355\u4F4D\uFF08\u80A1/\u624B\uFF09",
+      amount: "\u6210\u4EA4\u989D\uFF08\u539F\u5E01\uFF09",
+      book: "\u59D4\u6258\u6863\u4F4D\u5BF9\u8C61"
+    };
     for (const [key, label] of Object.entries(labels)) input(mappingGrid, "field-" + key, label, config.fields[key]);
     mapping.append(mappingGrid);
     const timeGrid = element("div", "", "source-grid");
     select(timeGrid, "timeZone", "\u65E0\u65F6\u533A\u65E5\u671F\u4F7F\u7528", config.timeZone, [["market", "\u80A1\u7968\u6240\u5C5E\u5E02\u573A\u65F6\u533A"], ["America/New_York", "\u7F8E\u4E1C\u65F6\u95F4"], ["Asia/Shanghai", "\u5317\u4EAC\u65F6\u95F4"], ["UTC", "UTC"]]);
     select(timeGrid, "defaultSession", "\u63A5\u53E3\u7F3A\u5C11\u4EA4\u6613\u65F6\u6BB5\u65F6", config.defaultSession, [["regular", "\u4F5C\u4E3A\u5E38\u89C4\u62A5\u4EF7"], ["auto", "\u6309\u62A5\u4EF7\u65F6\u95F4\u5224\u65AD\u76D8\u524D / \u76D8\u540E"]]);
-    mapping.append(timeGrid, element("p", "\u65F6\u95F4\u652F\u6301 Unix \u79D2\u3001Unix \u6BEB\u79D2\u3001ISO 8601 \u6216\u5E74\u6708\u65E5\u65F6\u5206\u79D2\u3002\u4EA4\u6613\u65F6\u6BB5\u586B\u5199 pre\u3001regular\u3001post\u3002\u76D8\u540E\u4ECA\u65E5\u76C8\u4E8F\u57FA\u51C6\u4EF7\u5E94\u4E3A\u8BE5\u4EA4\u6613\u65E5\u7684\u524D\u6536\u76D8\u4EF7\u3002", "footnote"));
+    mapping.append(
+      timeGrid,
+      element("p", "\u65F6\u95F4\u652F\u6301 Unix \u79D2\u3001Unix \u6BEB\u79D2\u3001ISO 8601 \u6216\u5E74\u6708\u65E5\u65F6\u5206\u79D2\u3002\u4EA4\u6613\u65F6\u6BB5\u586B\u5199 pre\u3001regular\u3001post\u3002\u76D8\u540E\u4ECA\u65E5\u76C8\u4E8F\u57FA\u51C6\u4EF7\u5E94\u4E3A\u8BE5\u4EA4\u6613\u65E5\u7684\u524D\u6536\u76D8\u4EF7\u3002", "footnote"),
+      element("p", "\u59D4\u6258\u6863\u4F4D\u5305\u542B unit\uFF08\u624B\u6216\u80A1\uFF09\u3001bids\u3001asks\uFF0C\u53EF\u9009 timestamp\u3002\u6BCF\u6863\u5305\u542B price \u548C size\u3002", "footnote")
+    );
     const example = element("pre", '{\n  "symbol": "MP", "price": 37.88,\n  "previousClose": 36.73,\n  "timestamp": "2026-11-12T13:47:00Z",\n  "session": "pre"\n}', "source-example");
     mapping.append(example);
     fields.append(mapping);
@@ -6790,7 +6826,9 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const result = await api2.quoteSource("test", payload());
       const presentation = quotePresentation(result, Number(controls.interval.value));
       const percent2 = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + "%" : "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B";
-      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent2} \xB7 ${presentation.summary}`;
+      const book = result.quote.details?.book;
+      const series = result.series ? result.series.bars ? " \xB7 \u65E5 K " + result.series.bars + " \u6839" : " \xB7 \u8D70\u52BF\uFF1A" + result.series.error : "";
+      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent2} \xB7 ${presentation.summary}` + (book ? ` \xB7 \u4E70 ${book.bids.length} \u6863 / \u5356 ${book.asks.length} \u6863` : "") + series;
     });
     form.onsubmit = (event) => {
       event.preventDefault();
@@ -6827,8 +6865,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       if (!Number.isFinite(dateAt) || new Date(dateAt).toISOString().slice(0, 10) !== date) continue;
       const [open, close, high, low] = values.slice(0, 4).map((value) => value === "" || value == null ? NaN : Number(value));
       if (![open, close, high, low].every(Number.isFinite) || low > Math.min(open, close) || high < Math.max(open, close)) continue;
-      const volume = values[4] === "" || values[4] == null ? NaN : Number(values[4]);
-      unique.set(date, { date, open, close, high, low, volume: Number.isFinite(volume) && volume >= 0 ? volume : null });
+      const volume2 = values[4] === "" || values[4] == null ? NaN : Number(values[4]);
+      unique.set(date, { date, open, close, high, low, volume: Number.isFinite(volume2) && volume2 >= 0 ? volume2 : null });
     }
     const bars = [...unique.values()].sort((a, b) => a.date.localeCompare(b.date));
     const exchangeSymbol = data2.qt?.[symbol]?.[2];
@@ -6861,15 +6899,135 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
 
+  // renderer-modules/market-minutes.js
+  var minuteText = (minute) => String(Math.floor(minute / 60)).padStart(2, "0") + ":" + String(minute % 60).padStart(2, "0");
+  function drawMinuteChart(ctx, width, height, result, selected, color) {
+    const { points, start, end, lunch, previousClose } = result;
+    const left = 8, plotWidth = Math.max(20, width - left - 77);
+    const top = 12, bottom = height - 82, volumeTop = height - 59, volumeBottom = height - 22;
+    const x = (minute) => left + (minute - start) / Math.max(1, end - start) * plotWidth;
+    const prices = points.map((point2) => point2.price);
+    const lo = Math.min(...prices), hi = Math.max(...prices);
+    const center = previousClose ?? (hi + lo) / 2;
+    const spread = Math.max(center - lo, hi - center, center * 1e-3, 1e-3) * 1.08;
+    const tickDigits = spread < 0.05 ? 4 : spread < 0.5 ? 3 : 2;
+    const y = (value) => bottom - (value - (center - spread)) / (2 * spread) * (bottom - top);
+    const accent = color("--blue"), muted = color("--muted");
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    for (let step = -2; step <= 2; step++) {
+      const value = center + step * spread / 2, py2 = y(value);
+      ctx.strokeStyle = step === 0 && previousClose ? muted : color("--line");
+      ctx.setLineDash(step === 0 && previousClose ? [4, 4] : []);
+      ctx.beginPath();
+      ctx.moveTo(left, py2);
+      ctx.lineTo(left + plotWidth, py2);
+      ctx.stroke();
+      ctx.fillStyle = muted;
+      ctx.fillText(fmt(value, tickDigits), left + plotWidth + 7, py2);
+    }
+    ctx.setLineDash([]);
+    if (lunch) {
+      ctx.fillStyle = color("--soft");
+      ctx.fillRect(x(lunch[0]), top, x(lunch[1]) - x(lunch[0]), bottom - top);
+      ctx.fillStyle = muted;
+      ctx.textAlign = "center";
+      ctx.fillText("\u5348\u4F11", (x(lunch[0]) + x(lunch[1])) / 2, bottom - 10);
+      ctx.textAlign = "left";
+    }
+    const segments = [[points[0]]];
+    for (let index = 1; index < points.length; index++) {
+      const point2 = points[index];
+      if (point2.minute - points[index - 1].minute > 2) segments.push([]);
+      segments[segments.length - 1].push(point2);
+    }
+    const gradient = ctx.createLinearGradient(0, top, 0, bottom);
+    gradient.addColorStop(0, color("--minute-shade"));
+    gradient.addColorStop(1, color("--minute-shade-end"));
+    for (const segment of segments) {
+      const first = segment[0], last = segment[segment.length - 1];
+      if (segment.length === 1) {
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(x(first.minute), y(first.price), 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(x(first.minute), y(first.price));
+      for (const point2 of segment.slice(1)) ctx.lineTo(x(point2.minute), y(point2.price));
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.lineTo(x(last.minute), bottom);
+      ctx.lineTo(x(first.minute), bottom);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+    const maxVolume = Math.max(0, ...points.map((point2) => point2.volume || 0));
+    const barWidth = Math.max(1, plotWidth / (end - start) * 0.74);
+    ctx.fillStyle = muted;
+    ctx.fillText("\u6210\u4EA4\u91CF", left, volumeTop - 9);
+    if (maxVolume) {
+      ctx.fillText(compactVolume(maxVolume), left + plotWidth + 7, volumeTop);
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = 0.5;
+      for (const point2 of points) {
+        if (point2.volume > 0) {
+          const height2 = Math.max(1, point2.volume / maxVolume * (volumeBottom - volumeTop));
+          ctx.fillRect(x(point2.minute) - barWidth / 2, volumeBottom - height2, barWidth, height2);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+    const point = points[selected ?? points.length - 1];
+    const px = x(point.minute), py = y(point.price);
+    if (selected !== null) {
+      ctx.strokeStyle = muted;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(px, top);
+      ctx.lineTo(px, volumeBottom);
+      ctx.moveTo(left, py);
+      ctx.lineTo(left + plotWidth, py);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = muted;
+    ctx.fillText(minuteText(start), left, height - 7);
+    ctx.textAlign = "center";
+    const midday = lunch ? Math.floor((lunch[0] + lunch[1]) / 2) : 720;
+    if (midday > start && midday < end) ctx.fillText(lunch ? minuteText(lunch[0]) + " / " + minuteText(lunch[1]) : minuteText(midday), x(midday), height - 7);
+    ctx.textAlign = "right";
+    ctx.fillText(minuteText(end), left + plotWidth, height - 7);
+    return { width, nearest(pointer) {
+      let nearest = 0;
+      for (let index = 1; index < points.length; index++) {
+        if (Math.abs(x(points[index].minute) - pointer) < Math.abs(x(points[nearest].minute) - pointer)) nearest = index;
+      }
+      return nearest;
+    } };
+  }
+
   // renderer-modules/market-chart.js
-  var price = (value) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "\u2014";
   var percent = (value) => Number.isFinite(value) ? (value > 0 ? "+" : "") + value.toFixed(2) + "%" : "\u2014";
   var averageColors = ["#bf840d", "#6f7fe8", "#ba68b2"];
+  var periods = { minute: "\u5206\u65F6", ...chartPeriods };
+  var volume = (value, unit) => Number.isFinite(value) ? compactVolume(value) + unit : "\u2014";
   var MarketChart = class {
-    constructor(root, request) {
+    constructor(root, { history, minutes, customSeries }) {
       this.root = root;
-      this.request = request;
+      this.history = history;
+      this.minutes = minutes;
+      this.customSeries = customSeries;
       this.period = "day";
+      this.basis = "adjusted";
       this.code = "";
       this.epoch = 0;
       this.count = 60;
@@ -6878,8 +7036,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.cache = /* @__PURE__ */ new Map();
       root.classList.add("market-chart");
       root.innerHTML = `
-      <div class="market-chart-heading"><h2>\u884C\u60C5\u8D70\u52BF</h2><div class="market-periods" role="group" aria-label="K \u7EBF\u5468\u671F">${Object.entries(chartPeriods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === "day"}">${label}</button>`).join("")}</div></div>
-      <div class="market-chart-toolbar"><span class="market-chart-basis"></span><div><button type="button" data-zoom="out" aria-label="\u7F29\u5C0F K \u7EBF">\u2212</button><button type="button" data-zoom="in" aria-label="\u653E\u5927 K \u7EBF">\uFF0B</button><button type="button" class="market-latest">\u6700\u8FD1</button><button type="button" class="market-retry" aria-label="\u5237\u65B0\u5386\u53F2 K \u7EBF">\u5237\u65B0</button></div></div>
+      <div class="market-chart-heading"><h2>\u884C\u60C5\u8D70\u52BF</h2><div class="market-periods" role="group" aria-label="\u884C\u60C5\u5468\u671F">${Object.entries(periods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === "day"}">${label}</button>`).join("")}</div></div>
+      <div class="market-chart-toolbar"><span class="market-chart-basis"></span><div><select class="market-adjustment" aria-label="K \u7EBF\u590D\u6743\u65B9\u5F0F"><option value="adjusted">\u524D\u590D\u6743</option><option value="raw">\u4E0D\u590D\u6743</option></select><button type="button" data-zoom="out" aria-label="\u7F29\u5C0F K \u7EBF">\u2212</button><button type="button" data-zoom="in" aria-label="\u653E\u5927 K \u7EBF">\uFF0B</button><button type="button" class="market-latest">\u6700\u8FD1</button><button type="button" class="market-retry" aria-label="\u5237\u65B0\u8D70\u52BF">\u5237\u65B0</button></div></div>
       <div class="market-chart-stats" aria-live="off"></div>
       <div class="market-ma" aria-label="\u79FB\u52A8\u5E73\u5747\u7EBF"></div>
       <div class="market-plot"><canvas tabindex="0" role="img" aria-label="\u80A1\u7968 K \u7EBF\u548C\u6210\u4EA4\u91CF\uFF0C\u5DE6\u53F3\u65B9\u5411\u952E\u67E5\u770B\uFF0CHome \u548C End \u8DF3\u81F3\u9996\u5C3E"></canvas><div class="market-chart-empty" role="status"></div></div>
@@ -6889,6 +7047,12 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.status = root.querySelector(".market-chart-source");
       this.empty = root.querySelector(".market-chart-empty");
       this.range = root.querySelector("input");
+      this.adjustment = root.querySelector(".market-adjustment");
+      this.adjustment.onchange = () => {
+        this.basis = this.adjustment.value;
+        this.hover = null;
+        this.load();
+      };
       root.querySelectorAll("[data-period]").forEach((button) => button.onclick = () => {
         this.period = button.dataset.period;
         this.offset = 0;
@@ -6932,12 +7096,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.theme = new MutationObserver(() => this.draw());
       this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     }
-    update(code, active = true) {
-      const changed = this.code !== code;
+    update(code, active = true, source = null) {
+      const changed = this.code !== code || this.source !== source;
       const resumed = active && !this.active;
       this.active = active;
       if (changed) {
         this.code = code;
+        this.source = source;
         this.result = null;
         this.loading = false;
         this.offset = 0;
@@ -6951,7 +7116,9 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }
     async load(force = false) {
       const ticket = ++this.epoch;
-      const code = this.code, period = this.period, key = code + "," + period;
+      const { code, period, basis, source } = this;
+      const isMinute = period === "minute";
+      const key = [code, period, isMinute ? "" : basis, source].join(",");
       if (!code || !this.active) return;
       this.lastAttempt = Date.now();
       this.result = this.cache.get(key) || null;
@@ -6962,8 +7129,12 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.loading = true;
       this.draw();
       try {
-        const result = await loadChart(this.request, code, period);
+        const custom = source === null ? null : await this.customSeries(code, period, isMinute || basis === "raw" ? "raw" : "qfq");
         if (ticket !== this.epoch) return;
+        const result = custom && !custom.fallbackFrom ? { ...custom, received: Date.now() } : isMinute ? { ...await this.minutes(code), received: Date.now() } : await loadChart((value) => this.history(value + (basis === "raw" ? ",raw" : "")), code, period);
+        if (!isMinute && basis === "raw" && result.adjusted) throw new Error("\u884C\u60C5\u6E90\u672A\u8FD4\u56DE\u4E0D\u590D\u6743\u6570\u636E");
+        if (ticket !== this.epoch) return;
+        if (custom?.fallbackFrom) result.fallbackFrom = custom.fallbackFrom;
         this.cache.delete(key);
         this.cache.set(key, result);
         if (this.cache.size > 40) this.cache.delete(this.cache.keys().next().value);
@@ -6983,32 +7154,40 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const { left, width } = this.canvas.getBoundingClientRect();
       const { start, size, plotWidth } = this.geometry;
       const x = (event.clientX - left) * this.geometry.width / width;
-      this.hover = start + Math.max(0, Math.min(size - 1, Math.floor((x - 8) / plotWidth * size)));
+      this.hover = this.geometry.nearest ? this.geometry.nearest(x) : start + Math.max(0, Math.min(size - 1, Math.floor((x - 8) / plotWidth * size)));
       this.draw();
     }
     key(event) {
-      const bars = this.result?.bars;
-      if (!bars?.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const bars = this.result?.bars || this.result?.points;
+      if (!bars?.length || !this.geometry || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       let index = this.hover ?? bars.length - this.offset - 1;
       if (event.key === "Home") index = 0;
       else if (event.key === "End") index = bars.length - 1;
       else index += event.key === "ArrowLeft" ? -1 : 1;
       this.hover = Math.max(0, Math.min(bars.length - 1, index));
-      if (this.hover < this.geometry.start) this.offset = bars.length - this.count - this.hover;
-      if (this.hover >= this.geometry.start + this.geometry.size) this.offset = bars.length - this.hover - 1;
+      if (this.period !== "minute") {
+        if (this.hover < this.geometry.start) this.offset = bars.length - this.count - this.hover;
+        if (this.hover >= this.geometry.start + this.geometry.size) this.offset = bars.length - this.hover - 1;
+      }
       this.draw();
     }
     draw() {
+      const isMinute = this.period === "minute";
       const bars = this.result?.bars || [];
-      const ready = bars.length > 0;
+      const ready = isMinute ? Boolean(this.result?.points?.length) : bars.length > 0;
       this.root.setAttribute("aria-busy", String(Boolean(this.loading)));
       for (const button of this.root.querySelectorAll("[data-period]")) button.setAttribute("aria-pressed", String(button.dataset.period === this.period));
       this.root.querySelector(".market-retry").disabled = Boolean(this.loading);
-      this.root.querySelector(".market-chart-basis").textContent = ready ? (this.result.adjusted ? "\u524D\u590D\u6743" : "\u4E0D\u590D\u6743") + " \xB7 \u6210\u4EA4\u91CF/" + this.result.volumeUnit : "";
+      const basis = isMinute ? "\u5E38\u89C4\u5206\u65F6" : this.result?.adjusted ? "\u524D\u590D\u6743" : this.basis === "raw" ? "\u4E0D\u590D\u6743" : "\u4E0D\u590D\u6743\uFF08\u6E90\u672A\u63D0\u4F9B\u524D\u590D\u6743\uFF09";
+      this.root.querySelector(".market-chart-basis").textContent = ready ? basis + " \xB7 \u6210\u4EA4\u91CF/" + this.result.volumeUnit : "";
       this.empty.hidden = ready;
-      this.empty.textContent = this.loading ? "\u6B63\u5728\u83B7\u53D6\u5386\u53F2 K \u7EBF\u2026" : this.error || "\u7B49\u5F85\u5386\u53F2\u884C\u60C5";
-      this.status.textContent = this.loading ? "\u6B63\u5728\u66F4\u65B0\u817E\u8BAF\u5386\u53F2\u884C\u60C5\u2026" : this.error ? this.error + (ready ? " \xB7 \u4FDD\u7559\u4E0A\u6B21\u6570\u636E" : " \xB7 \u70B9\u51FB\u5237\u65B0\u91CD\u8BD5") : ready ? "\u817E\u8BAF\u5386\u53F2\u884C\u60C5 \xB7 \u622A\u81F3 " + bars[bars.length - 1].date + " \xB7 \u83B7\u53D6\u4E8E " + new Date(this.result.received).toLocaleTimeString("zh-CN", { hour12: false }) : "";
+      this.empty.textContent = this.loading ? "\u6B63\u5728\u83B7\u53D6\u8D70\u52BF\u2026" : this.error || "\u6682\u65E0\u8D70\u52BF";
+      const zone = this.code.startsWith("gb_") ? "\u7F8E\u4E1C\u65F6\u95F4" : this.code.startsWith("rt_hk") ? "\u9999\u6E2F\u65F6\u95F4" : "\u5317\u4EAC\u65F6\u95F4";
+      const latest = isMinute && ready ? this.result.date + " " + minuteText(this.result.points[this.result.points.length - 1].minute) + " " + zone : bars[bars.length - 1]?.date;
+      const source = this.result?.source || "\u817E\u8BAF\u516C\u5F00\u884C\u60C5";
+      const status = ready ? [source, this.result.fallbackFrom ? "\u81EA\u6709\u6E90\u56DE\u9000" : "", "\u6570\u636E\u622A\u81F3 " + latest, "\u53EF\u80FD\u5EF6\u8FDF"].filter(Boolean).join(" \xB7 ") : "";
+      this.status.textContent = [status, this.loading ? "\u6B63\u5728\u66F4\u65B0\u2026" : this.error ? this.error + (ready ? " \xB7 \u4FDD\u7559\u4E0A\u6B21\u6570\u636E" : " \xB7 \u70B9\u51FB\u5237\u65B0\u91CD\u8BD5") : ""].filter(Boolean).join(" \xB7 ");
       this.offset = Math.max(0, Math.min(Math.max(0, bars.length - this.count), this.offset));
       this.range.max = String(Math.max(0, bars.length - this.count));
       this.range.value = String(Number(this.range.max) - this.offset);
@@ -7016,9 +7195,12 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.root.querySelector('[data-zoom="in"]').disabled = !ready || this.count <= 20;
       this.root.querySelector('[data-zoom="out"]').disabled = !ready || this.count >= 160;
       this.root.querySelector(".market-latest").disabled = !ready || this.offset === 0;
+      this.root.querySelector(".market-chart-range").hidden = isMinute;
+      this.adjustment.hidden = isMinute;
+      for (const button of this.root.querySelectorAll("[data-zoom], .market-latest")) button.hidden = isMinute;
       const width = this.canvas.clientWidth;
       if (!width) return;
-      const height = 300, ratio = Math.min(devicePixelRatio || 1, 3);
+      const height = this.canvas.clientHeight, ratio = Math.min(devicePixelRatio || 1, 3);
       this.canvas.width = Math.round(width * ratio);
       this.canvas.height = Math.round(height * ratio);
       const ctx = this.canvas.getContext("2d");
@@ -7026,37 +7208,40 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.geometry = null;
       const stats = this.root.querySelector(".market-chart-stats");
       const ma = this.root.querySelector(".market-ma");
+      ma.hidden = isMinute;
       if (!ready) {
         stats.replaceChildren();
         ma.replaceChildren();
+        this.canvas.setAttribute("aria-label", "\u6682\u65E0" + periods[this.period] + "\u6570\u636E");
+        return;
+      }
+      const style = getComputedStyle(this.root);
+      const color = (name) => style.getPropertyValue(name).trim();
+      if (isMinute) {
+        const result = this.result;
+        const index = Math.max(0, Math.min(this.hover ?? result.points.length - 1, result.points.length - 1));
+        const point = result.points[index], timestamp = minuteText(point.minute);
+        const change = result.previousClose ? (point.price / result.previousClose - 1) * 100 : null;
+        this.paintStats(stats, [["\u4EA4\u6613\u65E5", result.date], ["\u65F6\u95F4", timestamp], ["\u4EF7\u683C", marketPrice(point.price)], ["\u8F83\u6628\u6536", percent(change)], ["\u6628\u6536", marketPrice(result.previousClose)], ["\u5206\u65F6\u91CF", volume(point.volume, result.volumeUnit)]]);
+        this.geometry = drawMinuteChart(ctx, width, height, result, this.hover === null ? null : index, color);
+        this.canvas.setAttribute("aria-label", `${this.code} \u5206\u65F6\uFF0C${result.date} ${timestamp}\uFF0C\u4EF7\u683C ${marketPrice(point.price)}\uFF0C\u8F83\u6628\u6536 ${percent(change)}\u3002\u5DE6\u53F3\u65B9\u5411\u952E\u67E5\u770B\uFF0CHome \u548C End \u8DF3\u81F3\u9996\u5C3E`);
         return;
       }
       const end = bars.length - this.offset, start = Math.max(0, end - this.count);
       const visible = bars.slice(start, end), size = visible.length;
       const selected = Math.max(start, Math.min(end - 1, this.hover ?? end - 1));
       const bar = bars[selected];
-      stats.replaceChildren();
-      for (const [label, value] of [["\u65E5\u671F", bar.date], ["\u5F00", price(bar.open)], ["\u9AD8", price(bar.high)], ["\u4F4E", price(bar.low)], ["\u6536", price(bar.close)], ["\u6DA8\u8DCC", percent(chartChange(bars, selected))], ["\u91CF", compactVolume(bar.volume) + this.result.volumeUnit]]) {
-        const cell = document.createElement("span");
-        const small = document.createElement("small");
-        small.textContent = label;
-        const strong = document.createElement("b");
-        strong.textContent = value;
-        cell.append(small, strong);
-        stats.append(cell);
-      }
+      this.paintStats(stats, [["\u65E5\u671F", bar.date], ["\u5F00", marketPrice(bar.open)], ["\u9AD8", marketPrice(bar.high)], ["\u4F4E", marketPrice(bar.low)], ["\u6536", marketPrice(bar.close)], ["\u6DA8\u8DCC", percent(chartChange(bars, selected))], ["\u91CF", volume(bar.volume, this.result.volumeUnit)]]);
       ma.replaceChildren();
       for (const [index, length] of [5, 10, 20].entries()) {
         const label = document.createElement("span");
         label.className = "market-ma-" + index;
-        label.textContent = "MA" + length + " " + price(movingAverage(bars, selected, length));
+        label.textContent = "MA" + length + " " + marketPrice(movingAverage(bars, selected, length));
         ma.append(label);
       }
-      const style = getComputedStyle(this.root);
-      const color = (name) => style.getPropertyValue(name).trim();
       const ink = color("--chart-ink"), muted = color("--muted"), line = color("--line");
       const rise = color("--chart-rise"), fall = color("--chart-fall");
-      const left = 8, right = 68, top = 12, bottom = 210, volumeTop = 235, volumeBottom = 278;
+      const left = 8, right = 77, top = 12, bottom = height - 82, volumeTop = height - 59, volumeBottom = height - 22;
       const plotWidth = Math.max(20, width - left - right), step = plotWidth / size;
       const values = [];
       for (const item of visible) values.push(item.low, item.high);
@@ -7069,6 +7254,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const rawMin = Math.min(...values), rawMax = Math.max(...values);
       const padding = Math.max((rawMax - rawMin) * 0.08, Math.abs(rawMax) * 2e-3, 0.01);
       const min = rawMin - padding, max = rawMax + padding;
+      const tickDigits = max - min < 0.1 ? 4 : max - min < 1 ? 3 : 2;
       const y = (value) => bottom - (value - min) / (max - min) * (bottom - top);
       const x = (index) => left + (index - start + 0.5) * step;
       ctx.font = "10px system-ui, sans-serif";
@@ -7082,7 +7268,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         ctx.lineTo(left + plotWidth, py);
         ctx.stroke();
         ctx.fillStyle = muted;
-        ctx.fillText(price(value), left + plotWidth + 7, py);
+        ctx.fillText(fmt(value, tickDigits), left + plotWidth + 7, py);
       }
       const maxVolume = Math.max(1, ...visible.map((item) => item.volume || 0));
       ctx.fillStyle = muted;
@@ -7101,7 +7287,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         const py = Math.min(y(item.open), y(item.close)), bodyHeight = Math.max(1, Math.abs(y(item.close) - y(item.open)));
         if (item.close > item.open && body > 3) ctx.strokeRect(px - body / 2, py, body, bodyHeight);
         else ctx.fillRect(px - body / 2, py, body, bodyHeight);
-        if (item.volume != null) ctx.fillRect(px - body / 2, volumeBottom - item.volume / maxVolume * (volumeBottom - volumeTop), body, Math.max(1, item.volume / maxVolume * (volumeBottom - volumeTop)));
+        if (item.volume > 0) ctx.fillRect(px - body / 2, volumeBottom - item.volume / maxVolume * (volumeBottom - volumeTop), body, Math.max(1, item.volume / maxVolume * (volumeBottom - volumeTop)));
       }
       for (const [lineIndex, length] of [5, 10, 20].entries()) {
         ctx.beginPath();
@@ -7135,13 +7321,351 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         ctx.fill();
       }
       ctx.fillStyle = muted;
-      ctx.fillText(visible[0].date, left, 294);
+      ctx.fillText(visible[0].date, left, height - 7);
       ctx.textAlign = "right";
-      ctx.fillText(visible[visible.length - 1].date, left + plotWidth, 294);
-      this.canvas.setAttribute("aria-label", `${this.code} ${chartPeriods[this.period]}\uFF0C${bar.date}\uFF0C\u5F00 ${price(bar.open)}\uFF0C\u9AD8 ${price(bar.high)}\uFF0C\u4F4E ${price(bar.low)}\uFF0C\u6536 ${price(bar.close)}\uFF0C\u6210\u4EA4\u91CF ${compactVolume(bar.volume)}${this.result.volumeUnit}\u3002\u5DE6\u53F3\u65B9\u5411\u952E\u67E5\u770B\uFF0CHome \u548C End \u8DF3\u81F3\u9996\u5C3E`);
+      ctx.fillText(visible[visible.length - 1].date, left + plotWidth, height - 7);
+      this.canvas.setAttribute("aria-label", `${this.code} ${chartPeriods[this.period]}\uFF0C${bar.date}\uFF0C\u5F00 ${marketPrice(bar.open)}\uFF0C\u9AD8 ${marketPrice(bar.high)}\uFF0C\u4F4E ${marketPrice(bar.low)}\uFF0C\u6536 ${marketPrice(bar.close)}\uFF0C\u6210\u4EA4\u91CF ${volume(bar.volume, this.result.volumeUnit)}\u3002\u5DE6\u53F3\u65B9\u5411\u952E\u67E5\u770B\uFF0CHome \u548C End \u8DF3\u81F3\u9996\u5C3E`);
       this.geometry = { start, size, plotWidth, width };
     }
+    paintStats(root, values) {
+      root.replaceChildren();
+      for (const [label, value] of values) {
+        const cell = document.createElement("span");
+        const small = document.createElement("small");
+        small.textContent = label;
+        const strong = document.createElement("b");
+        strong.textContent = value;
+        cell.append(small, strong);
+        root.append(cell);
+      }
+    }
   };
+
+  // renderer-modules/market-insights.js
+  var PanelResource = class {
+    constructor(paint) {
+      this.paint = paint;
+      this.cache = /* @__PURE__ */ new Map();
+    }
+    update({ key, active, request, interval, force = false }) {
+      this.key = key;
+      this.active = active;
+      if (!active || !key) return;
+      const record = this.cache.get(key) || { attempted: -Infinity };
+      if (record.loading || !force && Date.now() - record.attempted < interval) {
+        this.paint(record);
+        return;
+      }
+      record.loading = true;
+      record.error = false;
+      record.attempted = Date.now();
+      this.cache.delete(key);
+      this.cache.set(key, record);
+      if (this.cache.size > 52) this.cache.delete(this.cache.keys().next().value);
+      this.paint(record);
+      request().then((result) => {
+        record.result = result;
+      }, () => {
+        record.error = true;
+      }).finally(() => {
+        record.loading = false;
+        if (this.active && this.key === key) this.paint(record);
+      });
+    }
+  };
+  var marketZone = (code) => code.startsWith("gb_") ? "America/New_York" : code.startsWith("rt_hk") ? "Asia/Hong_Kong" : "Asia/Shanghai";
+  var marketZoneName = (code) => code.startsWith("gb_") ? "\u7F8E\u4E1C\u65F6\u95F4" : code.startsWith("rt_hk") ? "\u9999\u6E2F\u65F6\u95F4" : "\u5317\u4EAC\u65F6\u95F4";
+  var shortDate = (value, timeZone, detailed = false) => new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: detailed ? "2-digit" : void 0,
+    hourCycle: "h23"
+  }).format(value);
+  var MarketDetails = class {
+    constructor(root, request) {
+      this.root = root;
+      this.request = request;
+      this.metrics = root.querySelector(".market-metrics");
+      this.book = root.querySelector(".market-book");
+      this.status = root.querySelector(".market-detail-status");
+      this.resource = new PanelResource((record) => this.render(record));
+    }
+    update(code, active, { entry, custom, source, interval, force }) {
+      this.code = code;
+      const useCustom = custom && !entry?.quote?.fallbackFrom;
+      this.resource.update({
+        key: useCustom ? null : code,
+        active,
+        request: () => this.request(code),
+        interval: Math.max(1e4, interval * 1e3),
+        force
+      });
+      if (active && useCustom) {
+        this.render({ result: entry?.quote?.details ?? { source: source || "\u81EA\u6709\u884C\u60C5\u6E90" }, error: Boolean(entry?.error) });
+      }
+    }
+    render({ result, loading = false, error = false }) {
+      const code = this.code;
+      const unit = code.startsWith("gb_") ? " USD" : code.startsWith("rt_hk") ? " HKD" : " CNY";
+      this.root.setAttribute("aria-busy", String(loading));
+      if (result !== this.painted || code !== this.paintedCode) {
+        this.painted = result;
+        this.paintedCode = code;
+        const rows = [
+          ["\u4ECA\u5F00", marketPrice(result?.open, code)],
+          ["\u6628\u6536", marketPrice(result?.previousClose, code)],
+          ["\u6700\u9AD8", marketPrice(result?.high, code)],
+          ["\u6700\u4F4E", marketPrice(result?.low, code)],
+          ["\u6210\u4EA4\u91CF", Number.isFinite(result?.volume) && result.volumeUnit ? compactVolume(result.volume) + result.volumeUnit : "\u2014"],
+          ["\u6210\u4EA4\u989D", Number.isFinite(result?.amount) ? compactVolume(result.amount) + unit : "\u2014"]
+        ];
+        this.metrics.replaceChildren(...rows.map(([label, value]) => {
+          const cell = element("div");
+          cell.append(element("dt", label), element("dd", value));
+          return cell;
+        }));
+        this.renderBook(result);
+      }
+      const timestamp = result?.quotedAt;
+      const at = Number.isFinite(timestamp) ? shortDate(timestamp, marketZone(code), true) + " " + marketZoneName(code) : "";
+      this.status.textContent = [
+        result?.source,
+        at || (result ? "\u672A\u63D0\u4F9B\u65F6\u95F4" : ""),
+        result?.source === "\u817E\u8BAF\u516C\u5F00\u884C\u60C5" ? "\u53EF\u80FD\u5EF6\u8FDF" : "",
+        error ? result ? "\u66F4\u65B0\u5931\u8D25\uFF0C\u663E\u793A\u4E0A\u6B21\u6570\u636E" : "\u884C\u60C5\u8D44\u6599\u52A0\u8F7D\u5931\u8D25" : loading ? "\u66F4\u65B0\u4E2D\u2026" : ""
+      ].filter(Boolean).join(" \xB7 ");
+    }
+    renderBook(result) {
+      const book = result?.book;
+      const heading2 = element("div", "", "market-book-heading");
+      heading2.append(element("h3", book ? result.depthLabel : "\u59D4\u6258\u6863\u4F4D"));
+      if (!book) {
+        this.book.replaceChildren(heading2, element("p", result ? "\u5F53\u524D\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u8BE5\u6807\u7684\u7684\u59D4\u6258\u6863\u4F4D\u3002" : "\u7B49\u5F85\u59D4\u6258\u6863\u4F4D\u3002", "muted"));
+        return;
+      }
+      const depth = Math.max(book.bids.length, book.asks.length);
+      const maxSize = Math.max(...[...book.bids, ...book.asks].map((level) => level.size));
+      const at = Number.isFinite(book.quotedAt) ? shortDate(book.quotedAt, marketZone(this.code), true) : "\u672A\u63D0\u4F9B\u65F6\u95F4";
+      heading2.append(element("span", at, "muted"));
+      const columns = element("div", "", "market-book-columns");
+      const sides = [[book.bids, "\u4E70\u76D8", "\u4E70"], [book.asks, "\u5356\u76D8", "\u5356"]];
+      for (const [levels, label, prefix] of sides) {
+        const table = element("table", "", "market-book-" + (prefix === "\u4E70" ? "bid" : "ask"));
+        table.append(element("caption", label));
+        const header = table.createTHead().insertRow();
+        for (const title of ["\u6863\u4F4D", "\u4EF7\u683C", "\u59D4\u6258\u91CF/" + book.unit]) {
+          const col = element("th", title);
+          col.scope = "col";
+          header.append(col);
+        }
+        const body = table.createTBody();
+        for (let index = 0; index < depth; index++) {
+          const level = levels[index], row = body.insertRow();
+          row.insertCell().textContent = prefix + (index + 1);
+          row.insertCell().textContent = marketPrice(level?.price, this.code);
+          const size = row.insertCell();
+          size.textContent = compactVolume(level?.size);
+          if (level) {
+            size.style.setProperty("--depth-share", level.size / maxSize * 100 + "%");
+            size.title = level.size.toLocaleString("zh-CN") + book.unit;
+          }
+        }
+        columns.append(table);
+      }
+      this.book.replaceChildren(heading2, columns);
+    }
+  };
+  var MarketNews = class {
+    constructor(root, { request, open, translate, save, select }) {
+      this.root = root;
+      this.request = request;
+      this.open = open;
+      this.translate = translate;
+      this.save = save;
+      this.select = select;
+      this.scope = "stock";
+      this.visible = 5;
+      this.translations = /* @__PURE__ */ new Map();
+      this.translating = /* @__PURE__ */ new Set();
+      this.title = root.querySelector(".market-news-context");
+      this.status = root.querySelector(".market-news-status");
+      this.list = root.querySelector("ol");
+      this.more = root.querySelector(".market-news-more");
+      this.refresh = root.querySelector(".market-news-refresh");
+      this.follow = root.querySelector(".market-news-follow");
+      this.notify = root.querySelector(".market-news-notify");
+      this.autoTranslate = root.querySelector(".market-news-translate");
+      this.followed = root.querySelector(".market-news-followed");
+      this.test = root.querySelector(".market-news-test");
+      this.notifyStatus = root.querySelector(".market-news-notify-status");
+      this.follow.onclick = () => this.updatePreference("follow", this.stock.code, this.follow);
+      this.notify.onchange = () => this.updatePreference("notifications", this.notify.checked, this.notify);
+      this.autoTranslate.onchange = () => this.updatePreference("autoTranslate", this.autoTranslate.checked, this.autoTranslate);
+      root.querySelector(".market-news-permissions").onclick = (event) => this.updatePreference("permissions", null, event.currentTarget);
+      this.test.onclick = () => this.updatePreference("test", null, this.test);
+      this.resource = new PanelResource((record) => this.render(record));
+      for (const button of root.querySelectorAll("[data-news-scope]")) {
+        button.onclick = () => this.setScope(button.dataset.newsScope);
+      }
+      this.more.onclick = () => {
+        this.visible = this.visible >= this.visibleArticles().length ? 5 : this.visible + 5;
+        this.paintArticles(this.articles);
+      };
+      this.refresh.onclick = () => this.load(true);
+    }
+    setScope(scope) {
+      if (this.scope !== scope) this.visible = 5;
+      this.scope = scope;
+      this.load();
+    }
+    update(stock, active, preferences, stocks) {
+      if (this.stock?.code !== stock.code && this.scope === "market") this.scope = "stock";
+      this.stock = stock;
+      this.active = active;
+      const changed = this.translationEnabled !== preferences.autoTranslate;
+      this.translationEnabled = preferences.autoTranslate;
+      this.preferences = preferences;
+      this.stocks = stocks;
+      this.paintPreferences();
+      this.load();
+      if (changed && this.active) this.paintArticles(this.articles);
+    }
+    load(force = false) {
+      if (!this.stock) return;
+      const { code, name } = this.stock, scope = this.scope;
+      const key = scope === "market" ? "market" : code;
+      if (key !== this.resource.key) this.visible = 5;
+      this.title.textContent = scope === "market" ? "\u5E02\u573A\u52A8\u6001" : name;
+      this.follow.hidden = scope === "market";
+      for (const button of this.root.querySelectorAll("[data-news-scope]")) {
+        button.setAttribute("aria-pressed", String(button.dataset.newsScope === scope));
+      }
+      this.resource.update({ key, active: this.active, request: () => this.request(scope === "market" ? "market" : "stock", code, force), interval: 3e5, force });
+    }
+    render({ result, loading = false, error = false }) {
+      this.root.setAttribute("aria-busy", String(loading));
+      this.refresh.disabled = loading;
+      if (this.articles !== result?.articles || this.paintedKey !== this.resource.key || this.paintedScope !== this.scope) this.paintArticles(result?.articles);
+      this.status.textContent = [
+        result?.source,
+        error ? result ? "\u66F4\u65B0\u5931\u8D25\uFF0C\u663E\u793A\u4E0A\u6B21\u65B0\u95FB" : "\u65B0\u95FB\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u91CD\u8BD5" : loading ? "\u6B63\u5728\u83B7\u53D6\u65B0\u95FB\u2026" : result && this.visibleArticles().length === 0 ? "\u6682\u672A\u627E\u5230\u76F8\u5173\u65B0\u95FB" : ""
+      ].filter(Boolean).join(" \xB7 ");
+    }
+    visibleArticles() {
+      const all = this.articles || [];
+      const articles = this.scope === "international" ? all.filter((item) => item.international) : all;
+      if (this.scope === "market" || articles.length < 2) return articles;
+      const roundup = (title) => /^(?:stock movers|final trade)\b|analyst calls:|[，、,].*[，、,].*[，、,]/i.test(title);
+      if (!roundup(articles[0].title)) return articles;
+      const lead = articles.findIndex((item) => !roundup(item.title) && articles[0].publishedAt - item.publishedAt <= 36 * 36e5);
+      return lead > 0 ? [articles[lead], ...articles.slice(0, lead), ...articles.slice(lead + 1)] : articles;
+    }
+    paintArticles(articles) {
+      this.articles = articles;
+      this.paintedKey = this.resource.key;
+      this.paintedScope = this.scope;
+      this.list.replaceChildren();
+      const visible = this.visibleArticles();
+      const translations = [];
+      const languages = { en: "\u82F1\u6587", ja: "\u65E5\u6587", fr: "\u6CD5\u6587", de: "\u5FB7\u6587" };
+      for (const item of visible.slice(0, this.visible)) {
+        const row = element("li");
+        const button = element("button", "", "market-news-article");
+        button.type = "button";
+        button.dataset.article = item.id;
+        button.title = "\u5728\u6D4F\u89C8\u5668\u6253\u5F00\u539F\u6587";
+        const meta = element("span", "", "market-news-meta");
+        const date = element("time", shortDate(item.publishedAt, "Asia/Shanghai"));
+        date.dateTime = new Date(item.publishedAt).toISOString();
+        date.title = "\u5317\u4EAC\u65F6\u95F4";
+        meta.append(element("span", item.publisher), date);
+        const headline = element("strong", item.title);
+        const original = element("span", "", "market-news-original");
+        original.hidden = true;
+        const label = element("span", languages[item.language] || "", "market-news-language");
+        if (label.textContent) meta.append(label);
+        const showTranslation = (translated) => {
+          if (!translated || !this.preferences.autoTranslate) return;
+          headline.textContent = translated;
+          original.hidden = false;
+          original.textContent = item.title;
+          label.textContent = [languages[item.language], "\u673A\u5668\u7FFB\u8BD1"].filter(Boolean).join(" \xB7 ");
+        };
+        if (this.preferences?.autoTranslate && item.language !== "zh") {
+          if (this.translations.has(item.id)) showTranslation(this.translations.get(item.id));
+          else if (!this.translating.has(item.id)) translations.push(item.id);
+        }
+        button.append(meta, headline, original);
+        button.onclick = () => this.open(item.id);
+        row.append(button);
+        this.list.append(row);
+      }
+      this.more.hidden = visible.length <= 5;
+      this.more.textContent = this.visible >= visible.length ? "\u6536\u8D77" : "\u66F4\u591A\u65B0\u95FB";
+      this.more.setAttribute("aria-expanded", String(this.visible > 5));
+      const batch = translations.slice(0, 12);
+      if (batch.length) {
+        for (const id of batch) this.translating.add(id);
+        this.translate(batch).then((result) => {
+          for (const id of batch) this.translations.set(id, result[id] || "");
+          while (this.translations.size > 180) this.translations.delete(this.translations.keys().next().value);
+          if (this.active && this.preferences.autoTranslate) {
+            const focused = this.list.querySelector("button:focus")?.dataset.article;
+            this.paintArticles(this.articles);
+            if (focused) this.list.querySelector('[data-article="' + focused + '"]')?.focus({ preventScroll: true });
+          }
+        }, () => {
+        }).finally(() => {
+          for (const id of batch) this.translating.delete(id);
+        });
+      }
+    }
+    paintPreferences() {
+      const preferences = this.preferences;
+      const following = preferences.followed.includes(this.stock.code);
+      this.follow.setAttribute("aria-pressed", String(following));
+      this.follow.textContent = following ? "\u5DF2\u5173\u6CE8" : "\u5173\u6CE8\u65B0\u95FB";
+      this.autoTranslate.checked = preferences.autoTranslate;
+      this.notify.checked = preferences.notifications;
+      this.test.disabled = !preferences.notifications;
+      const stocks = preferences.followed.map((code) => this.stocks.find((stock) => stock.code === code)).filter(Boolean);
+      const key = stocks.map((stock) => stock.code + stock.name).join("|");
+      if (key === this.followedKey) return;
+      this.followedKey = key;
+      this.followed.replaceChildren();
+      this.followed.append(element("span", stocks.length ? "\u5DF2\u5173\u6CE8 " + stocks.length + " \u53EA" : "\u6682\u65E0\u5173\u6CE8\u7684\u80A1\u7968", "muted"));
+      for (const stock of stocks) {
+        const button = element("button", stock.name, "link-button");
+        button.type = "button";
+        button.onclick = () => {
+          this.setScope("stock");
+          this.select(stock.code);
+        };
+        this.followed.append(button);
+      }
+    }
+    async updatePreference(operation, value, control) {
+      control.disabled = true;
+      this.notifyStatus.textContent = "";
+      try {
+        const result = await this.save(operation, value);
+        if (operation === "test") this.notifyStatus.textContent = result ? "\u5DF2\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5" : "\u7CFB\u7EDF\u672A\u786E\u8BA4\u901A\u77E5\uFF0C\u8BF7\u68C0\u67E5\u5E94\u7528\u7684\u901A\u77E5\u6743\u9650\u3002";
+      } catch (error) {
+        this.notifyStatus.textContent = String(error.message).replace(/^Error invoking remote method '[^']+': Error: /, "");
+        this.root.querySelector(".market-news-preferences").open = true;
+      } finally {
+        control.disabled = operation === "test" && !this.preferences.notifications;
+        this.paintPreferences();
+      }
+    }
+  };
+
+  // renderer.js
+  var import_market_symbols4 = __toESM(require_market_symbols());
 
   // renderer-modules/feedback-form.js
   function createFeedbackForm({ submit, context, open }) {
@@ -7257,7 +7781,25 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   $("update-download").onclick = () => perform(api.updates("download"));
   api.onUpdate(paintUpdate);
   var moods = new MarketMood();
-  var marketChart = new MarketChart($("market-chart"), (value) => api.chartHistory(value));
+  var marketChart = new MarketChart($("market-chart"), { history: api.chartHistory, minutes: api.chartMinutes, customSeries: api.customSeries });
+  var marketDetails = new MarketDetails($("market-details"), api.marketDetails);
+  var marketNews = new MarketNews($("market-news"), {
+    request: api.marketNews,
+    open: (id) => perform(api.openNews(id)),
+    translate: api.translateNews,
+    save: api.newsPreferences,
+    select: selectStock
+  });
+  function revealStockNews() {
+    if (tab !== "home") changeTab("home");
+    marketNews.setScope("stock");
+    $("market-news-title").focus();
+  }
+  $("show-market-news").onclick = revealStockNews;
+  $("show-market-details").onclick = () => $("market-details-title").focus();
+  api.onNewsArrived(() => {
+    if (data) revealStockNews();
+  });
   var bull = makeMotion($("bull"));
   var wood = makeMotion($("wood-canvas"));
   var gallery = makeMotion($("motion-canvas"));
@@ -7394,11 +7936,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         if (!item) {
           const row = element("div", "", "stock-row");
           const button = element("button", "", "stock-main");
-          const name = element("div"), price2 = element("div");
+          const name = element("div"), price = element("div");
           item = {
             row,
             button,
-            price: price2,
+            price,
             name: element("strong"),
             code: element("small"),
             value: element("strong"),
@@ -7407,8 +7949,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
             percent: element("span")
           };
           name.append(item.name, item.code);
-          price2.append(item.value, item.change, item.warning);
-          button.append(name, price2);
+          price.append(item.value, item.change, item.warning);
+          button.append(name, price);
           if (full) button.append(item.percent);
           button.onclick = () => selectStock(stock.code);
           row.append(button);
@@ -7430,7 +7972,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         item.name.textContent = stock.name;
         item.code.textContent = displaySymbol(stock.code) + (presentation.label ? " \xB7 " + presentation.label : "");
         item.price.className = "stock-price " + tone(quote?.changePct);
-        item.value.textContent = fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2);
+        item.value.textContent = marketPrice(quote?.price, stock.code);
         item.change.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : quote ? "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B" : "\u7B49\u5F85\u884C\u60C5";
         item.warning.textContent = presentation.message;
         item.warning.hidden = !quote || !presentation.warning;
@@ -7511,7 +8053,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const quote = data.quotes[code]?.quote;
     const woodMode = settings().islandContent === "muyu";
     $("preview-name").textContent = woodMode ? "\u725B\u6765\u6728\u9C7C" : quote?.name || selectedStock().name;
-    $("preview-price").textContent = woodMode ? "\u672C\u8F6E " + data.counts.session : settings().islandPrice ? fmt(quote?.price) : "\u725B\u6765";
+    $("preview-price").textContent = woodMode ? "\u672C\u8F6E " + data.counts.session : settings().islandPrice ? marketPrice(quote?.price, code) : "\u725B\u6765";
     $("preview-pct").textContent = woodMode ? "+1" : settings().islandPercent && Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "";
     $("preview-pct").className = tone(quote?.changePct);
     $("preview-canvas").hidden = !settings().islandBull;
@@ -7531,6 +8073,15 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("refresh").setAttribute("aria-busy", String(Boolean(data.refreshing && !data.suspended)));
     $("refresh-label").textContent = data.suspended ? "\u5DF2\u6682\u505C" : data.refreshing ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u884C\u60C5";
   }
+  function updateMarketPanels(force = false) {
+    const stock = selectedStock();
+    const active = tab === "home" && !document.hidden && !data.suspended;
+    const { markets, name, seriesConfigured, seriesRevision } = data.quoteSource;
+    const custom = settings().quoteSourceMode === "custom" && (!markets || markets.includes(import_market_symbols4.default.marketForSymbol(stock.code)));
+    marketChart.update(stock.code, active, custom && seriesConfigured ? seriesRevision : null);
+    marketDetails.update(stock.code, active, { entry: currentEntry(), custom, source: name, interval: settings().interval, force });
+    marketNews.update(stock, active, data.state.news, data.state.stocks);
+  }
   function render() {
     if (!data?.state) return;
     const stock = selectedStock(), entry = currentEntry(), quote = entry?.quote;
@@ -7538,7 +8089,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("app-version").textContent = data.version;
     $("quote-name").textContent = stock.name;
     $("quote-code").textContent = displaySymbol(stock.code) + " \xB7 " + currency(stock.code);
-    $("price").textContent = fmt(quote?.price, currency(stock.code) === "HKD" ? 3 : 2);
+    $("price").textContent = marketPrice(quote?.price, stock.code);
     $("change").textContent = signed(quote?.change);
     $("percent").textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
     $("quote-number").className = "quote-number " + tone(quote?.changePct);
@@ -7552,8 +8103,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("sample-count").textContent = samples.length < 2 ? "\u7B49\u5F85\u91C7\u6837" : samples.length + " \u4E2A\u6837\u672C";
     $("sample-start").textContent = time(samples[0]?.at);
     $("sample-end").textContent = time(samples.at(-1)?.at);
-    drawSparkline($("sparkline"), samples, getComputedStyle(document.documentElement).getPropertyValue(quote?.changePct < 0 ? "--fall" : "--rise"));
-    marketChart.update(stock.code, tab === "home" && !document.hidden && !data.suspended);
+    drawSparkline($("sparkline"), samples, getComputedStyle($("sparkline")).getPropertyValue(quote?.changePct < 0 ? "--fall" : "--rise"));
+    updateMarketPanels();
     updateMood();
     renderSettingsPreview();
     processFeatures();
@@ -7585,7 +8136,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("page-subtitle").hidden = !titles[tab][1];
     if (tab === "settings") buildSettings();
     window.scrollTo(0, tabScroll.get(next) || 0);
-    marketChart.update(data.state.selected, tab === "home" && !document.hidden && !data.suspended);
+    updateMarketPanels();
     syncMotion();
   }
   function selectStock(code) {
@@ -7746,10 +8297,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       canvas.width = canvas.height = 100;
       const name = element("small");
       name.id = "preview-name";
-      const price2 = element("b");
-      price2.id = "preview-price";
+      const price = element("b");
+      price.id = "preview-price";
       const values = element("div");
-      values.append(name, price2);
+      values.append(name, price);
       const pct = element("span");
       pct.id = "preview-pct";
       preview.append(canvas, values, pct);
@@ -8030,10 +8581,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       toast(message);
     }
   });
-  api.onMamaVoice(({ volume }) => {
+  api.onMamaVoice(({ volume: volume2 }) => {
     if (data && lastMarketScene && settings().mamaSound && !settings().muted && !quiet()) {
       stopAudio();
-      mamaVoice.play(volume).catch(() => {
+      mamaVoice.play(volume2).catch(() => {
       });
     }
   });
@@ -8046,7 +8597,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   $("all-stocks").onclick = $("select-stock").onclick = () => changeTab("watchlist");
   $("refresh").onclick = async () => {
     refreshRequested = true;
-    if (tab === "home" && !marketChart.loading) marketChart.load(true);
+    if (tab === "home") {
+      if (!marketChart.loading) marketChart.load(true);
+      updateMarketPanels(true);
+    }
     try {
       await api.refresh();
     } catch (error) {
@@ -8185,7 +8739,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAudio();
-    if (data) marketChart.update(data.state.selected, tab === "home" && !document.hidden && !data.suspended);
+    if (data) updateMarketPanels();
     syncMotion();
   });
   window.addEventListener("online", () => perform(api.refresh()));

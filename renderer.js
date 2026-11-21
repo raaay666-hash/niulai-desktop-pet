@@ -1,4 +1,4 @@
-import { $, api, fmt, signed, tone, time, element, makeMotion, catalog, paintIcons, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
+import { $, api, fmt, marketPrice, signed, tone, time, element, makeMotion, catalog, paintIcons, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
 import { position, currency, displaySymbol, marketSession, normalizeMarketSymbol } from './niulai-android/web/core.mjs';
 import { MarketMood } from './niulai-android/web/market-mood.mjs';
 import { TapVoice } from './niulai-android/web/tap-voice.mjs';
@@ -10,6 +10,8 @@ import { AlertTriggerEngine } from './renderer-modules/alert-trigger-engine.js';
 import { isQuietOfficeActive } from './renderer-modules/quiet-office.js';
 import { buildQuoteSourceSettings } from './renderer-modules/quote-source-settings.js';
 import { MarketChart } from './renderer-modules/market-chart.js';
+import { MarketDetails, MarketNews } from './renderer-modules/market-insights.js';
+import symbols from './main-modules/market-symbols.js';
 import { createFeedbackForm } from './renderer-modules/feedback-form.js';
 
 let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
@@ -41,7 +43,20 @@ function paintUpdate(value = updateStatus) {
 $('update-download').onclick = () => perform(api.updates('download'));
 api.onUpdate(paintUpdate);
 const moods = new MarketMood();
-const marketChart = new MarketChart($('market-chart'), value => api.chartHistory(value));
+const marketChart = new MarketChart($('market-chart'), { history: api.chartHistory, minutes: api.chartMinutes, customSeries: api.customSeries });
+const marketDetails = new MarketDetails($('market-details'), api.marketDetails);
+const marketNews = new MarketNews($('market-news'), {
+  request: api.marketNews, open: id => perform(api.openNews(id)), translate: api.translateNews,
+  save: api.newsPreferences, select: selectStock
+});
+function revealStockNews() {
+  if (tab !== 'home') changeTab('home');
+  marketNews.setScope('stock');
+  $('market-news-title').focus();
+}
+$('show-market-news').onclick = revealStockNews;
+$('show-market-details').onclick = () => $('market-details-title').focus();
+api.onNewsArrived(() => { if (data) revealStockNews(); });
 const bull = makeMotion($('bull'));
 const wood = makeMotion($('wood-canvas'));
 const gallery = makeMotion($('motion-canvas'));
@@ -187,7 +202,7 @@ function renderStocks() {
       item.name.textContent = stock.name;
       item.code.textContent = displaySymbol(stock.code) + (presentation.label ? ' · ' + presentation.label : '');
       item.price.className = 'stock-price ' + tone(quote?.changePct);
-      item.value.textContent = fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2);
+      item.value.textContent = marketPrice(quote?.price, stock.code);
       item.change.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : quote ? '涨跌幅未提供' : '等待行情';
       item.warning.textContent = presentation.message;
       item.warning.hidden = !quote || !presentation.warning;
@@ -262,7 +277,7 @@ function renderSettingsPreview() {
   const quote = data.quotes[code]?.quote;
   const woodMode = settings().islandContent === 'muyu';
   $('preview-name').textContent = woodMode ? '牛来木鱼' : quote?.name || selectedStock().name;
-  $('preview-price').textContent = woodMode ? '本轮 ' + data.counts.session : settings().islandPrice ? fmt(quote?.price) : '牛来';
+  $('preview-price').textContent = woodMode ? '本轮 ' + data.counts.session : settings().islandPrice ? marketPrice(quote?.price, code) : '牛来';
   $('preview-pct').textContent = woodMode ? '+1' : settings().islandPercent && Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '';
   $('preview-pct').className = tone(quote?.changePct);
   $('preview-canvas').hidden = !settings().islandBull;
@@ -282,6 +297,15 @@ function renderQuoteStatus() {
   $('refresh').setAttribute('aria-busy', String(Boolean(data.refreshing && !data.suspended)));
   $('refresh-label').textContent = data.suspended ? '已暂停' : data.refreshing ? '刷新中…' : '刷新行情';
 }
+function updateMarketPanels(force = false) {
+  const stock = selectedStock();
+  const active = tab === 'home' && !document.hidden && !data.suspended;
+  const { markets, name, seriesConfigured, seriesRevision } = data.quoteSource;
+  const custom = settings().quoteSourceMode === 'custom' && (!markets || markets.includes(symbols.marketForSymbol(stock.code)));
+  marketChart.update(stock.code, active, custom && seriesConfigured ? seriesRevision : null);
+  marketDetails.update(stock.code, active, { entry: currentEntry(), custom, source: name, interval: settings().interval, force });
+  marketNews.update(stock, active, data.state.news, data.state.stocks);
+}
 function render() {
   if (!data?.state) return;
   const stock = selectedStock(), entry = currentEntry(), quote = entry?.quote;
@@ -289,7 +313,7 @@ function render() {
   $('app-version').textContent = data.version;
   $('quote-name').textContent = stock.name;
   $('quote-code').textContent = displaySymbol(stock.code) + ' · ' + currency(stock.code);
-  $('price').textContent = fmt(quote?.price, currency(stock.code) === 'HKD' ? 3 : 2);
+  $('price').textContent = marketPrice(quote?.price, stock.code);
   $('change').textContent = signed(quote?.change);
   $('percent').textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
   $('quote-number').className = 'quote-number ' + tone(quote?.changePct);
@@ -300,8 +324,8 @@ function render() {
   $('sample-count').textContent = samples.length < 2 ? '等待采样' : samples.length + ' 个样本';
   $('sample-start').textContent = time(samples[0]?.at);
   $('sample-end').textContent = time(samples.at(-1)?.at);
-  drawSparkline($('sparkline'), samples, getComputedStyle(document.documentElement).getPropertyValue(quote?.changePct < 0 ? '--fall' : '--rise'));
-  marketChart.update(stock.code, tab === 'home' && !document.hidden && !data.suspended);
+  drawSparkline($('sparkline'), samples, getComputedStyle($('sparkline')).getPropertyValue(quote?.changePct < 0 ? '--fall' : '--rise'));
+  updateMarketPanels();
   updateMood(); renderSettingsPreview(); processFeatures();
 }
 function applySnapshot(next) {
@@ -327,7 +351,7 @@ function changeTab(next) {
   $('page-subtitle').hidden = !titles[tab][1];
   if (tab === 'settings') buildSettings();
   window.scrollTo(0, tabScroll.get(next) || 0);
-  marketChart.update(data.state.selected, tab === 'home' && !document.hidden && !data.suspended);
+  updateMarketPanels();
   syncMotion();
 }
 function selectStock(code) { perform(api.stock('select', { code })); }
@@ -673,7 +697,10 @@ for (const button of document.querySelectorAll('.add-stock')) button.onclick = o
 $('all-stocks').onclick = $('select-stock').onclick = () => changeTab('watchlist');
 $('refresh').onclick = async () => {
   refreshRequested = true;
-  if (tab === 'home' && !marketChart.loading) marketChart.load(true);
+  if (tab === 'home') {
+    if (!marketChart.loading) marketChart.load(true);
+    updateMarketPanels(true);
+  }
   try { await api.refresh(); }
   catch (error) { refreshRequested = false; toast(error.message); }
 };
@@ -762,7 +789,7 @@ document.addEventListener('keydown', event => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopAudio();
-  if (data) marketChart.update(data.state.selected, tab === 'home' && !document.hidden && !data.suspended);
+  if (data) updateMarketPanels();
   syncMotion();
 });
 window.addEventListener('online', () => perform(api.refresh()));

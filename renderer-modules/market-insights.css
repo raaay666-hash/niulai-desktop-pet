@@ -1,0 +1,76 @@
+body:has(#view-home:not([hidden])) {
+  --bg: #f4f3ee;
+  --surface: #fffef9;
+  --sidebar: #efeee8;
+  --text: #202a24;
+  --muted: #5d6c62;
+  --line: #e3e5dc;
+  --soft: #f0f2eb;
+  --blue: #235e4b;
+  --blue-soft: #e4eee6;
+  --rise: #b23b43;
+  --fall: #167654;
+  --minute-shade: #33836d37;
+  --minute-shade-end: #33836d03;
+}
+.dark body:has(#view-home:not([hidden])) {
+  --bg: #141b18;
+  --surface: #1d2520;
+  --sidebar: #18201c;
+  --text: #eef2e8;
+  --muted: #a4b3a8;
+  --line: #303b33;
+  --soft: #252f29;
+  --blue: #9adbbf;
+  --blue-soft: #283d32;
+  --rise: #ff8d96;
+  --fall: #7ad3ac;
+  --minute-shade: #8bdeb458;
+  --minute-shade-end: #8bdeb402;
+}
+body:has(#view-home:not([hidden])) .page-header { margin-bottom: 18px; }
+body:has(#view-home:not([hidden])) .page-header h1 { font-size: 24px; font-weight: 660; letter-spacing: -.07em; }
+#view-home .dashboard-grid { gap: 18px; }
+#view-home .primary-column { gap: 15px; }
+#view-home .card, #view-home .market-chart {
+  border-radius: 14px;
+  box-shadow: 0 6px 24px #20302404;
+}
+#view-home .hero {
+  --text: #f3f4e9;
+  --muted: #b4c6bb;
+  --soft: #ffffff12;
+  --blue: #c0dfcc;
+  --line: #eef3e121;
+  --rise: #ff9699;
+  --fall: #94deba;
+  min-height: 198px;
+  grid-template-columns: minmax(0, 1fr) 36%;
+  color: var(--text);
+  background: radial-gradient(ellipse at 84% 20%, #355045 0%, transparent 64%), linear-gradient(115deg, #111d18 6%, #1c2c24 100%);
+  border: 1px solid #466051;
+  box-shadow: 0 10px 27px #14261b15;
+}
+#view-home .hero-quote { padding: 19px 0 46px 21px; }
+#view-home .stock-title { gap: 3px; }
+#view-home .stock-title strong { font-size: 17px; letter-spacing: -.025em; }
+#view-home .session { margin-top: 8px; color: var(--muted); padding: 3px 7px; }
+#view-home .quote-number { margin: 6px 0 0; max-width: none; }
+#view-home .quote-number > strong { font-size: clamp(31px, 4vw, 49px); font-weight: 580; letter-spacing: -.052em; }
+#view-home .quote-number > div { margin-top: 4px; font-size: 12px; }
+#view-home .hero .link-button { font-size: 11px; min-height: 24px; text-underline-offset: 3px; }
+#view-home .hero-footer { min-height: 34px; padding: 4px 20px; background: #0f1a1482; }
+#view-home .pet-scene { position: relative; inset: auto; width: auto; padding: 5px 10px 47px 0; justify-content: center; }
+#view-home .pet-scene > button { height: clamp(106px, 12vw, 140px); filter: drop-shadow(0 10px 12px #0b16125e); }
+#view-home .pet-state { display: none; }
+#view-home #pet-message { margin-top: 0; font-size: 10px; }
+#view-home .watch-column { position: sticky; top: 18px; }
+#view-home .watch-column .stock-row { border-radius: 6px; }
+#view-home .watch-column .stock-row.selected { box-shadow: inset 2px 0 var(--blue); }
+#view-home .watch-column .stock-main { padding-block: 12px; }
+#view-home .market-chart { padding: 15px 17px 12px; margin-top: 0; }
+#view-home .market-chart-toolbar { margin-top: 6px; }
+#view-home .market-plot, #view-home .market-plot canvas { height: clamp(224px, 30vh, 280px); }
+#view-home .market-periods button[aria-pressed=true] { background: var(--surface); color: var(--blue); }
+#view-home .market-chart-source { min-height: 17px; }
+

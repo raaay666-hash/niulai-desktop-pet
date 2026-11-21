@@ -335,12 +335,14 @@
           amount: ""
         };
       }
-      function parseTencentQuote2(text, symbol) {
-        const providerSymbol = quoteProviderSymbol2(symbol, "tencent");
+      function tencentQuoteParts(text, providerSymbol) {
         const escaped = providerSymbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`v_${escaped}="([^"]*)"`));
-        if (!match || !match[1]) return null;
-        const parts = match[1].split("~");
+        return match?.[1]?.split("~") || null;
+      }
+      function parseTencentQuote2(text, symbol) {
+        const parts = tencentQuoteParts(text, quoteProviderSymbol2(symbol, "tencent"));
+        if (!parts) return null;
         const market = marketForSymbol2(symbol);
         const detailed = market !== MARKET.CN;
         const price = Number.parseFloat(parts[3]);
@@ -369,7 +371,7 @@
         }
         return quote;
       }
-      module.exports = { parseSinaQuote: parseSinaQuote2, parseTencentQuote: parseTencentQuote2 };
+      module.exports = { parseSinaQuote: parseSinaQuote2, parseTencentQuote: parseTencentQuote2, tencentQuoteParts };
     }
   });
 
@@ -5866,6 +5868,10 @@
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
   var fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "\u2014";
+  var marketPrice = (value, code2 = "") => Number.isFinite(value) ? value.toLocaleString("en-US", {
+    minimumFractionDigits: code2.startsWith("rt_hk") ? 3 : 2,
+    maximumFractionDigits: 4
+  }) : "\u2014";
   var signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${fmt(Math.abs(value), digits)}` : "\u2014";
   var tone = (value) => value > 0 ? "rise" : value < 0 ? "fall" : "neutral";
   var time = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false }) : "\u2014";
@@ -6203,7 +6209,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("overlay-name").textContent = name;
     $("compact-name").textContent = name + (presentation.label ? " \xB7 " + presentation.label : "") + (quote && presentation.warning ? " \xB7 \u5F85\u66F4\u65B0" : "");
     $("overlay-code").textContent = displaySymbol(code()) + " \xB7 " + currency(code()) + (presentation.label ? " \xB7 " + presentation.label : "");
-    $("overlay-price").textContent = $("compact-price").textContent = fmt(quote?.price, currency(code()) === "HKD" ? 3 : 2);
+    $("overlay-price").textContent = $("compact-price").textContent = marketPrice(quote?.price, code());
     $("overlay-percent").textContent = $("compact-percent").textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
     $("overlay-numbers").className = $("compact-percent").className = tone(quote?.changePct);
     if (kind === "island" && !isWood()) {

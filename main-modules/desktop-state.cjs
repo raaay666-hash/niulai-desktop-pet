@@ -19,6 +19,7 @@ const DEFAULT_STOCKS = [
   { code: 's_sz399001', name: '深证成指', cost: 0, shares: 0 },
   { code: 's_sz399006', name: '创业板指', cost: 0, shares: 0 }
 ];
+const MAX_NEWS_FOLLOWS = 12;
 const positive = value => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : 0;
 const clamp = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
 
@@ -66,7 +67,12 @@ function normalizeState(raw = {}) {
   }));
   return {
     version: 2, stocks, selected: stocks.some(stock => stock.code === selected) ? selected : stocks[0].code,
-    settings: normalizeSettings(raw.settings), alerts
+    settings: normalizeSettings(raw.settings), alerts,
+    news: {
+      followed: [...new Set(Array.isArray(raw.news?.followed) ? raw.news.followed.filter(code => stocks.some(stock => stock.code === code)) : [])].slice(0, MAX_NEWS_FOLLOWS),
+      notifications: raw.news?.notifications === true,
+      autoTranslate: raw.news?.autoTranslate !== false
+    }
   };
 }
 
@@ -108,4 +114,4 @@ function tapCounts(raw, reset = false, now = new Date()) {
   for (const key of ['total', 'today', 'session']) counts[key] = Math.min(Number.MAX_SAFE_INTEGER, counts[key] + 1);
   return counts;
 }
-module.exports = { DEFAULTS, DEFAULT_STOCKS, normalizeSettings, normalizeState, migrateLegacy, normalizeCounts, tapCounts };
+module.exports = { DEFAULTS, DEFAULT_STOCKS, MAX_NEWS_FOLLOWS, normalizeSettings, normalizeState, migrateLegacy, normalizeCounts, tapCounts };

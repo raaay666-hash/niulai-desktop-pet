@@ -1,4 +1,4 @@
-import { $, api, fmt, signed, tone, time, element, makeMotion, catalog, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
+import { $, api, marketPrice, signed, tone, time, element, makeMotion, catalog, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
 import { position, currency, displaySymbol, marketSession } from './niulai-android/web/core.mjs';
 import { MarketMood } from './niulai-android/web/market-mood.mjs';
 import { TapVoice } from './niulai-android/web/tap-voice.mjs';
@@ -56,7 +56,7 @@ function render() {
   $('overlay-name').textContent = name;
   $('compact-name').textContent = name + (presentation.label ? ' · ' + presentation.label : '') + (quote && presentation.warning ? ' · 待更新' : '');
   $('overlay-code').textContent = displaySymbol(code()) + ' · ' + currency(code()) + (presentation.label ? ' · ' + presentation.label : '');
-  $('overlay-price').textContent = $('compact-price').textContent = fmt(quote?.price, currency(code()) === 'HKD' ? 3 : 2);
+  $('overlay-price').textContent = $('compact-price').textContent = marketPrice(quote?.price, code());
   $('overlay-percent').textContent = $('compact-percent').textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
   $('overlay-numbers').className = $('compact-percent').className = tone(quote?.changePct);
   if (kind === 'island' && !isWood()) {

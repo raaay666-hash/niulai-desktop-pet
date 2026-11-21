@@ -63,12 +63,15 @@ function parseSinaQuote(text, symbol, now = Date.now()) {
   };
 }
 
-function parseTencentQuote(text, symbol) {
-  const providerSymbol = quoteProviderSymbol(symbol, 'tencent');
+function tencentQuoteParts(text, providerSymbol) {
   const escaped = providerSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = String(text || '').match(new RegExp(`v_${escaped}="([^"]*)"`));
-  if (!match || !match[1]) return null;
-  const parts = match[1].split('~');
+  return match?.[1]?.split('~') || null;
+}
+
+function parseTencentQuote(text, symbol) {
+  const parts = tencentQuoteParts(text, quoteProviderSymbol(symbol, 'tencent'));
+  if (!parts) return null;
   const market = marketForSymbol(symbol);
   const detailed = market !== MARKET.CN;
   const price = Number.parseFloat(parts[3]);
@@ -98,4 +101,4 @@ function parseTencentQuote(text, symbol) {
   return quote;
 }
 
-module.exports = { parseSinaQuote, parseTencentQuote };
+module.exports = { parseSinaQuote, parseTencentQuote, tencentQuoteParts };

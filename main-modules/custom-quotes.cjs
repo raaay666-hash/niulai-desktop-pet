@@ -1,15 +1,18 @@
 const { marketForSymbol, displaySymbol } = require('./market-symbols');
 const { marketClock, parseQuoteTime } = require('./quote-time');
+const { normalizeDetails, parseCustomSeries } = require('./market-insights.cjs');
 
 const DEFAULT_FIELDS = Object.freeze({
   price: 'price', prevClose: 'previousClose', change: 'change', changePct: 'changePercent',
   timestamp: 'timestamp', session: 'session', name: 'name', symbol: 'symbol',
-  regularPrice: 'regularPrice', dayPrevClose: 'dayPreviousClose'
+  regularPrice: 'regularPrice', dayPrevClose: 'dayPreviousClose',
+  open: 'open', high: 'high', low: 'low', volume: 'volume', volumeUnit: 'volumeUnit',
+  amount: 'amount', book: 'orderBook'
 });
 
 function defaultSourceConfig() {
   return {
-    name: '我的行情源', url: '', symbolFormat: 'ticker', authType: 'none', authName: 'X-API-Key', token: '',
+    name: '我的行情源', url: '', seriesUrl: '', symbolFormat: 'ticker', authType: 'none', authName: 'X-API-Key', token: '',
     dataPath: '', timeZone: 'market', defaultSession: 'regular', interval: 10, markets: ['us'],
     fields: { ...DEFAULT_FIELDS }
   };
@@ -19,7 +22,7 @@ function normalizeSourceConfig(raw = {}) {
   const defaults = defaultSourceConfig();
   const config = {
     ...defaults, name: String(raw.name || defaults.name).trim().slice(0, 40),
-    url: String(raw.url || '').trim(), token: String(raw.token || ''),
+    url: String(raw.url || '').trim(), seriesUrl: String(raw.seriesUrl || '').trim(), token: String(raw.token || ''),
     authName: String(raw.authName || defaults.authName).trim(), dataPath: String(raw.dataPath || '').trim(),
     symbolFormat: ['ticker', 'yahoo', 'niulai'].includes(raw.symbolFormat) ? raw.symbolFormat : defaults.symbolFormat,
     authType: ['none', 'bearer', 'header', 'query'].includes(raw.authType) ? raw.authType : 'none',
@@ -35,6 +38,13 @@ function normalizeSourceConfig(raw = {}) {
   catch { throw new Error('接口地址格式无效'); }
   if (!['http:', 'https:'].includes(address.protocol)) throw new Error('接口地址须使用 HTTP 或 HTTPS');
   if (address.username || address.password) throw new Error('请在鉴权设置中填写凭据');
+  if (config.seriesUrl) {
+    let series;
+    try { series = new URL(config.seriesUrl.replace(/\{(?:symbol|ticker|code|market|exchange|period|adjustment)\}/g, 'TEST')); }
+    catch { throw new Error('走势接口地址格式无效'); }
+    if (series.origin !== address.origin || series.username || series.password) throw new Error('走势与报价接口须使用相同的协议、主机和端口');
+    if (config.seriesUrl.length > 4000 || !config.seriesUrl.includes('{period}')) throw new Error('走势地址须包含 {period}');
+  }
   if (!config.markets.length) throw new Error('请选择此行情源适用的市场');
   if (!config.fields.price) throw new Error('请填写现价字段路径');
   if (config.authType !== 'none' && !config.token) throw new Error('请填写鉴权密钥');
@@ -56,13 +66,15 @@ function sourceSymbol(code, format = 'ticker') {
   return ticker;
 }
 
-function requestForSource(config, code) {
+function requestForSource(config, code, series) {
   const market = marketForSymbol(code);
   const tokens = {
     symbol: sourceSymbol(code, config.symbolFormat), ticker: sourceSymbol(code), code, market,
-    exchange: market === 'cn' ? code.slice(2, 4) : market
+    exchange: market === 'cn' ? code.slice(2, 4) : market,
+    ...series
   };
-  const address = new URL(config.url.replace(/\{(symbol|ticker|code|market|exchange)\}/g, (_match, key) => encodeURIComponent(tokens[key])));
+  const template = series ? config.seriesUrl : config.url;
+  const address = new URL(template.replace(/\{(symbol|ticker|code|market|exchange|period|adjustment)\}/g, (match, key) => Object.hasOwn(tokens, key) ? encodeURIComponent(tokens[key]) : match));
   const headers = { Accept: 'application/json' };
   if (config.authType === 'bearer') headers.Authorization = 'Bearer ' + config.token;
   if (config.authType === 'header') headers[config.authName] = config.token;
@@ -136,6 +148,13 @@ function parseCustomQuote(data, code, config, now = Date.now()) {
     session, dayPrevClose: number('dayPrevClose') ?? (session === 'post' ? null : prevClose),
     market: marketForSymbol(code), source: 'custom', sourceName: config.name, volume: '', amount: ''
   };
+  const book = field(item, 'book');
+  const details = normalizeDetails({
+    open: number('open'), high: number('high'), low: number('low'), previousClose: quote.dayPrevClose,
+    volume: number('volume'), volumeUnit: field(item, 'volumeUnit'), amount: number('amount'), quotedAt,
+    book: book && { ...book, quotedAt: sourceTimestamp(book.timestamp, config, code, now) }
+  });
+  quote.details = { ...details, source: config.name, depthLabel: '自有源盘口' };
   if (regularPrice > 0) quote.regular = { price: regularPrice };
   return quote;
 }
@@ -154,6 +173,27 @@ async function fetchCustomQuote(code, config, { fetcher = fetch, now = Date.now(
   return parseCustomQuote(data, code, config, now);
 }
 
+async function fetchCustomSeries(code, period, adjustment, config) {
+  const { url, headers } = requestForSource(config, code, { period, adjustment });
+  if (new URL(url).origin !== new URL(requestForSource(config, code).url).origin) throw new Error('走势与报价接口的域名不一致');
+  let response;
+  try { response = await fetch(url, { headers, signal: AbortSignal.timeout(8000), redirect: 'error' }); }
+  catch { throw new Error('自有走势接口连接失败'); }
+  if (!response.ok) throw new Error('自有走势接口返回 HTTP ' + response.status);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body || []) {
+    size += chunk.byteLength;
+    if (size > 2 * 1024 * 1024) throw new Error('自有走势接口响应过大');
+    chunks.push(chunk);
+  }
+  let data;
+  try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw new Error('自有走势接口未返回有效 JSON'); }
+  const symbols = [sourceSymbol(code, config.symbolFormat), sourceSymbol(code), code];
+  return { ...parseCustomSeries(data, symbols, period, adjustment), source: config.name };
+}
+
 async function fetchCustomQuotes(codes, config) {
   const results = new Map();
   const signal = AbortSignal.timeout(12000);
@@ -170,4 +210,4 @@ async function fetchCustomQuotes(codes, config) {
   return results;
 }
 
-module.exports = { defaultSourceConfig, normalizeSourceConfig, sourceSymbol, requestForSource, readPath, sourceTimestamp, parseCustomQuote, fetchCustomQuote, fetchCustomQuotes };
+module.exports = { defaultSourceConfig, normalizeSourceConfig, sourceSymbol, requestForSource, readPath, sourceTimestamp, parseCustomQuote, fetchCustomQuote, fetchCustomQuotes, fetchCustomSeries };

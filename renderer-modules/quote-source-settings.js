@@ -33,6 +33,9 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
   const address = input(fields, 'url', '报价接口地址', config.url);
   address.placeholder = 'https://example.com/quote?symbol={symbol}';
   fields.append(element('p', '地址支持 {symbol}、{ticker}、{code}、{market}、{exchange}。本地转接服务也可使用 HTTP 地址。', 'footnote'));
+  input(fields, 'seriesUrl', '分时与 K 线接口地址（选填）', config.seriesUrl)
+    .placeholder = 'https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}';
+  fields.append(element('p', '走势接口与报价接口共用域名、端口和鉴权。自有走势地址留空时，分时和 K 线继续显示公开行情。', 'footnote'));
   const marketGroup = element('div', '', 'source-markets');
   marketGroup.append(element('span', '适用市场'));
   const markets = [];
@@ -55,13 +58,20 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
   input(mapping, 'dataPath', '报价对象路径，顶层对象留空', config.dataPath).placeholder = '例如 data.quote 或 data[0]';
   mapping.append(element('p', '字段支持 price、quote.price、data[0].price 或 /Global Quote/05. price。可选字段留空表示不读取。', 'footnote'));
   const mappingGrid = element('div', '', 'source-grid');
-  const labels = { price: '现价', prevClose: '涨跌比较基准价', change: '涨跌额', changePct: '涨跌幅，百分数', timestamp: '报价时间', session: '交易时段', name: '股票名称', symbol: '股票代码', regularPrice: '常规收盘价', dayPrevClose: '今日盈亏基准价' };
+  const labels = {
+    price: '现价', prevClose: '涨跌比较基准价', change: '涨跌额', changePct: '涨跌幅，百分数',
+    timestamp: '报价时间', session: '交易时段', name: '股票名称', symbol: '股票代码',
+    regularPrice: '常规收盘价', dayPrevClose: '今日盈亏基准价',
+    open: '开盘价', high: '最高价', low: '最低价', volume: '成交量', volumeUnit: '成交量单位（股/手）',
+    amount: '成交额（原币）', book: '委托档位对象'
+  };
   for (const [key, label] of Object.entries(labels)) input(mappingGrid, 'field-' + key, label, config.fields[key]);
   mapping.append(mappingGrid);
   const timeGrid = element('div', '', 'source-grid');
   select(timeGrid, 'timeZone', '无时区日期使用', config.timeZone, [['market', '股票所属市场时区'], ['America/New_York', '美东时间'], ['Asia/Shanghai', '北京时间'], ['UTC', 'UTC']]);
   select(timeGrid, 'defaultSession', '接口缺少交易时段时', config.defaultSession, [['regular', '作为常规报价'], ['auto', '按报价时间判断盘前 / 盘后']]);
-  mapping.append(timeGrid, element('p', '时间支持 Unix 秒、Unix 毫秒、ISO 8601 或年月日时分秒。交易时段填写 pre、regular、post。盘后今日盈亏基准价应为该交易日的前收盘价。', 'footnote'));
+  mapping.append(timeGrid, element('p', '时间支持 Unix 秒、Unix 毫秒、ISO 8601 或年月日时分秒。交易时段填写 pre、regular、post。盘后今日盈亏基准价应为该交易日的前收盘价。', 'footnote'),
+    element('p', '委托档位包含 unit（手或股）、bids、asks，可选 timestamp。每档包含 price 和 size。', 'footnote'));
   const example = element('pre', '{\n  "symbol": "MP", "price": 37.88,\n  "previousClose": 36.73,\n  "timestamp": "2026-11-12T13:47:00Z",\n  "session": "pre"\n}', 'source-example');
   mapping.append(example); fields.append(mapping);
   const fallback = element('label', '', 'setting-row'), fallbackInput = document.createElement('input');
@@ -106,7 +116,10 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
     const result = await api.quoteSource('test', payload());
     const presentation = quotePresentation(result, Number(controls.interval.value));
     const percent = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + '%' : '涨跌幅未提供';
-    status.textContent = `连接成功 · ${result.quote.name} ${fmt(result.quote.price)} · ${percent} · ${presentation.summary}`;
+    const book = result.quote.details?.book;
+    const series = result.series ? result.series.bars ? ' · 日 K ' + result.series.bars + ' 根' : ' · 走势：' + result.series.error : '';
+    status.textContent = `连接成功 · ${result.quote.name} ${fmt(result.quote.price)} · ${percent} · ${presentation.summary}`
+      + (book ? ` · 买 ${book.bids.length} 档 / 卖 ${book.asks.length} 档` : '') + series;
   });
   form.onsubmit = event => {
     event.preventDefault();

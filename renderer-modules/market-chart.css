@@ -7,6 +7,7 @@
 .market-chart-toolbar { margin-top: 12px; font-size: 11px; color: var(--muted); }
 .market-chart-toolbar > div { display: flex; gap: 2px; }
 .market-chart-toolbar button { padding: 4px 9px; }
+.market-adjustment { width: auto; min-height: 32px; margin: 0 2px 0 0; padding: 3px 7px; font-size: 11px; border-radius: 7px; color: var(--text); }
 .market-chart button:hover:enabled { background: var(--soft, var(--chip)); color: var(--chart-ink); }
 .market-chart-stats { display: flex; flex-wrap: wrap; gap: 9px 18px; min-height: 42px; padding: 11px 0 8px; }
 .market-chart-stats span { display: flex; flex-direction: column; gap: 3px; }

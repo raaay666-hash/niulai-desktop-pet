@@ -7,6 +7,10 @@ export const catalog = sharedCatalog.map(spec => ['cover', 'slump'].includes(spe
 export const $ = id => document.getElementById(id);
 export const api = window.desktopPet;
 export const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '—';
+export const marketPrice = (value, code = '') => Number.isFinite(value) ? value.toLocaleString('en-US', {
+  minimumFractionDigits: code.startsWith('rt_hk') ? 3 : 2,
+  maximumFractionDigits: 4
+}) : '—';
 export const signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? '+' : value < 0 ? '−' : ''}${fmt(Math.abs(value), digits)}` : '—';
 export const tone = value => value > 0 ? 'rise' : value < 0 ? 'fall' : 'neutral';
 export const time = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : '—';

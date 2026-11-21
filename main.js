@@ -1,30 +1,41 @@
 const { app, BrowserWindow, ipcMain, screen, powerMonitor, shell, Tray, Menu, nativeTheme, Notification, safeStorage } = require('electron');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const { normalizeMarketSymbol, marketForSymbol, quoteProviderSymbol, parseTencentSuggestions, externalQuoteUrl } = require('./main-modules/market-symbols');
 const { parseSinaQuote, parseTencentQuote } = require('./main-modules/quote-parsers');
 const { marketClock, quoteHealth, newestQuote } = require('./main-modules/quote-time');
-const { normalizeState, normalizeSettings, normalizeCounts, tapCounts } = require('./main-modules/desktop-state.cjs');
+const { normalizeState, normalizeSettings, normalizeCounts, tapCounts, MAX_NEWS_FOLLOWS } = require('./main-modules/desktop-state.cjs');
 const { CryingReaction } = require('./main-modules/crying-reaction.cjs');
-const { defaultSourceConfig, normalizeSourceConfig, fetchCustomQuote, fetchCustomQuotes } = require('./main-modules/custom-quotes.cjs');
+const { defaultSourceConfig, normalizeSourceConfig, fetchCustomQuote, fetchCustomQuotes, fetchCustomSeries } = require('./main-modules/custom-quotes.cjs');
 const { createUpdateChecker } = require('./main-modules/update-checker.cjs');
 const { OFFICIAL } = require('./main-modules/update-policy.cjs');
 const { submitFeedback } = require('./main-modules/feedback.cjs');
+const { parseMarketDetails, parseTencentMinutes, parseYahooMinutes } = require('./main-modules/market-insights.cjs');
+const { parseNews, newsRequest, stockNewsTerms, newsMatchesStock, globalNewsRequests, mergeNews, translateTitle, newsNotificationBatch } = require('./main-modules/market-news.cjs');
 let updater, updateTimer;
 
 const argument = prefix => (process.argv.find(value => value.startsWith(prefix)) || '').slice(prefix.length);
 const qaProfile = argument('--qa-user-data-dir=');
 if (qaProfile) app.setPath('userData', path.resolve(qaProfile));
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.niulai.desktop-pet' : process.execPath);
 const locked = app.requestSingleInstanceLock();
 if (!locked) app.quit();
 let dashboard, tray, state, counts, persisted = null, suspended = false, quitting = false;
 let pollTimer, reactionTimer, polling = false, refreshPending = false, quoteEpoch = 0;
 let writeQueue = Promise.resolve();
-let customQuoteConfig = null, sealedQuoteSource = null, quoteSourceError = '';
+let customQuoteConfig = null, sealedQuoteSource = null, quoteSourceError = '', seriesRevision = 0;
 const overlays = new Map();
 const quotes = new Map();
 const histories = new Map();
+const newsFeeds = new Map();
+const newsAliases = new Map();
+const newsTranslations = new Map();
+const newsCursors = new Map();
+let newsTimer, checkingNews = false, newsGeneration = 0;
+const newsInterval = 5 * 60000;
+const newsId = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 const positions = {};
 const collapsed = new Set();
 const crying = new CryingReaction();
@@ -41,7 +52,12 @@ process.on('unhandledRejection', error => log('ERROR', error?.stack || error));
 
 function snapshot() {
   counts = normalizeCounts(counts);
-  return { state, counts, quotes: Object.fromEntries(quotes), histories: Object.fromEntries(histories), reactions: crying.snapshot(), quoteSource: { configured: Boolean(customQuoteConfig), name: customQuoteConfig?.name || '', storage: sealedQuoteSource ? 'encrypted' : 'session', error: quoteSourceError }, suspended, refreshing: polling || refreshPending, dark: nativeTheme.shouldUseDarkColors, version: app.getVersion() };
+  const quoteSource = {
+    configured: Boolean(customQuoteConfig), name: customQuoteConfig?.name || '', markets: customQuoteConfig?.markets || null,
+    seriesConfigured: Boolean(customQuoteConfig?.seriesUrl), seriesRevision,
+    storage: sealedQuoteSource ? 'encrypted' : 'session', error: quoteSourceError
+  };
+  return { state, counts, quotes: Object.fromEntries(quotes), histories: Object.fromEntries(histories), reactions: crying.snapshot(), quoteSource, suspended, refreshing: polling || refreshPending, dark: nativeTheme.shouldUseDarkColors, version: app.getVersion() };
 }
 function windows() {
   return [dashboard, ...overlays.values()].filter(window => window && !window.isDestroyed());
@@ -50,7 +66,7 @@ function broadcast(channel = 'desktop:snapshot', value = snapshot()) {
   for (const window of windows()) window.webContents.send(channel, value);
 }
 function persist() {
-  const payload = JSON.stringify({ state, counts, positions, quoteSource: sealedQuoteSource, reactionAudioAt: Number.isFinite(crying.lastAudioAt) ? crying.lastAudioAt : 0 });
+  const payload = JSON.stringify({ state, counts, positions, quoteSource: sealedQuoteSource, newsCursors: Object.fromEntries(newsCursors), reactionAudioAt: Number.isFinite(crying.lastAudioAt) ? crying.lastAudioAt : 0 });
   writeQueue = writeQueue.catch(() => {}).then(async () => {
     const temporary = stateFile() + '.tmp';
     await fsp.writeFile(temporary, payload, 'utf8');
@@ -183,10 +199,10 @@ function createDashboard() {
   });
 }
 
-async function requestText(url, referer) {
+async function requestText(url, referer, encoding = 'gbk') {
   const response = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { Referer: referer, 'User-Agent': 'Mozilla/5.0' } });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return new TextDecoder('gbk').decode(await response.arrayBuffer());
+  return new TextDecoder(encoding).decode(await response.arrayBuffer());
 }
 function schedulePoll(delay) {
   clearTimeout(pollTimer);
@@ -278,8 +294,9 @@ handle('desktop:bootstrap', async (_event, legacy) => {
   if (!state) {
     state = normalizeState(persisted?.state || legacy);
     counts = normalizeCounts(persisted?.counts);
+    for (const code of newsCursors.keys()) if (!state.news.followed.includes(code)) newsCursors.delete(code);
     await persist();
-    syncOverlays(); schedulePoll(0);
+    syncOverlays(); schedulePoll(0); scheduleNews(0);
   }
   return snapshot();
 });
@@ -329,6 +346,9 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
     if (state.selected === code) state.selected = state.stocks[0].code;
     if (state.settings.islandSymbol === code) state.settings.islandSymbol = '';
     quotes.delete(code); histories.delete(code);
+    state.news.followed = state.news.followed.filter(followed => followed !== code);
+    newsCursors.delete(code);
+    scheduleNews();
   } else if (operation === 'position') {
     if (!stock) throw new Error('股票已移出自选');
     const cost = Number(payload.cost), shares = Number(payload.shares);
@@ -347,11 +367,234 @@ handle('desktop:search', async (_event, query) => {
 });
 handle('desktop:chart-history', async (_event, value) => {
   if (suspended) throw new Error('系统休眠，行情已暂停');
-  if (typeof value !== 'string' || !/^(?:(?:sh|sz)[0-9]{6}|hk[0-9]{5}|us[A-Z][A-Z0-9.-]{0,20}),(?:day|week|month)$/.test(value)) throw new Error('历史行情参数无效');
-  const [symbol, period] = value.split(',');
+  if (typeof value !== 'string' || !/^(?:(?:sh|sz)[0-9]{6}|hk[0-9]{5}|us[A-Z][A-Z0-9.-]{0,20}),(?:day|week|month)(?:,raw)?$/.test(value)) throw new Error('历史行情参数无效');
+  const [symbol, period, basis] = value.split(',');
+  const endpoint = basis !== 'raw' && /^(hk|us)/.test(symbol) ? symbol.slice(0, 2) + 'fqkline' : 'fqkline';
   try {
-    return await requestText('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + encodeURIComponent(symbol + ',' + period + ',,,240,qfq'), 'https://gu.qq.com/');
+    return await requestText('https://web.ifzq.gtimg.cn/appstock/app/' + endpoint + '/get?param=' + encodeURIComponent(symbol + ',' + period + ',,,240,' + (basis === 'raw' ? '' : 'qfq')), 'https://gu.qq.com/');
   } catch { throw new Error('历史行情连接失败，请稍后重试'); }
+});
+handle('desktop:chart-minutes', async (event, code) => {
+  if (event.sender !== dashboard?.webContents || typeof code !== 'string' || code !== normalizeMarketSymbol(code)) throw new Error('分时参数无效');
+  if (suspended) throw new Error('系统休眠，行情已暂停');
+  const market = marketForSymbol(code);
+  if (market === 'us') {
+    const ticker = code.slice(3).toUpperCase().replace('.', '-');
+    const series = await requestText('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ticker) + '?range=1d&interval=1m&includePrePost=false', 'https://finance.yahoo.com/', 'utf-8');
+    return parseYahooMinutes(JSON.parse(series), code, ticker);
+  }
+  const symbol = code.replace(/^(s_|rt_)/, '');
+  const series = await requestText('https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=' + symbol, 'https://gu.qq.com/', 'utf-8');
+  return parseTencentMinutes(JSON.parse(series), market, symbol);
+});
+handle('desktop:custom-series', async (event, code, period, adjustment) => {
+  if (event.sender !== dashboard?.webContents || typeof code !== 'string' || code !== normalizeMarketSymbol(code) ||
+    !['minute', 'day', 'week', 'month'].includes(period) || !['raw', 'qfq'].includes(adjustment) || period === 'minute' && adjustment !== 'raw') {
+    throw new Error('走势参数无效');
+  }
+  if (suspended) throw new Error('系统休眠，行情已暂停');
+  const config = customQuoteConfig;
+  if (state.settings.quoteSourceMode !== 'custom' || !config?.seriesUrl || !config.markets.includes(marketForSymbol(code))) throw new Error('自有走势接口未配置');
+  try { return await fetchCustomSeries(code, period, adjustment, config); }
+  catch (error) {
+    if (!state.settings.quoteSourceFallback) throw error;
+    return { fallbackFrom: config.name };
+  }
+});
+handle('desktop:market-details', async (event, code) => {
+  if (event.sender !== dashboard?.webContents || typeof code !== 'string' || code !== normalizeMarketSymbol(code)) throw new Error('盘口参数无效');
+  if (suspended) throw new Error('系统休眠，行情已暂停');
+  const market = marketForSymbol(code);
+  if (state.settings.quoteSourceMode === 'custom' && (!customQuoteConfig || customQuoteConfig.markets.includes(market)) && !quotes.get(code)?.quote.fallbackFrom) {
+    throw new Error('当前使用自有行情源');
+  }
+  const symbol = code.replace(/^(s_|rt_)/, '').replace(/^gb_(.*)$/, (_match, ticker) => 'us' + ticker.toUpperCase());
+  const body = await requestText('https://qt.gtimg.cn/q=' + symbol, 'https://gu.qq.com/');
+  return parseMarketDetails(body, code, symbol);
+});
+function findNewsArticle(id) {
+  for (const feed of newsFeeds.values()) {
+    const article = feed.data?.articles.find(item => item.id === id);
+    if (article) return article;
+  }
+  return null;
+}
+function translatedHeadline(article) {
+  if (article.language === 'zh') return Promise.resolve('');
+  if (newsTranslations.has(article.title)) return newsTranslations.get(article.title);
+  const result = translateTitle(article.title).catch(() => '').then(value => {
+    if (!value || value === article.title) newsTranslations.delete(article.title);
+    return value === article.title ? '' : value;
+  });
+  newsTranslations.set(article.title, result);
+  if (newsTranslations.size > 180) newsTranslations.delete(newsTranslations.keys().next().value);
+  return result;
+}
+async function getStockAliases(stock) {
+  if (!/[\p{Script=Han}]/u.test(stock.name)) return [];
+  if (!newsAliases.has(stock.name)) {
+    const name = stock.code.startsWith('gb_') && stock.name.length <= 2 ? stock.name + '公司' : stock.name;
+    const translated = Promise.all(['en', 'ja'].map(language => translateTitle(name, language).catch(() => '')));
+    newsAliases.set(stock.name, translated);
+    if (newsAliases.size > 60) newsAliases.delete(newsAliases.keys().next().value);
+  }
+  return newsAliases.get(stock.name);
+}
+async function getNewsFeed(stock, force = false) {
+  const key = stock?.code || 'market';
+  const cached = newsFeeds.get(key);
+  const now = Date.now();
+  if (cached?.pending) return cached.pending;
+  if (cached?.data && now - cached.data.received < (force === true ? 10000 : 300000)) return cached.data;
+  const primary = newsRequest(stock?.code, stock?.name);
+  const feed = { data: cached?.data };
+  newsFeeds.set(key, feed);
+  feed.pending = (async () => {
+    try {
+      const load = async request => parseNews(await requestText(request.url, request.referer, 'utf-8'), request.kind, Date.now(), request, newsId);
+      const termsForStock = stock ? getStockAliases(stock).then(aliases => stockNewsTerms(stock.code, stock.name, aliases)) : Promise.resolve([]);
+      const loadGlobal = async () => Promise.allSettled(globalNewsRequests(await termsForStock).map(load));
+      const [local, world] = await Promise.allSettled([load(primary), stock ? loadGlobal() : []]);
+      const international = world.status === 'fulfilled' ? world.value.filter(result => result.status === 'fulfilled').map(result => result.value) : [];
+      if (local.status === 'rejected' && !international.length) throw new Error('新闻源暂不可用');
+      const terms = await termsForStock;
+      const articles = mergeNews([local.status === 'fulfilled' ? local.value : [], ...international]
+        .map(items => stock ? items.filter(article => newsMatchesStock(article, terms)) : items));
+      const sources = [local.status === 'fulfilled' ? primary.source : '', articles.some(item => item.international) ? 'Google News' : ''].filter(Boolean);
+      feed.data = { articles, source: sources.join(' / '), received: Date.now() };
+      return feed.data;
+    } finally {
+      feed.pending = null;
+      if (!feed.data) newsFeeds.delete(key);
+      for (const old of newsFeeds.keys()) {
+        if (newsFeeds.size <= 52) break;
+        if (!newsFeeds.get(old).pending && old !== key) newsFeeds.delete(old);
+      }
+    }
+  })();
+  return feed.pending;
+}
+handle('desktop:market-news', async (event, scope, code, force) => {
+  if (event.sender !== dashboard?.webContents || !['stock', 'market'].includes(scope)) throw new Error('新闻参数无效');
+  if (suspended) throw new Error('系统休眠，新闻已暂停');
+  const stock = scope === 'stock' ? state.stocks.find(item => item.code === code) : null;
+  if (scope === 'stock' && !stock) throw new Error('股票已移出自选');
+  return getNewsFeed(stock, force);
+});
+handle('desktop:open-news', async (event, id) => {
+  if (event.sender !== dashboard?.webContents || typeof id !== 'string' || !/^[0-9a-f]{24}$/.test(id)) throw new Error('新闻链接无效');
+  const article = findNewsArticle(id);
+  if (!article) throw new Error('新闻已更新，请刷新后再打开');
+  await shell.openExternal(article.url);
+  return true;
+});
+function showNewsNotification(title, body, code) {
+  if (!Notification.isSupported()) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const notification = new Notification({ title, body, silent: true, icon: path.join(__dirname, 'build/icon.png') });
+    notification.on('click', () => {
+      if (code && state.stocks.some(stock => stock.code === code)) {
+        if (state.selected !== code) crying.reset(code);
+        state.selected = code;
+        quoteEpoch++;
+        broadcast(); schedulePoll(0);
+        persist().catch(error => log('ERROR', error.message));
+      }
+      showDashboard();
+      if (code) dashboard.webContents.send('desktop:news-arrived');
+    });
+    notification.once('show', () => { clearTimeout(timeout); resolve(true); });
+    notification.once('failed', () => { clearTimeout(timeout); resolve(false); });
+    const timeout = setTimeout(() => resolve(false), 5000);
+    timeout.unref();
+    notification.show();
+  });
+}
+function scheduleNews(delay = newsInterval) {
+  clearTimeout(newsTimer);
+  if (!state?.news.notifications || !state.news.followed.length || suspended || quitting) return;
+  newsTimer = setTimeout(pollFollowedNews, delay);
+  newsTimer.unref();
+}
+async function pollFollowedNews() {
+  if (checkingNews) { scheduleNews(); return; }
+  checkingNews = true;
+  const generation = newsGeneration;
+  const codes = [...state.news.followed];
+  const active = () => generation === newsGeneration && state.news.notifications && !suspended && !quitting;
+  try {
+    for (let start = 0; start < codes.length && active(); start += 2) {
+      const stocks = codes.slice(start, start + 2).map(code => state.stocks.find(stock => stock.code === code)).filter(Boolean);
+      await Promise.allSettled(stocks.map(async stock => {
+        const stillFollowing = () => active() && state.news.followed.includes(stock.code);
+        const { articles } = await getNewsFeed(stock);
+        if (!stillFollowing()) return;
+        const { cursor, eligible } = newsNotificationBatch(newsCursors.get(stock.code), articles, Date.now(), newsId);
+        if (eligible.length) {
+          const [latest] = eligible;
+          const translated = state.news.autoTranslate ? await translatedHeadline(latest) : '';
+          if (!stillFollowing()) return;
+          const extra = eligible.length > 1 ? ' · 另有 ' + (eligible.length - 1) + ' 条' : '';
+          const delivered = await showNewsNotification(stock.name + ' · ' + latest.publisher + extra, translated || latest.title, stock.code);
+          if (!delivered || !stillFollowing()) return;
+        }
+        newsCursors.set(stock.code, cursor);
+      }));
+    }
+    if (active()) await persist();
+  } catch (error) { log('WARN', '新闻通知 ' + error.message); }
+  finally {
+    checkingNews = false;
+    scheduleNews(generation === newsGeneration ? newsInterval : 0);
+  }
+}
+handle('desktop:translate-news', async (event, ids) => {
+  if (event.sender !== dashboard?.webContents || !Array.isArray(ids) || ids.length > 12) throw new Error('新闻翻译参数无效');
+  if (!state.news.autoTranslate || suspended) return {};
+  const articles = [...new Set(ids)].map(findNewsArticle).filter(Boolean);
+  const result = {};
+  for (let start = 0; start < articles.length; start += 3) {
+    await Promise.all(articles.slice(start, start + 3).map(async article => { result[article.id] = await translatedHeadline(article); }));
+  }
+  return result;
+});
+handle('desktop:news-preferences', async (event, operation, value) => {
+  if (event.sender !== dashboard?.webContents) throw new Error('请在主面板设置新闻');
+  if (operation === 'permissions') {
+    await shell.openExternal(process.platform === 'darwin' ? 'x-apple.systempreferences:com.apple.preference.notifications' : 'ms-settings:notifications');
+    return true;
+  }
+  if (operation === 'test') {
+    if (!state.news.notifications) throw new Error('请先开启新闻通知');
+    return showNewsNotification('牛来盯盘 · 新闻通知', '已收到测试通知。关注的股票发布新消息时会在这里提醒。');
+  }
+  if (operation === 'follow') {
+    if (!state.stocks.some(stock => stock.code === value)) throw new Error('请先添加到自选');
+    const followed = state.news.followed;
+    if (followed.includes(value)) {
+      state.news.followed = followed.filter(code => code !== value);
+      newsCursors.delete(value);
+    } else {
+      if (followed.length >= MAX_NEWS_FOLLOWS) throw new Error('最多关注 ' + MAX_NEWS_FOLLOWS + ' 只股票');
+      state.news.followed = [...followed, value];
+    }
+    newsGeneration++;
+    scheduleNews(0);
+  } else if (operation === 'notifications' || operation === 'autoTranslate') {
+    if (typeof value !== 'boolean') throw new Error('新闻设置无效');
+    if (operation === 'notifications') {
+      if (value && !Notification.isSupported()) throw new Error('此系统不支持桌面通知');
+      if (value !== state.news.notifications) {
+        newsGeneration++;
+        newsCursors.clear();
+      }
+    }
+    state.news[operation] = value;
+    if (operation === 'notifications') scheduleNews(0);
+  } else throw new Error('新闻设置无效');
+  await persist();
+  broadcast();
+  return snapshot();
 });
 handle('desktop:refresh', () => { schedulePoll(0); return true; });
 handle('desktop:quote-source', async (event, operation, payload = {}) => {
@@ -374,7 +617,11 @@ handle('desktop:quote-source', async (event, operation, payload = {}) => {
       const code = normalizeMarketSymbol(payload.testCode || state.selected);
       if (!code || !config.markets.includes(marketForSymbol(code))) throw new Error('测试股票须属于所选市场');
       const quote = await fetchCustomQuote(code, config);
-      return { quote, received: Date.now() };
+      const received = Date.now();
+      const series = config.seriesUrl
+        ? await fetchCustomSeries(code, 'day', 'raw', config).then(result => ({ bars: result.bars.length }), error => ({ error: error.message }))
+        : null;
+      return { quote, received, series };
     }
     if (operation !== 'save') throw new Error('无效操作');
     let sealed = null;
@@ -384,6 +631,7 @@ handle('desktop:quote-source', async (event, operation, payload = {}) => {
     state.settings.quoteSourceFallback = payload.fallback === true;
   }
   quoteEpoch++;
+  seriesRevision++;
   quotes.clear(); histories.clear();
   for (const code of crying.entries.keys()) crying.reset(code);
   await persist();
@@ -491,6 +739,11 @@ app.whenReady().then(async () => {
   try {
     persisted = JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
     Object.assign(positions, persisted.positions);
+    for (const [code, cursor] of Object.entries(persisted.newsCursors || {}).slice(0, MAX_NEWS_FOLLOWS)) {
+      if (typeof code === 'string' && code === normalizeMarketSymbol(code) && Number.isFinite(cursor?.since)) {
+        newsCursors.set(code, { since: cursor.since, seen: Array.isArray(cursor.seen) ? cursor.seen.filter(id => typeof id === 'string' && /^[0-9a-f]{24}$/.test(id)).slice(-75) : [] });
+      }
+    }
     if (Number.isFinite(persisted.reactionAudioAt) && persisted.reactionAudioAt > 0) crying.lastAudioAt = persisted.reactionAudioAt;
   } catch (error) {
     if (error.code !== 'ENOENT') {
@@ -538,14 +791,14 @@ app.whenReady().then(async () => {
   ]));
   tray.on('double-click', showDashboard);
   const suspend = () => {
-    suspended = true; quoteEpoch++; clearTimeout(pollTimer);
+    suspended = true; quoteEpoch++; newsGeneration++; clearTimeout(pollTimer); clearTimeout(newsTimer);
     for (const code of crying.entries.keys()) crying.invalidate(code);
     syncOverlays(); broadcast();
   };
   const resume = () => {
     suspended = false;
     for (const code of crying.entries.keys()) crying.reset(code);
-    syncOverlays(); broadcast(); schedulePoll(0);
+    syncOverlays(); broadcast(); schedulePoll(0); scheduleNews(0);
   };
   powerMonitor.on('suspend', suspend);
   powerMonitor.on('lock-screen', suspend);
@@ -565,6 +818,7 @@ app.on('before-quit', event => {
   event.preventDefault();
   quitting = true;
   clearTimeout(pollTimer);
+  clearTimeout(newsTimer);
   clearInterval(reactionTimer);
   for (const window of windows()) stopDrag(window);
   if (state) persist().catch(error => log('ERROR', error.message)).finally(() => app.quit());

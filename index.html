@@ -7,6 +7,8 @@
   <title>牛来盯盘</title>
   <link rel="stylesheet" href="desktop.css">
   <link rel="stylesheet" href="renderer-modules/market-chart.css">
+  <link rel="stylesheet" href="renderer-modules/market-panels.css">
+  <link rel="stylesheet" href="renderer-modules/market-insights.css">
   <link rel="stylesheet" href="renderer-modules/feedback-form.css">
 </head>
 <body>
@@ -22,7 +24,7 @@
       <button id="feedback-open" aria-haspopup="dialog" aria-controls="feedback-dialog"><span data-icon="feedback"></span>问题与建议</button>
       <button id="hide-dashboard"><span data-icon="desktop"></span>收起到托盘</button>
       <button data-tab="settings"><span data-icon="settings"></span>设置</button>
-      <span class="version">电脑版 <span id="app-version">1.7.1</span></span>
+      <span class="version">电脑版 <span id="app-version">1.8.0</span></span>
     </div>
   </aside>
   <div class="workspace">
@@ -33,18 +35,52 @@
         <div class="dashboard-grid">
           <div class="primary-column">
             <article class="hero card">
-              <div class="hero-quote"><button id="select-stock" class="stock-title"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001 · CNY</span></button><span id="session" class="session">等待行情</span><div id="quote-number" class="quote-number"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div><button id="open-quote" class="link-button">查看行情</button></div>
+              <div class="hero-quote"><button id="select-stock" class="stock-title"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001 · CNY</span></button><span id="session" class="session">等待行情</span><div id="quote-number" class="quote-number"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div><div class="market-quick-links"><button id="open-quote" class="link-button">查看行情</button><button id="show-market-news" class="link-button">个股新闻</button><button id="show-market-details" class="link-button">盘口</button></div></div>
               <div class="pet-scene"><span id="pet-state" class="pet-state">等待行情</span><button id="pet" aria-label="摸摸牛来"><canvas id="bull" width="384" height="384"></canvas></button><span id="pet-message">点击牛来互动</span></div>
               <div class="hero-footer"><span id="connection" class="connection" role="status">正在连接行情…</span><button id="motions-open" class="link-button">动作预览</button></div>
             </article>
-            <section id="market-chart" aria-label="历史 K 线"></section>
+            <section id="market-chart" aria-label="分时与历史 K 线"></section>
+            <section id="market-news" class="card market-news" aria-labelledby="market-news-title">
+              <div class="section-heading">
+                <div><h2 id="market-news-title" tabindex="-1">财经新闻</h2><p class="market-news-context"></p></div>
+                <div class="market-news-actions">
+                  <button type="button" class="market-news-follow button secondary" aria-pressed="false">关注新闻</button>
+                  <button type="button" class="market-news-refresh link-button" aria-label="刷新财经新闻">刷新</button>
+                </div>
+              </div>
+              <div class="market-news-controls">
+                <div class="market-news-switch" role="group" aria-label="新闻范围">
+                  <button type="button" data-news-scope="stock" aria-pressed="true">个股</button>
+                  <button type="button" data-news-scope="international" aria-pressed="false">国际媒体</button>
+                  <button type="button" data-news-scope="market" aria-pressed="false">市场要闻</button>
+                </div>
+                <details class="market-news-preferences">
+                  <summary>通知与翻译</summary>
+                  <label><span>自动翻译外语标题</span><input class="market-news-translate" type="checkbox" role="switch"></label>
+                  <label><span>已关注股票的系统通知</span><input class="market-news-notify" type="checkbox" role="switch"></label>
+                  <p class="footnote">牛来运行时检查关注列表。开启后从下一条新消息开始提醒。</p>
+                  <div class="market-news-actions"><button type="button" class="market-news-permissions link-button">系统通知权限</button><button type="button" class="market-news-test link-button">测试通知</button></div>
+                  <div class="market-news-followed" aria-label="已关注新闻的股票"></div>
+                  <p class="market-news-notify-status footnote" role="status"></p>
+                </details>
+              </div>
+              <ol aria-label="新闻标题"></ol>
+              <p class="market-news-status" role="status"></p>
+              <button type="button" class="market-news-more link-button" aria-expanded="false" hidden>更多新闻</button>
+            </section>
+            <section id="market-details" class="card market-details" aria-labelledby="market-details-title">
+              <div class="section-heading"><h2 id="market-details-title" tabindex="-1">盘口与成交</h2></div>
+              <dl class="market-metrics"></dl>
+              <div class="market-book"></div>
+              <p class="market-detail-status" role="status"></p>
+            </section>
             <div class="subgrid">
               <article class="card position-card"><div class="section-heading"><h2>当前持仓</h2><button id="edit-position" class="link-button">编辑</button></div><div id="home-position"></div><p class="footnote">按原币估算，未计交易费用。</p></article>
               <article class="card chart-card"><div class="section-heading"><h2>最近报价</h2><span id="sample-count" class="muted">等待采样</span></div><canvas id="sparkline" width="600" height="150" aria-label="当前股票最近获取的报价曲线"></canvas><div class="chart-caption"><span id="sample-start">—</span><span id="sample-end">—</span></div><p class="footnote">本次运行采样</p></article>
             </div>
             <section class="card floating-controls"><div class="section-heading"><h2>桌面显示</h2><button id="reset-overlays" class="link-button">窗口归位</button></div><div class="overlay-toggles"><label><span data-icon="pet"></span><span>桌宠</span><input type="checkbox" data-setting="petEnabled" role="switch"></label><label><span data-icon="island"></span><span>悬浮窗</span><input type="checkbox" data-setting="islandEnabled" role="switch"></label><label><span data-icon="card"></span><span>卡片</span><input type="checkbox" data-setting="widgetEnabled" role="switch"></label></div></section>
           </div>
-          <aside class="watch-column card"><div class="section-heading"><h2>我的自选 <span id="stock-count" class="muted">0</span></h2><button class="icon-button add-stock" aria-label="添加自选">＋</button></div><div id="home-stocks" class="stock-list"></div><button id="all-stocks" class="link-button full">管理自选</button><p class="footnote">公开行情可能延迟或中断。</p></aside>
+          <aside class="watch-column card"><div class="section-heading"><h2>我的自选 <span id="stock-count" class="muted">0</span></h2><button class="icon-button add-stock" aria-label="添加自选">＋</button></div><div id="home-stocks" class="stock-list"></div><button id="all-stocks" class="link-button full">管理自选</button></aside>
         </div>
       </section>
       <section id="view-watchlist" class="view" hidden><div class="section-heading"><p class="muted">A 股 · 港股 · 美股，最多 50 只</p><button class="button primary add-stock">＋ 添加自选</button></div><div class="table-head"><span>名称 / 代码</span><span>最新价</span><span>涨跌幅</span><span>操作</span></div><div id="watch-stocks" class="card"></div></section>
