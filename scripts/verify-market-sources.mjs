@@ -236,11 +236,13 @@ try {
   assert.equal(fast.length, 4);
   for (let i = 1; i < fast.length; i++) assert.ok(fast[i] - fast[i - 1] >= 490 && fast[i] - fast[i - 1] < 1400);
   assert.equal(await page.locator('#refresh').getAttribute('aria-busy'), 'false');
+  const limited = receivedAt.length;
   responseStatus = 429;
-  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).quotes.gb_mp?.error?.includes('限流'));
-  const limitedAt = receivedAt.at(-1);
-  while (receivedAt.at(-1) === limitedAt && performance.now() < limitedAt + 4500) await page.waitForTimeout(100);
-  assert.ok(receivedAt.at(-1) - limitedAt >= 1950, 'HTTP 429 must slow the next poll');
+  const retryDeadline = performance.now() + 7000;
+  while (receivedAt.length < limited + 2 && performance.now() < retryDeadline) await page.waitForTimeout(100);
+  assert.match((await state()).quotes.gb_mp?.error ?? '', /限流/);
+  const retryDelay = receivedAt[limited + 1] - receivedAt[limited];
+  assert.ok(retryDelay >= 1950, `HTTP 429 must slow the next poll (observed ${retryDelay}ms)`);
   pass('a fully configured own source polls at 500ms and backs off when rate limited');
   assert.deepEqual(errors, []);
   passed = true;

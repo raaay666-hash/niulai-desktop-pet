@@ -3,7 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/niulai-desktop-1.8.1]
-    paths: [.github/workflows/desktop-1.8.1-release.yml]
+    paths:
+      - .github/workflows/desktop-1.8.1-release.yml
+      - scripts/verify-market-sources.mjs
 permissions:
   contents: read
 jobs:
