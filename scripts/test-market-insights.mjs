@@ -65,6 +65,8 @@ try {
   const chart = page.locator('#market-chart');
   const detail = page.locator('#market-details');
   const news = page.locator('#market-news');
+  assert.equal(await chart.evaluate(node => node.previousElementSibling.id), 'market-details');
+  assert.equal(await news.evaluate(node => node.previousElementSibling.id), 'market-chart');
   const readyChart = text => page.waitForFunction(value =>
     document.querySelector('#market-chart').getAttribute('aria-busy') === 'false' && document.querySelector('.market-chart-source').textContent.includes(value), text);
 

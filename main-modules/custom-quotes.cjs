@@ -28,7 +28,7 @@ function normalizeSourceConfig(raw = {}) {
     authType: ['none', 'bearer', 'header', 'query'].includes(raw.authType) ? raw.authType : 'none',
     timeZone: ['market', 'UTC', 'Asia/Shanghai', 'America/New_York'].includes(raw.timeZone) ? raw.timeZone : 'market',
     defaultSession: raw.defaultSession === 'auto' ? 'auto' : 'regular',
-    interval: [5, 10, 30, 60].includes(Number(raw.interval)) ? Number(raw.interval) : 10,
+    interval: [.5, 1, 2, 5, 10, 30, 60].includes(Number(raw.interval)) ? Number(raw.interval) : 10,
     markets: [...new Set((Array.isArray(raw.markets) ? raw.markets : defaults.markets).filter(value => ['cn', 'hk', 'us'].includes(value)))],
     fields: Object.fromEntries(Object.entries(DEFAULT_FIELDS).map(([key, fallback]) => [key, String(raw.fields?.[key] ?? fallback).trim().slice(0, 200)]))
   };
@@ -166,7 +166,11 @@ async function fetchCustomQuote(code, config, { fetcher = fetch, now = Date.now(
     const timeout = AbortSignal.timeout(8000);
     response = await fetcher(request.url, { headers: request.headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout, redirect: 'error' });
   } catch { throw new Error('自有接口连接失败，请检查地址、网络和鉴权设置'); }
-  if (!response.ok) throw new Error(response.status === 429 ? '自有接口请求限流，请增大请求间隔' : '自有接口返回 HTTP ' + response.status);
+  if (!response.ok) {
+    const error = new Error(response.status === 429 ? '自有接口请求限流，请增大请求间隔' : '自有接口返回 HTTP ' + response.status);
+    error.status = response.status;
+    throw error;
+  }
   if (Number(response.headers.get('content-length')) > 2 * 1024 * 1024) throw new Error('接口响应过大，请使用单只股票的报价接口');
   let data;
   try { data = await response.json(); } catch { throw new Error('接口未返回有效 JSON'); }
@@ -197,16 +201,21 @@ async function fetchCustomSeries(code, period, adjustment, config) {
 async function fetchCustomQuotes(codes, config) {
   const results = new Map();
   const signal = AbortSignal.timeout(12000);
-  let index = 0;
+  let index = 0, limited = false;
   async function worker() {
-    while (index < codes.length) {
+    while (!limited && index < codes.length) {
       const code = codes[index++];
       if (signal.aborted) { results.set(code, { error: '自有源本轮请求超时' }); continue; }
       try { results.set(code, { quote: await fetchCustomQuote(code, config, { signal }) }); }
-      catch (error) { results.set(code, { error: error.message }); }
+      catch (error) {
+        const rateLimited = error.status === 429;
+        limited ||= rateLimited;
+        results.set(code, { error: error.message, limited: rateLimited });
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, codes.length) }, worker));
+  for (const code of codes.slice(index)) results.set(code, { error: '自有接口请求限流，请增大请求间隔', limited: true });
   return results;
 }
 

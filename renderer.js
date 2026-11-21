@@ -293,9 +293,11 @@ function renderQuoteStatus() {
   $('connection').title = presentation.detail;
   $('footer-status').textContent = data.suspended ? '系统休眠，已暂停' : quiet() ? '安静办公中' : quote ? quote.market === 'us' ? presentation.basis : quote.time ? '源时间 ' + quote.time : '行情源未提供成交时间' : '等待行情';
   $('footer-status').title = presentation.detail;
-  $('refresh').disabled = Boolean(data.refreshing || data.suspended);
-  $('refresh').setAttribute('aria-busy', String(Boolean(data.refreshing && !data.suspended)));
-  $('refresh-label').textContent = data.suspended ? '已暂停' : data.refreshing ? '刷新中…' : '刷新行情';
+}
+function renderManualRefresh() {
+  $('refresh').disabled = refreshRequested;
+  $('refresh').setAttribute('aria-busy', String(refreshRequested));
+  $('refresh-label').textContent = refreshRequested ? '刷新中…' : '刷新行情';
 }
 function updateMarketPanels(force = false) {
   const stock = selectedStock();
@@ -330,7 +332,6 @@ function render() {
 }
 function applySnapshot(next) {
   if (!next?.state) return;
-  if (refreshRequested && next.suspended) refreshRequested = false;
   const changedStock = data?.state.selected !== next.state.selected;
   const changedStocks = JSON.stringify(data?.state.stocks.map(stock => stock.code)) !== JSON.stringify(next.state.stocks.map(stock => stock.code));
   data = next;
@@ -482,7 +483,7 @@ function buildSettings() {
   }));
   container.append(element('h2', settingsSections.find(([key]) => key === settingsPanel)[1]));
   const themes = [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
-  const intervals = [[5, '每 5 秒'], [10, '每 10 秒'], [30, '每 30 秒']];
+  const intervals = [[.5, '最快（500 毫秒）'], [1, '每 1 秒'], [2, '每 2 秒'], [5, '每 5 秒'], [10, '每 10 秒'], [30, '每 30 秒']];
   const modes = [['market', '股票行情'], ['muyu', '木鱼计数']];
   if (settingsPanel === 'island') {
     const preview = element('div', '', 'settings-preview'); preview.id = 'island-preview';
@@ -540,13 +541,13 @@ function buildSettings() {
     heading('外观与使用');
     settingRow('应用外观', 'theme', 'select', themes);
     settingRow('静音', 'muted');
-    settingRow('行情刷新', 'interval', 'select', intervals);
+    settingRow('行情自动刷新', 'interval', 'select', intervals, '公开源交易时段最快每 1 秒。500 毫秒适用于支持该频率的自有源。');
     settingRow('播放动画', 'motion'); settingRow('隐藏持仓金额', 'private');
     heading('使用模式');
     const presets = element('div', '', 'preset-buttons');
     for (const [name, values] of [
       ['静音', { muted: true, motion: true, interval: 30, islandInterval: 30 }],
-      ['标准', { muted: false, motion: true, interval: 10, islandInterval: 10 }],
+      ['标准', { muted: false, motion: true, interval: .5, islandInterval: .5 }],
       ['省电', { muted: true, motion: false, interval: 30, islandInterval: 30 }]
     ]) { const button = element('button', name); button.onclick = () => perform(api.settings(values), () => toast('已切换为' + name)); presets.append(button); }
     container.append(presets);
@@ -674,18 +675,6 @@ api.onKnock(({ counts, reset }) => {
   }
 });
 api.onSnapshot(applySnapshot);
-api.onRefreshing(refreshing => {
-  if (!data) return;
-  data.refreshing = refreshing;
-  renderQuoteStatus();
-  if (refreshRequested && !refreshing) {
-    refreshRequested = false;
-    const entry = currentEntry(), health = quoteHealth(entry, settings().interval);
-    let message = health.warning ? '已获取报价，' + health.message : '行情已刷新';
-    if (entry?.error) message = entry.quote ? '刷新失败，已保留上次报价' : '暂未获取报价，请稍后重试';
-    toast(message);
-  }
-});
 api.onMamaVoice(({ volume }) => {
   if (data && lastMarketScene && settings().mamaSound && !settings().muted && !quiet()) {
     stopAudio(); mamaVoice.play(volume).catch(() => {});
@@ -696,13 +685,23 @@ document.querySelector('.brand').onclick = event => { event.preventDefault(); ch
 for (const button of document.querySelectorAll('.add-stock')) button.onclick = openSearch;
 $('all-stocks').onclick = $('select-stock').onclick = () => changeTab('watchlist');
 $('refresh').onclick = async () => {
+  if (refreshRequested || !data) return;
   refreshRequested = true;
-  if (tab === 'home') {
-    if (!marketChart.loading) marketChart.load(true);
-    updateMarketPanels(true);
+  renderManualRefresh();
+  try {
+    if (tab === 'home') {
+      if (!marketChart.loading) marketChart.load(true);
+      updateMarketPanels(true);
+    }
+    const entry = await api.refresh(true), health = quoteHealth(entry, settings().interval);
+    let message = health.warning ? '已获取报价，' + health.message : '行情已刷新';
+    if (entry?.error || !entry?.quote) message = entry?.quote ? '刷新失败，已保留上次报价' : '暂未获取报价，请稍后重试';
+    toast(message);
+  } catch (error) { toast(error.message); }
+  finally {
+    refreshRequested = false;
+    renderManualRefresh();
   }
-  try { await api.refresh(); }
-  catch (error) { refreshRequested = false; toast(error.message); }
 };
 $('privacy-toggle').onclick = () => perform(api.settings({ private: !settings().private }));
 $('hide-dashboard').onclick = () => perform(api.window('hide'));

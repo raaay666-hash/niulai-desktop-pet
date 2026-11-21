@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
   translateNews: ids => ipcRenderer.invoke('desktop:translate-news', ids),
   newsPreferences: (operation, value) => ipcRenderer.invoke('desktop:news-preferences', operation, value),
   onNewsArrived: callback => subscribe('desktop:news-arrived', callback),
-  refresh: () => ipcRenderer.invoke('desktop:refresh'),
+  refresh: (manual = false) => ipcRenderer.invoke('desktop:refresh', manual),
   feedback: value => ipcRenderer.invoke('desktop:feedback', value),
   updates: operation => ipcRenderer.invoke('desktop:updates', operation),
   onUpdate: callback => subscribe('desktop:update', callback),
@@ -33,7 +33,6 @@ contextBridge.exposeInMainWorld('desktopPet', {
   beginDrag: origin => ipcRenderer.invoke('desktop:drag-start', origin),
   endDrag: () => ipcRenderer.invoke('desktop:drag-end'),
   onSnapshot: callback => subscribe('desktop:snapshot', callback),
-  onRefreshing: callback => subscribe('desktop:refreshing', callback),
   onKnock: callback => subscribe('desktop:knock', callback),
   onPreview: callback => subscribe('desktop:preview', callback),
   onCollapsed: callback => subscribe('desktop:collapsed', callback)

@@ -35,10 +35,16 @@
         <div class="dashboard-grid">
           <div class="primary-column">
             <article class="hero card">
-              <div class="hero-quote"><button id="select-stock" class="stock-title"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001 · CNY</span></button><span id="session" class="session">等待行情</span><div id="quote-number" class="quote-number"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div><div class="market-quick-links"><button id="open-quote" class="link-button">查看行情</button><button id="show-market-news" class="link-button">个股新闻</button><button id="show-market-details" class="link-button">盘口</button></div></div>
+              <div class="hero-quote"><button id="select-stock" class="stock-title"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001 · CNY</span></button><span id="session" class="session">等待行情</span><div id="quote-number" class="quote-number"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div><div class="market-quick-links"><button id="open-quote" class="link-button">查看行情</button><button id="show-market-details" class="link-button">盘口</button><button id="show-market-news" class="link-button">个股新闻</button></div></div>
               <div class="pet-scene"><span id="pet-state" class="pet-state">等待行情</span><button id="pet" aria-label="摸摸牛来"><canvas id="bull" width="384" height="384"></canvas></button><span id="pet-message">点击牛来互动</span></div>
               <div class="hero-footer"><span id="connection" class="connection" role="status">正在连接行情…</span><button id="motions-open" class="link-button">动作预览</button></div>
             </article>
+            <section id="market-details" class="card market-details" aria-labelledby="market-details-title">
+              <div class="section-heading"><h2 id="market-details-title" tabindex="-1">盘口与成交</h2></div>
+              <dl class="market-metrics"></dl>
+              <div class="market-book"></div>
+              <p class="market-detail-status" role="status"></p>
+            </section>
             <section id="market-chart" aria-label="分时与历史 K 线"></section>
             <section id="market-news" class="card market-news" aria-labelledby="market-news-title">
               <div class="section-heading">
@@ -67,12 +73,6 @@
               <ol aria-label="新闻标题"></ol>
               <p class="market-news-status" role="status"></p>
               <button type="button" class="market-news-more link-button" aria-expanded="false" hidden>更多新闻</button>
-            </section>
-            <section id="market-details" class="card market-details" aria-labelledby="market-details-title">
-              <div class="section-heading"><h2 id="market-details-title" tabindex="-1">盘口与成交</h2></div>
-              <dl class="market-metrics"></dl>
-              <div class="market-book"></div>
-              <p class="market-detail-status" role="status"></p>
             </section>
             <div class="subgrid">
               <article class="card position-card"><div class="section-heading"><h2>当前持仓</h2><button id="edit-position" class="link-button">编辑</button></div><div id="home-position"></div><p class="footnote">按原币估算，未计交易费用。</p></article>

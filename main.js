@@ -24,6 +24,7 @@ const locked = app.requestSingleInstanceLock();
 if (!locked) app.quit();
 let dashboard, tray, state, counts, persisted = null, suspended = false, quitting = false;
 let pollTimer, reactionTimer, polling = false, refreshPending = false, quoteEpoch = 0;
+let failedPolls = 0, manualRefresh;
 let writeQueue = Promise.resolve();
 let customQuoteConfig = null, sealedQuoteSource = null, quoteSourceError = '', seriesRevision = 0;
 const overlays = new Map();
@@ -201,18 +202,36 @@ function createDashboard() {
 
 async function requestText(url, referer, encoding = 'gbk') {
   const response = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { Referer: referer, 'User-Agent': 'Mozilla/5.0' } });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(`HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return new TextDecoder(encoding).decode(await response.arrayBuffer());
+}
+function quoteCodes() {
+  return [...new Set([...state.stocks.map(stock => stock.code), state.settings.islandSymbol].filter(Boolean))];
+}
+function quotePollDelay() {
+  const settings = state.settings;
+  const requested = settings.islandEnabled ? Math.min(settings.interval, settings.islandInterval) : settings.interval;
+  const custom = settings.quoteSourceMode === 'custom' ? customQuoteConfig : null;
+  const publicCodes = quoteCodes().filter(code => !custom || settings.quoteSourceFallback || !custom.markets.includes(marketForSymbol(code)));
+  const now = Date.now();
+  const marketOpen = publicCodes.some(code => ['pre', 'regular', 'post'].includes(marketClock(code, now).phase));
+  const publicFloor = marketOpen ? 1 : publicCodes.length ? 10 : 0;
+  const interval = Math.max(requested, custom?.interval || 0, publicFloor) * 1000;
+  if (!failedPolls) return interval;
+  return Math.min(60000, Math.max(interval, 2000) * 2 ** (failedPolls - 1));
 }
 function schedulePoll(delay) {
   clearTimeout(pollTimer);
   if (!state || suspended || quitting) return;
-  let interval = state.settings.islandEnabled ? Math.min(state.settings.interval, state.settings.islandInterval) : state.settings.interval;
-  if (state.settings.quoteSourceMode === 'custom' && customQuoteConfig) interval = Math.max(interval, customQuoteConfig.interval);
-  pollTimer = setTimeout(poll, delay ?? interval * 1000);
+  pollTimer = setTimeout(poll, delay ?? quotePollDelay());
 }
 async function resolveQuotes(codes) {
   const resolved = new Map(), errors = new Map();
+  let limited = false;
   const usingCustom = state.settings.quoteSourceMode === 'custom';
   const config = customQuoteConfig;
   const customCodes = usingCustom ? codes.filter(code => !config || config.markets.includes(marketForSymbol(code))) : [];
@@ -220,15 +239,18 @@ async function resolveQuotes(codes) {
     const results = await fetchCustomQuotes(customCodes, config);
     for (const [code, result] of results) {
       if (result.quote) resolved.set(code, result.quote);
-      else errors.set(code, result.error);
+      else {
+        errors.set(code, result.error);
+        limited ||= result.limited === true;
+      }
     }
   } else for (const code of customCodes) errors.set(code, '自有行情源需重新配置');
 
   const publicCodes = codes.filter(code => !customCodes.includes(code) || state.settings.quoteSourceFallback && quoteHealth({ quote: resolved.get(code), received: Date.now() }, state.settings.interval).warning);
-  if (!publicCodes.length) return { resolved, errors };
+  if (!publicCodes.length) return { resolved, errors, limited };
   let primary = '';
   try { primary = await requestText('https://hq.sinajs.cn/list=' + publicCodes.join(','), 'https://finance.sina.com.cn/'); }
-  catch (error) { log('WARN', '新浪 ' + error.message); }
+  catch (error) { limited ||= error.status === 429; log('WARN', '新浪 ' + error.message); }
   const publicQuotes = new Map();
   for (const code of publicCodes) {
     const quote = parseSinaQuote(primary, code);
@@ -242,14 +264,22 @@ async function resolveQuotes(codes) {
         const quote = parseTencentQuote(fallback, code);
         if (quote?.price > 0) publicQuotes.set(code, newestQuote([publicQuotes.get(code), quote]));
       }
-    } catch (error) { log('WARN', '腾讯 ' + error.message); }
+    } catch (error) { limited ||= error.status === 429; log('WARN', '腾讯 ' + error.message); }
   }
   for (const [code, quote] of publicQuotes) {
     const chosen = newestQuote([resolved.get(code), quote]);
     if (chosen === quote && customCodes.includes(code)) chosen.fallbackFrom = config?.name || '自有行情源';
     resolved.set(code, chosen);
   }
-  return { resolved, errors };
+  return { resolved, errors, limited };
+}
+
+function finishManualRefresh(error) {
+  if (!manualRefresh) return;
+  const { resolve, reject } = manualRefresh;
+  manualRefresh = null;
+  if (error) reject(error);
+  else resolve(quotes.get(state.selected) || null);
 }
 async function poll() {
   clearTimeout(pollTimer);
@@ -257,16 +287,17 @@ async function poll() {
   if (polling) { refreshPending = true; return; }
   polling = true;
   refreshPending = false;
-  broadcast('desktop:refreshing', true);
   const epoch = quoteEpoch;
-  const codes = [...new Set([...state.stocks.map(stock => stock.code), state.settings.islandSymbol].filter(Boolean))];
+  const codes = quoteCodes();
   try {
-    const { resolved, errors } = await resolveQuotes(codes);
+    const { resolved, errors, limited } = await resolveQuotes(codes);
     if (epoch !== quoteEpoch || suspended || quitting) return;
+    failedPolls = limited || !resolved.size ? Math.min(7, failedPolls + 1) : 0;
+    let namesChanged = false;
+    const received = Date.now();
     for (const code of codes) {
       let quote = resolved.get(code);
       if (quote) {
-        const received = Date.now();
         const previous = quotes.get(code)?.quote;
         if (code.startsWith('gb_')) quote = newestQuote([quote, previous]);
         quotes.set(code, { quote, received });
@@ -276,16 +307,22 @@ async function poll() {
         if ((!code.startsWith('gb_') || Number.isFinite(quote.quotedAt)) && (samples.at(-1)?.at !== at || samples.at(-1)?.price !== quote.price)) samples.push({ price: quote.price, at });
         histories.set(code, samples.slice(-60));
         const stock = state.stocks.find(item => item.code === code);
-        if (stock) stock.name = quote.name;
+        if (stock && stock.name !== quote.name) { stock.name = quote.name; namesChanged = true; }
       } else quotes.set(code, { ...quotes.get(code), error: errors.get(code) || '更新失败，保留上次报价' });
       crying.update(code, quotes.get(code), state.settings.interval);
     }
     broadcast();
-    await persist();
+    finishManualRefresh();
+    if (namesChanged) persist().catch(error => log('ERROR', error.message));
+  } catch (error) {
+    if (epoch === quoteEpoch && !suspended && !quitting) {
+      failedPolls = Math.min(7, failedPolls + 1);
+      finishManualRefresh(new Error('行情更新失败，请重试'));
+    }
+    log('WARN', '行情更新 ' + error.message);
   } finally {
     polling = false;
     refreshPending = !suspended && !quitting && (refreshPending || epoch !== quoteEpoch);
-    broadcast('desktop:refreshing', refreshPending);
     schedulePoll(refreshPending ? 0 : undefined);
   }
 }
@@ -596,7 +633,16 @@ handle('desktop:news-preferences', async (event, operation, value) => {
   broadcast();
   return snapshot();
 });
-handle('desktop:refresh', () => { schedulePoll(0); return true; });
+handle('desktop:refresh', (event, manual) => {
+  if (manual !== true) { schedulePoll(0); return true; }
+  if (event.sender !== dashboard?.webContents || !state || suspended || quitting) throw new Error('当前无法刷新行情');
+  if (!manualRefresh) {
+    manualRefresh = {};
+    manualRefresh.promise = new Promise((resolve, reject) => Object.assign(manualRefresh, { resolve, reject }));
+    if (!polling) schedulePoll(0);
+  }
+  return manualRefresh.promise;
+});
 handle('desktop:quote-source', async (event, operation, payload = {}) => {
   if (event.sender !== dashboard?.webContents) throw new Error('请在主面板配置行情来源');
   if (operation === 'get') {
@@ -632,6 +678,7 @@ handle('desktop:quote-source', async (event, operation, payload = {}) => {
   }
   quoteEpoch++;
   seriesRevision++;
+  failedPolls = 0;
   quotes.clear(); histories.clear();
   for (const code of crying.entries.keys()) crying.reset(code);
   await persist();
@@ -792,6 +839,7 @@ app.whenReady().then(async () => {
   tray.on('double-click', showDashboard);
   const suspend = () => {
     suspended = true; quoteEpoch++; newsGeneration++; clearTimeout(pollTimer); clearTimeout(newsTimer);
+    finishManualRefresh(new Error('系统休眠，刷新已暂停'));
     for (const code of crying.entries.keys()) crying.invalidate(code);
     syncOverlays(); broadcast();
   };
@@ -817,6 +865,7 @@ app.on('before-quit', event => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
+  finishManualRefresh(new Error('程序正在退出'));
   clearTimeout(pollTimer);
   clearTimeout(newsTimer);
   clearInterval(reactionTimer);

@@ -1,6 +1,6 @@
 # 牛来盯盘
 
-当前仓库的 Windows/macOS 构建版本为 `1.8.0`。牛来提供二维桌宠和 A 股、港股、美股盯盘。正式发布版本见 [官网](https://niulai.raaay.art/download/) 和 [更新记录](https://niulai.raaay.art/download/updates/)。
+当前仓库的 Windows/macOS 构建版本为 `1.8.1`。牛来提供二维桌宠和 A 股、港股、美股盯盘。正式发布版本见 [官网](https://niulai.raaay.art/download/) 和 [更新记录](https://niulai.raaay.art/download/updates/)。
 
 ## 功能
 

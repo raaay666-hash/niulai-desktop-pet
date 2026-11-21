@@ -57,6 +57,7 @@ try {
   await app.evaluate(() => {
     globalThis.__experienceFetch = globalThis.fetch;
     globalThis.__quoteRequests = 0;
+    globalThis.__quoteStarts = [];
     globalThis.__quoteDelay = 80;
     globalThis.__searchQueries = [];
     globalThis.__offline = false;
@@ -72,6 +73,7 @@ try {
         text = query === 'slow' ? 'v_hint="sh~600001~Old result~~GP";' : 'v_hint="sh~600519~Moutai~~GP^sz~000001~PingAn~~GP";';
       } else if (address.hostname === 'hq.sinajs.cn') {
         globalThis.__quoteRequests++;
+        globalThis.__quoteStarts.push(performance.now());
         await new Promise(resolve => setTimeout(resolve, globalThis.__quoteDelay));
         if (globalThis.__offline) throw new Error('Controlled offline fixture');
         const codes = (String(url).split('list=')[1] || '').split(',');
@@ -121,11 +123,38 @@ try {
   const beforeReconfigure = await app.evaluate(() => globalThis.__quoteRequests);
   await page.locator('#refresh').click();
   await page.waitForFunction(() => document.getElementById('refresh').disabled);
+  await waitForSnapshot(next => next.refreshing);
   await page.evaluate(() => window.desktopPet.settings({ interval: 10 }));
   await page.waitForFunction(() => !document.getElementById('refresh').disabled);
   assert.equal(await app.evaluate(() => globalThis.__quoteRequests), beforeReconfigure + 2);
   assert.equal((await snapshot()).refreshing, false);
   pass('changing quote settings during refresh finishes the replacement request before clearing busy state');
+
+  await app.evaluate(() => {
+    globalThis.__actualNow = Date.now;
+    Date.now = () => Date.parse('2026-11-20T02:00:00Z');
+    globalThis.__quoteStarts = [];
+    globalThis.__quoteDelay = 80;
+  });
+  await page.evaluate(() => {
+    window.autoButtonMutations = 0;
+    window.quoteButtonObserver = new MutationObserver(changes => { window.autoButtonMutations += changes.length; });
+    window.quoteButtonObserver.observe(document.getElementById('refresh'), { attributes: true, childList: true, subtree: true });
+  });
+  await page.evaluate(() => window.desktopPet.settings({ interval: .5 }));
+  const cadenceDeadline = Date.now() + 7000;
+  let quoteStarts;
+  do {
+    quoteStarts = await app.evaluate(() => globalThis.__quoteStarts);
+    if (quoteStarts.length < 3) await page.waitForTimeout(100);
+  } while (quoteStarts.length < 3 && Date.now() < cadenceDeadline);
+  assert.ok(quoteStarts.length >= 3);
+  for (let i = 1; i < 3; i++) assert.ok(quoteStarts[i] - quoteStarts[i - 1] >= 990 && quoteStarts[i] - quoteStarts[i - 1] < 2200);
+  assert.equal(await page.evaluate(() => { window.quoteButtonObserver.disconnect(); return window.autoButtonMutations; }), 0);
+  await app.evaluate(() => { Date.now = globalThis.__actualNow; });
+  await page.evaluate(() => window.desktopPet.settings({ interval: 30 }));
+  await waitForSnapshot(next => !next.refreshing);
+  pass('public quotes poll at a one-second floor and never mutate the manual refresh button');
 
   await app.evaluate(() => { globalThis.__offline = true; globalThis.__quoteDelay = 80; });
   const lastPrice = await page.locator('#price').textContent();

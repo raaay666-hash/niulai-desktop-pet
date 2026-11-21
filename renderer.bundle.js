@@ -386,7 +386,7 @@
         mamaSound: false,
         volume: 0.9,
         motion: true,
-        interval: 10,
+        interval: 0.5,
         private: true,
         scene: 0,
         smartScene: true,
@@ -413,7 +413,7 @@
         islandHideInApp: false,
         islandSymbol: "",
         islandWidth: 320,
-        islandInterval: 10,
+        islandInterval: 0.5,
         widgetEnabled: false,
         widgetTheme: "system",
         widgetSparkline: true,
@@ -443,7 +443,7 @@
           if (["system", "light", "dark"].includes(raw[key])) result[key] = raw[key];
         }
         for (const key of ["petMode", "islandContent"]) result[key] = raw[key] === "muyu" ? "muyu" : "market";
-        for (const key of ["interval", "islandInterval"]) result[key] = [5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
+        for (const key of ["interval", "islandInterval"]) result[key] = [0.5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
         result.volume = clamp2(raw.volume, 0, 1, DEFAULTS.volume);
         result.petScale = clamp2(raw.petScale, 75, 125, DEFAULTS.petScale);
         result.islandWidth = Math.round(clamp2(raw.islandWidth, 260, 420, DEFAULTS.islandWidth));
@@ -474,11 +474,15 @@
           ...item,
           presentation: item.presentation === "3d" ? "2d" : item.presentation
         }));
+        const settings2 = normalizeSettings(raw.settings);
+        if (raw.version === 2) {
+          for (const key of ["interval", "islandInterval"]) if (settings2[key] === 10) settings2[key] = DEFAULTS[key];
+        }
         return {
-          version: 2,
+          version: 3,
           stocks,
           selected: stocks.some((stock) => stock.code === selected) ? selected : stocks[0].code,
-          settings: normalizeSettings(raw.settings),
+          settings: settings2,
           alerts: alerts2,
           news: {
             followed: [...new Set(Array.isArray(raw.news?.followed) ? raw.news.followed.filter((code) => stocks.some((stock) => stock.code === code)) : [])].slice(0, MAX_NEWS_FOLLOWS),
@@ -511,7 +515,7 @@
             ...old,
             sound: old.muted === false && Number(old.volume) > 0,
             motion: old.motion === void 0 || Number(old.motion) > 0,
-            interval: old.powerSave === false ? 5 : 10,
+            interval: old.powerSave === false ? 5 : DEFAULTS.interval,
             petQuote: old.showQuote !== false,
             petScale: old.modelScale ? Number(old.modelScale) * 100 : 100
           },
@@ -6717,7 +6721,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     fields.append(marketGroup, element("p", "\u6240\u9009\u5E02\u573A\u4F7F\u7528\u81EA\u6709\u63A5\u53E3\uFF0C\u5176\u4F59\u5E02\u573A\u7EE7\u7EED\u4F7F\u7528\u516C\u5171\u884C\u60C5\u3002", "footnote"));
     const connectionGrid = element("div", "", "source-grid");
     select(connectionGrid, "symbolFormat", "\u80A1\u7968\u4EE3\u7801\u683C\u5F0F", config.symbolFormat, [["ticker", "\u539F\u59CB\u4EE3\u7801 \xB7 MP / 00700 / 600519"], ["yahoo", "Yahoo \u683C\u5F0F \xB7 MP / 0700.HK / 600519.SS"], ["niulai", "\u725B\u6765\u4EE3\u7801 \xB7 gb_mp / rt_hk00700"]]);
-    select(connectionGrid, "interval", "\u6B64\u6A21\u5F0F\u6700\u77ED\u5237\u65B0\u95F4\u9694", String(config.interval), [[5, "5 \u79D2"], [10, "10 \u79D2"], [30, "30 \u79D2"], [60, "60 \u79D2"]]);
+    select(connectionGrid, "interval", "\u81EA\u6709\u6E90\u6700\u77ED\u5237\u65B0\u95F4\u9694", String(config.interval), [[0.5, "500 \u6BEB\u79D2"], [1, "1 \u79D2"], [2, "2 \u79D2"], [5, "5 \u79D2"], [10, "10 \u79D2"], [30, "30 \u79D2"], [60, "60 \u79D2"]]);
     select(connectionGrid, "authType", "\u9274\u6743\u65B9\u5F0F", config.authType, [["none", "\u65E0\u9700\u9274\u6743"], ["bearer", "Authorization \xB7 Bearer"], ["header", "\u81EA\u5B9A\u4E49\u8BF7\u6C42\u5934"], ["query", "URL \u67E5\u8BE2\u53C2\u6570"]]);
     input(connectionGrid, "authName", "\u8BF7\u6C42\u5934 / \u53C2\u6570\u540D\u79F0", config.authName);
     fields.append(connectionGrid);
@@ -8069,9 +8073,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("connection").title = presentation.detail;
     $("footer-status").textContent = data.suspended ? "\u7CFB\u7EDF\u4F11\u7720\uFF0C\u5DF2\u6682\u505C" : quiet() ? "\u5B89\u9759\u529E\u516C\u4E2D" : quote ? quote.market === "us" ? presentation.basis : quote.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u6210\u4EA4\u65F6\u95F4" : "\u7B49\u5F85\u884C\u60C5";
     $("footer-status").title = presentation.detail;
-    $("refresh").disabled = Boolean(data.refreshing || data.suspended);
-    $("refresh").setAttribute("aria-busy", String(Boolean(data.refreshing && !data.suspended)));
-    $("refresh-label").textContent = data.suspended ? "\u5DF2\u6682\u505C" : data.refreshing ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u884C\u60C5";
+  }
+  function renderManualRefresh() {
+    $("refresh").disabled = refreshRequested;
+    $("refresh").setAttribute("aria-busy", String(refreshRequested));
+    $("refresh-label").textContent = refreshRequested ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u884C\u60C5";
   }
   function updateMarketPanels(force = false) {
     const stock = selectedStock();
@@ -8111,7 +8117,6 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   function applySnapshot(next) {
     if (!next?.state) return;
-    if (refreshRequested && next.suspended) refreshRequested = false;
     const changedStock = data?.state.selected !== next.state.selected;
     const changedStocks = JSON.stringify(data?.state.stocks.map((stock) => stock.code)) !== JSON.stringify(next.state.stocks.map((stock) => stock.code));
     data = next;
@@ -8287,7 +8292,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }));
     container.append(element("h2", settingsSections.find(([key]) => key === settingsPanel)[1]));
     const themes = [["system", "\u8DDF\u968F\u7CFB\u7EDF"], ["light", "\u6D45\u8272"], ["dark", "\u6DF1\u8272"]];
-    const intervals = [[5, "\u6BCF 5 \u79D2"], [10, "\u6BCF 10 \u79D2"], [30, "\u6BCF 30 \u79D2"]];
+    const intervals = [[0.5, "\u6700\u5FEB\uFF08500 \u6BEB\u79D2\uFF09"], [1, "\u6BCF 1 \u79D2"], [2, "\u6BCF 2 \u79D2"], [5, "\u6BCF 5 \u79D2"], [10, "\u6BCF 10 \u79D2"], [30, "\u6BCF 30 \u79D2"]];
     const modes = [["market", "\u80A1\u7968\u884C\u60C5"], ["muyu", "\u6728\u9C7C\u8BA1\u6570"]];
     if (settingsPanel === "island") {
       const preview = element("div", "", "settings-preview");
@@ -8367,14 +8372,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       heading("\u5916\u89C2\u4E0E\u4F7F\u7528");
       settingRow("\u5E94\u7528\u5916\u89C2", "theme", "select", themes);
       settingRow("\u9759\u97F3", "muted");
-      settingRow("\u884C\u60C5\u5237\u65B0", "interval", "select", intervals);
+      settingRow("\u884C\u60C5\u81EA\u52A8\u5237\u65B0", "interval", "select", intervals, "\u516C\u5F00\u6E90\u4EA4\u6613\u65F6\u6BB5\u6700\u5FEB\u6BCF 1 \u79D2\u3002500 \u6BEB\u79D2\u9002\u7528\u4E8E\u652F\u6301\u8BE5\u9891\u7387\u7684\u81EA\u6709\u6E90\u3002");
       settingRow("\u64AD\u653E\u52A8\u753B", "motion");
       settingRow("\u9690\u85CF\u6301\u4ED3\u91D1\u989D", "private");
       heading("\u4F7F\u7528\u6A21\u5F0F");
       const presets = element("div", "", "preset-buttons");
       for (const [name, values] of [
         ["\u9759\u97F3", { muted: true, motion: true, interval: 30, islandInterval: 30 }],
-        ["\u6807\u51C6", { muted: false, motion: true, interval: 10, islandInterval: 10 }],
+        ["\u6807\u51C6", { muted: false, motion: true, interval: 0.5, islandInterval: 0.5 }],
         ["\u7701\u7535", { muted: true, motion: false, interval: 30, islandInterval: 30 }]
       ]) {
         const button = element("button", name);
@@ -8569,18 +8574,6 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }
   });
   api.onSnapshot(applySnapshot);
-  api.onRefreshing((refreshing) => {
-    if (!data) return;
-    data.refreshing = refreshing;
-    renderQuoteStatus();
-    if (refreshRequested && !refreshing) {
-      refreshRequested = false;
-      const entry = currentEntry(), health = quoteHealth(entry, settings().interval);
-      let message = health.warning ? "\u5DF2\u83B7\u53D6\u62A5\u4EF7\uFF0C" + health.message : "\u884C\u60C5\u5DF2\u5237\u65B0";
-      if (entry?.error) message = entry.quote ? "\u5237\u65B0\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u4E0A\u6B21\u62A5\u4EF7" : "\u6682\u672A\u83B7\u53D6\u62A5\u4EF7\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
-      toast(message);
-    }
-  });
   api.onMamaVoice(({ volume: volume2 }) => {
     if (data && lastMarketScene && settings().mamaSound && !settings().muted && !quiet()) {
       stopAudio();
@@ -8596,16 +8589,23 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   for (const button of document.querySelectorAll(".add-stock")) button.onclick = openSearch;
   $("all-stocks").onclick = $("select-stock").onclick = () => changeTab("watchlist");
   $("refresh").onclick = async () => {
+    if (refreshRequested || !data) return;
     refreshRequested = true;
-    if (tab === "home") {
-      if (!marketChart.loading) marketChart.load(true);
-      updateMarketPanels(true);
-    }
+    renderManualRefresh();
     try {
-      await api.refresh();
+      if (tab === "home") {
+        if (!marketChart.loading) marketChart.load(true);
+        updateMarketPanels(true);
+      }
+      const entry = await api.refresh(true), health = quoteHealth(entry, settings().interval);
+      let message = health.warning ? "\u5DF2\u83B7\u53D6\u62A5\u4EF7\uFF0C" + health.message : "\u884C\u60C5\u5DF2\u5237\u65B0";
+      if (entry?.error || !entry?.quote) message = entry?.quote ? "\u5237\u65B0\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u4E0A\u6B21\u62A5\u4EF7" : "\u6682\u672A\u83B7\u53D6\u62A5\u4EF7\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
+      toast(message);
     } catch (error) {
-      refreshRequested = false;
       toast(error.message);
+    } finally {
+      refreshRequested = false;
+      renderManualRefresh();
     }
   };
   $("privacy-toggle").onclick = () => perform(api.settings({ private: !settings().private }));

@@ -143,9 +143,10 @@ try {
 
   let responseStatus = 200;
   let sourceBody = { symbol: 'MP', name: 'MP', price: 41, previousClose: 38.1, dayPreviousClose: 36.73, regularPrice: 38.1, timestamp: '2026-11-12T21:05:00Z', session: 'post' };
-  const receivedHeaders = [];
+  const receivedHeaders = [], receivedAt = [];
   server = http.createServer((request, response) => {
     receivedHeaders.push(request.headers['x-qa-key']);
+    receivedAt.push(performance.now());
     response.writeHead(responseStatus, { 'Content-Type': 'application/json' }).end(JSON.stringify(sourceBody));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -219,6 +220,28 @@ try {
     assert.equal((await page.evaluate(() => window.desktopPet.quoteSource('get'))).hasToken, true);
     pass('encrypted source and authentication survive a native application restart');
   }
+
+  responseStatus = 200;
+  await page.evaluate(async url => {
+    const api = window.desktopPet;
+    const { state } = await api.bootstrap();
+    for (const stock of state.stocks) if (stock.code !== 'gb_mp') await api.stock('remove', { code: stock.code });
+    await api.settings({ interval: .5, islandInterval: .5, islandSymbol: '' });
+    await api.quoteSource('save', { mode: 'custom', name: '毫秒级测试源', url, markets: ['us'], interval: .5, fallback: false });
+  }, `http://127.0.0.1:${server.address().port}/quote?symbol={symbol}`);
+  const first = receivedAt.length;
+  const deadline = performance.now() + 7000;
+  while (receivedAt.length < first + 4 && performance.now() < deadline) await page.waitForTimeout(75);
+  const fast = receivedAt.slice(first, first + 4);
+  assert.equal(fast.length, 4);
+  for (let i = 1; i < fast.length; i++) assert.ok(fast[i] - fast[i - 1] >= 490 && fast[i] - fast[i - 1] < 1400);
+  assert.equal(await page.locator('#refresh').getAttribute('aria-busy'), 'false');
+  responseStatus = 429;
+  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).quotes.gb_mp?.error?.includes('限流'));
+  const limitedAt = receivedAt.at(-1);
+  while (receivedAt.at(-1) === limitedAt && performance.now() < limitedAt + 4500) await page.waitForTimeout(100);
+  assert.ok(receivedAt.at(-1) - limitedAt >= 1950, 'HTTP 429 must slow the next poll');
+  pass('a fully configured own source polls at 500ms and backs off when rate limited');
   assert.deepEqual(errors, []);
   passed = true;
 } finally {

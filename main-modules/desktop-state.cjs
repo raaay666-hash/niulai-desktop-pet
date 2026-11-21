@@ -1,14 +1,14 @@
 const { normalizeMarketSymbol, displaySymbol } = require('./market-symbols');
 
 const DEFAULTS = Object.freeze({
-  theme: 'system', sound: false, muted: false, mamaSound: false, volume: 0.9, motion: true, interval: 10,
+  theme: 'system', sound: false, muted: false, mamaSound: false, volume: 0.9, motion: true, interval: .5,
   private: true, scene: 0, smartScene: true, autoActions: true, updateNotifications: true,
   petEnabled: true, petMode: 'market', petQuote: true, petHideInApp: false,
   petScale: 100, muyuSound: false, muyuEffects: true, muyuCount: true,
   islandEnabled: false, islandContent: 'market', islandTheme: 'dark',
   islandPrice: true, islandPercent: true, islandBull: true, islandCount: true,
   islandHoldings: false, islandMotion: true, islandAutoCollapse: true,
-  islandHideInApp: false, islandSymbol: '', islandWidth: 320, islandInterval: 10,
+  islandHideInApp: false, islandSymbol: '', islandWidth: 320, islandInterval: .5,
   widgetEnabled: false, widgetTheme: 'system', widgetSparkline: true, widgetBull: true,
   emotionMemory: false, closeSummary: false,
   quoteSourceMode: 'public', quoteSourceFallback: false,
@@ -34,7 +34,7 @@ function normalizeSettings(raw = {}) {
     if (['system', 'light', 'dark'].includes(raw[key])) result[key] = raw[key];
   }
   for (const key of ['petMode', 'islandContent']) result[key] = raw[key] === 'muyu' ? 'muyu' : 'market';
-  for (const key of ['interval', 'islandInterval']) result[key] = [5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
+  for (const key of ['interval', 'islandInterval']) result[key] = [.5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
   result.volume = clamp(raw.volume, 0, 1, DEFAULTS.volume);
   result.petScale = clamp(raw.petScale, 75, 125, DEFAULTS.petScale);
   result.islandWidth = Math.round(clamp(raw.islandWidth, 260, 420, DEFAULTS.islandWidth));
@@ -65,9 +65,13 @@ function normalizeState(raw = {}) {
   const alerts = (Array.isArray(raw.alerts) ? raw.alerts : []).slice(0, 20).filter(item => item && typeof item === 'object').map(item => ({
     ...item, presentation: item.presentation === '3d' ? '2d' : item.presentation
   }));
+  const settings = normalizeSettings(raw.settings);
+  if (raw.version === 2) {
+    for (const key of ['interval', 'islandInterval']) if (settings[key] === 10) settings[key] = DEFAULTS[key];
+  }
   return {
-    version: 2, stocks, selected: stocks.some(stock => stock.code === selected) ? selected : stocks[0].code,
-    settings: normalizeSettings(raw.settings), alerts,
+    version: 3, stocks, selected: stocks.some(stock => stock.code === selected) ? selected : stocks[0].code,
+    settings, alerts,
     news: {
       followed: [...new Set(Array.isArray(raw.news?.followed) ? raw.news.followed.filter(code => stocks.some(stock => stock.code === code)) : [])].slice(0, MAX_NEWS_FOLLOWS),
       notifications: raw.news?.notifications === true,
@@ -92,7 +96,7 @@ function migrateLegacy(values = {}) {
     settings: {
       ...old, sound: old.muted === false && Number(old.volume) > 0,
       motion: old.motion === undefined || Number(old.motion) > 0,
-      interval: old.powerSave === false ? 5 : 10,
+      interval: old.powerSave === false ? 5 : DEFAULTS.interval,
       petQuote: old.showQuote !== false,
       petScale: old.modelScale ? Number(old.modelScale) * 100 : 100
     },

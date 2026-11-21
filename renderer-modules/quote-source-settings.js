@@ -47,7 +47,7 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
   fields.append(marketGroup, element('p', '所选市场使用自有接口，其余市场继续使用公共行情。', 'footnote'));
   const connectionGrid = element('div', '', 'source-grid');
   select(connectionGrid, 'symbolFormat', '股票代码格式', config.symbolFormat, [['ticker', '原始代码 · MP / 00700 / 600519'], ['yahoo', 'Yahoo 格式 · MP / 0700.HK / 600519.SS'], ['niulai', '牛来代码 · gb_mp / rt_hk00700']]);
-  select(connectionGrid, 'interval', '此模式最短刷新间隔', String(config.interval), [[5, '5 秒'], [10, '10 秒'], [30, '30 秒'], [60, '60 秒']]);
+  select(connectionGrid, 'interval', '自有源最短刷新间隔', String(config.interval), [[.5, '500 毫秒'], [1, '1 秒'], [2, '2 秒'], [5, '5 秒'], [10, '10 秒'], [30, '30 秒'], [60, '60 秒']]);
   select(connectionGrid, 'authType', '鉴权方式', config.authType, [['none', '无需鉴权'], ['bearer', 'Authorization · Bearer'], ['header', '自定义请求头'], ['query', 'URL 查询参数']]);
   input(connectionGrid, 'authName', '请求头 / 参数名称', config.authName);
   fields.append(connectionGrid);

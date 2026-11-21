@@ -25,6 +25,10 @@ assert.equal(migrateLegacy({ 'niulai:pet-settings': 'broken' }).settings.sound, 
 assert.equal(normalizeState({ stocks: [null, { code: 'oops!' }] }).stocks.length, 3);
 assert.equal(normalizeSettings({ islandWidth: 999, interval: 0, volume: -1 }).islandWidth, 420);
 assert.equal(normalizeSettings({ quietOffice: { start: '99:99' } }).quietOffice.start, '09:30');
+const upgraded = normalizeState({ version: 2, settings: { interval: 10, islandInterval: 30 } });
+assert.equal(upgraded.settings.interval, .5);
+assert.equal(upgraded.settings.islandInterval, 30);
+assert.equal(normalizeState({ ...upgraded, settings: { ...upgraded.settings, interval: 10 } }).settings.interval, 10);
 const fifty = Array.from({ length: 50 }, (_, i) => ({ symbol: 's_sh' + String(600000 + i), cost: i + 1, shares: 10 }));
 assert.equal(migrateLegacy({ 'niulai:saved-stocks-v1': JSON.stringify(fifty) }).stocks.length, 50);
 const yesterday = { day: '2026-11-11', total: 200, today: 50, session: 12 };
