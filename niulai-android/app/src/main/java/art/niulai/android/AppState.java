@@ -3,7 +3,7 @@ import android.content.Context;
 import org.json.*;
 
 final class AppState {
-    static void feature(Context c,String key,boolean value){if(!key.equals("petEnabled")&&!key.equals("islandEnabled"))return;try{JSONObject state=load(c);state.put(key,value);save(c,state.toString());}catch(Exception ignored){}}
+    static synchronized void feature(Context c,String key,boolean value){if(!key.equals("petEnabled")&&!key.equals("islandEnabled"))return;try{JSONObject state=load(c);state.put(key,value);save(c,state.toString());}catch(Exception ignored){}}
     static String existing(Context c){return PetConfig.prefs(c).getString("app_state","");}
     static JSONObject load(Context c){try{return clean(existing(c));}catch(Exception e){return defaults();}}
     static JSONObject defaults(){try{JSONObject o=new JSONObject();JSONArray stocks=new JSONArray();for(String[] s:new String[][]{{"s_sh000001","上证指数"},{"s_sz399001","深证成指"},{"s_sz399006","创业板指"}}){JSONObject item=new JSONObject();item.put("code",s[0]);item.put("name",s[1]);item.put("cost",0);item.put("shares",0);stocks.put(item);}o.put("stocks",stocks);o.put("selected","s_sh000001");o.put("sound",false);o.put("haptic",true);o.put("motion",true);o.put("private",true);o.put("theme","system");o.put("interval",10);FeatureOptions.copy(o,o);return o;}catch(Exception e){return new JSONObject();}}
@@ -14,5 +14,18 @@ final class AppState {
         for(String key:new String[]{"sound","haptic","motion","private","smartScene"})o.put(key,o.optBoolean(key,!key.equals("sound")));
         int interval=o.optInt("interval",10);o.put("interval",interval==5||interval==30?interval:10);String theme=o.optString("theme","system");o.put("theme",theme.equals("light")||theme.equals("dark")?theme:"system");FeatureOptions.copy(o,o);return o;
     }
-    static void save(Context c,String raw){try{PetConfig.prefs(c).edit().putString("app_state",clean(raw).toString()).apply();}catch(Exception ignored){}}
+    static JSONObject stock(JSONObject state,String code){
+        JSONArray stocks=state.optJSONArray("stocks");
+        if(stocks!=null) for(int i=0;i<stocks.length();i++){
+            JSONObject stock=stocks.optJSONObject(i);
+            if(stock!=null&&stock.optString("code").equals(code))return stock;
+        }
+        return null;
+    }
+    static synchronized boolean select(Context c,String code){
+        JSONObject state=load(c);
+        if(stock(state,code)==null)return false;
+        try{state.put("selected",code);save(c,state.toString());return true;}catch(JSONException ignored){return false;}
+    }
+    static synchronized void save(Context c,String raw){try{PetConfig.prefs(c).edit().putString("app_state",clean(raw).toString()).apply();}catch(Exception ignored){}}
 }

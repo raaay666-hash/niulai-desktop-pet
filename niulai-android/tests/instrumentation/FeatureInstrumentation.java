@@ -7,9 +7,20 @@ import android.webkit.WebView;
 
 /** Installed only on the dedicated QA device, signed with the target application's test distribution key. */
 public class FeatureInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean coverCheck;
+    @Override public void onCreate(Bundle arguments) {
+        super.onCreate(arguments);
+        coverCheck = arguments != null && "true".equals(arguments.getString("cover"));
+        start();
+    }
 
     @Override public void onStart() {
+        if (coverCheck) {
+            Bundle result = new Bundle();
+            try { CoverWidgetCheck.verify(this); result.putString("cover", "PASS"); finish(-1, result); }
+            catch (Throwable error) { result.putString("stream", android.util.Log.getStackTraceString(error)); finish(0, result); }
+            return;
+        }
         runOnMainSync(() -> WebView.setWebContentsDebuggingEnabled(true));
         BroadcastReceiver done = new BroadcastReceiver() {
             @Override public void onReceive(Context context, Intent intent) {

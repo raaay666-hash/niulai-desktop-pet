@@ -18,6 +18,45 @@ final class PetConfig {
         } catch (Exception e) { return false; }
     }
     static String json(Context c) { return prefs(c).getString("config", "{\"symbol\":\"s_sh000001\",\"name\":\"上证指数\",\"interval\":10,\"private\":true}"); }
+    private static JSONObject object(Context c,String key) {
+        try { return new JSONObject(prefs(c).getString(key,"{}")); }
+        catch (JSONException ignored) { return new JSONObject(); }
+    }
+    static JSONObject snapshot(Context c,String code) {
+        JSONObject selected=object(c,"quote");
+        JSONObject saved=object(c,"watch_quotes").optJSONObject(code);
+        if(code.equals(selected.optString("code"))&&(saved==null||selected.optLong("received")>=saved.optLong("received")))return selected;
+        return saved!=null? saved : new JSONObject();
+    }
+    static synchronized void cacheWatch(Context c,String raw) {
+        if(raw==null||raw.length()>16000)return;
+        try {
+            JSONObject state=AppState.load(c), old=object(c,"watch_quotes"), next=new JSONObject();
+            JSONArray stocks=state.getJSONArray("stocks"), quotes=new JSONArray(raw);
+            for(int i=0;i<stocks.length();i++){
+                String code=stocks.getJSONObject(i).getString("code");
+                JSONObject snapshot=old.optJSONObject(code);
+                if(snapshot!=null)next.put(code,snapshot);
+            }
+            long now=System.currentTimeMillis();
+            for(int i=0;i<Math.min(20,quotes.length());i++){
+                JSONObject quote=quotes.optJSONObject(i);
+                if(quote==null)continue;
+                String code=quote.optString("code");
+                double price=quote.optDouble("price"),change=quote.optDouble("changePct");
+                long received=quote.optLong("received",0);
+                JSONObject previous=next.optJSONObject(code);
+                if(AppState.stock(state,code)==null||!Double.isFinite(price)||price<=0||
+                    received<=0||received>now+60000||previous!=null&&received<previous.optLong("received"))continue;
+                JSONObject snapshot=new JSONObject();
+                snapshot.put("code",code).put("price",price).put("received",received);
+                if(Double.isFinite(change))snapshot.put("changePct",change);
+                next.put(code,snapshot);
+            }
+            prefs(c).edit().putString("watch_quotes",next.toString()).apply();
+            StackWidgetProvider.refreshThrottled(c);
+        } catch (JSONException ignored) {}
+    }
     static void cache(Context c, String raw) {
         if (raw == null || raw.length() > 8192) return;
         try {

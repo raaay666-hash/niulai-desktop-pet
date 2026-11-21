@@ -1,5 +1,4 @@
 * { box-sizing: border-box; }
-.cover #market-chart { display: none; }
 html {
   color-scheme: light;
   --bg: #f4f5f7; --paper: #fff; --ink: #242b36; --muted: #677489;
@@ -186,18 +185,8 @@ html[data-scene="2"] .scene-extra { min-height: 165px; }
 .motion-option.selected { border-color: var(--accent); background: var(--active); } .motion-option[data-tone=rise] strong { color: var(--red); } .motion-option[data-tone=fall] strong { color: var(--green); }
 .home-left, .home-right { min-width: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
-[hidden] { display: none !important; } .cover-exit { display: none; }
+[hidden] { display: none !important; }
 html.no-motion *, html.paused * { animation: none !important; transition: none !important; }
-.cover .topbar { padding: 12px 14px; } .cover .brand img { width: 30px; height: 30px; } .cover .brand h1 { font-size: 17px; }
-.cover .desktop-card, .cover .home-right, .cover .pet-actions, .cover .scene-tabs, .cover .scene-extra, .cover .calm-extra { display: none !important; }
-.cover main { padding: 0 10px 82px; } .cover .section-line { margin-bottom: 4px; } .cover .hero { border-radius: 17px; }
-.cover .quote-top { padding: 14px 13px 0; } .cover .stock-title strong { font-size: 14px; } .cover .pill { font-size: 9px; padding: 4px 5px; }
-.cover .quote-number { display: block !important; padding: 10px 13px 0; min-height: 78px; width: 100%; } .cover .quote-number > strong { font-size: 34px; }
-.cover .quote-number > div { flex-direction: row; } .cover .quote-number > div span + span { margin: 0 0 0 12px; }
-.cover .pet-scene { position: relative; right: auto; bottom: auto; width: 100%; display: block !important; height: 162px; }
-.cover .pet { width: 210px; height: 210px; margin-left: -105px; bottom: -12px; } .cover .bubble { top: 0; } .cover .pet-state { bottom: 0; }
-.cover .bottom-nav { padding-top: 5px; padding-bottom: 6px; } .cover .bottom-nav [data-tab=portfolio] { display: none; } .cover .bottom-nav button { min-height: 42px; }
-.cover.previewing .cover-exit { display: block; position: fixed; bottom: 75px; right: 12px; z-index: 12; padding: 6px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
 @media (min-width: 620px) { dialog { margin: auto; top: 0; bottom: 0; height: max-content; border-radius: 24px; } main { padding-left: 25px; padding-right: 25px; } }
 @media (min-width: 740px) {
   .app { max-width: 1120px; } .topbar { padding: 26px 30px; } main { padding-left: 30px; padding-right: 30px; }
@@ -205,7 +194,6 @@ html.no-motion *, html.paused * { animation: none !important; transition: none !
   .home-right { padding-top: 100px; } .position-card { padding: 18px; } .hero { min-height: 285px; }
   .quote-number { min-height: 174px; } .quote-number > strong { font-size: 43px; } .pet-scene { height: 196px; } .pet { width: 245px; height: 245px; margin-left: -122px; }
   .bottom-nav { max-width: 1120px; } .view:not(#view-home) { max-width: 850px; margin: auto; }
-  .cover #view-home { display: block; } .cover .app { max-width: 620px; }
 }
 @media (max-width: 359px) {
   main { padding-left: 12px; padding-right: 12px; } .topbar { padding-left: 15px; padding-right: 15px; }

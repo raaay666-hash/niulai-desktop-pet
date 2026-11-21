@@ -1,6 +1,7 @@
 (function () {
   'use strict';
   if (!Object.fromEntries) Object.fromEntries = function (entries) { var result = {}; entries.forEach(function (entry) { result[entry[0]] = entry[1]; }); return result; };
+  if (!Object.hasOwn) Object.hasOwn = function (target, key) { return Object.prototype.hasOwnProperty.call(target, key); };
   if (!Element.prototype.append) Element.prototype.append = function () { for (var i = 0; i < arguments.length; i++) this.appendChild(typeof arguments[i] === 'string' ? document.createTextNode(arguments[i]) : arguments[i]); };
   if (!Element.prototype.replaceChildren) Element.prototype.replaceChildren = function () { while (this.firstChild) this.removeChild(this.firstChild); this.append.apply(this, arguments); };
   // Some OEM WebViews expose a dialog element without the modal methods.

@@ -1,0 +1,111 @@
+html {
+  --bg: #f1f2ec;
+  --paper: #fcfcf8;
+  --ink: #222e28;
+  --muted: #58685e;
+  --line: #dce2d9;
+  --accent: #31594b;
+  --chip: #eff2eb;
+  --active: #e3ece3;
+  --stage: #e3ece3;
+  --red: #ae3e49;
+  --green: #156f52;
+  --surface: var(--paper);
+  --text: var(--ink);
+  --soft: var(--chip);
+  --blue: var(--accent);
+  --blue-soft: var(--active);
+  --rise: var(--red);
+  --fall: var(--green);
+  --minute-shade: rgba(51, 131, 109, .22);
+  --minute-shade-end: rgba(51, 131, 109, .02);
+}
+html.dark {
+  --bg: #191f1b;
+  --paper: #242c26;
+  --ink: #eef1e9;
+  --muted: #adb9aa;
+  --line: #39453b;
+  --accent: #b0cdb7;
+  --chip: #2e3930;
+  --active: #34473a;
+  --stage: #34473a;
+  --red: #ff9ba2;
+  --green: #8bd5b2;
+  --minute-shade: rgba(139, 222, 180, .33);
+  --minute-shade-end: rgba(139, 222, 180, .01);
+}
+.hero {
+  --ink: #f3f4e9;
+  --muted: #bad0c4;
+  --chip: #293d33;
+  --paper: #20322a;
+  --line: #466051;
+  --red: #ff9699;
+  --green: #94deba;
+  --accent: #c0dfcc;
+  min-height: 0;
+  border-radius: 17px;
+  color: var(--ink);
+  background: radial-gradient(ellipse at 82% 20%, #355045, transparent 65%), #15241d;
+}
+.hero .quote-number { padding-block: 16px; min-height: 105px; }
+.hero .quote-number > strong { font-size: 38px; font-size: clamp(32px, 9vw, 43px); letter-spacing: -.055em; }
+.hero .quote-number > div { flex-direction: row; gap: 9px; }
+.hero .quote-number > div span + span { margin: 0; }
+.hero .quote-top { position: relative; z-index: 3; }
+.hero .pet-scene { height: 132px; right: 0; bottom: 36px; }
+.hero .pet { width: 162px; height: 162px; margin-left: -81px; bottom: -8px; }
+.hero .pet-state { display: none; }
+.hero .bubble { top: auto; bottom: 3px; }
+.hero .connection { min-height: 35px; background: rgba(10, 24, 17, .3); }
+.market-shortcuts { display: flex; margin: 3px 0 4px; }
+.market-shortcuts > button { flex: 1; min-height: 44px; font-weight: 600; }
+.market-chart, .market-news, .market-details {
+  padding: 15px 13px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  margin: 0 0 12px;
+  scroll-margin-top: 9px;
+}
+.market-chart-heading { gap: 5px; }
+.market-chart-heading h2 { white-space: nowrap; }
+.market-periods { min-width: 0; }
+.market-periods button { padding-inline: 8px; min-height: 42px; white-space: nowrap; }
+.market-chart-toolbar { flex-wrap: wrap; margin-top: 6px; gap: 3px; }
+.market-chart-toolbar button { min-height: 44px; }
+.market-adjustment { min-height: 40px; }
+.market-plot, .market-plot canvas { height: 218px; height: clamp(205px, 35vh, 255px); }
+.market-chart-stats { gap: 6px 13px; }
+.market-chart-stats small, .market-chart-source { font-size: 11px; }
+.market-chart-range input { min-height: 28px; }
+.market-news .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 9px; }
+.market-news-switch { max-width: 100%; }
+.market-news-switch button { min-height: 40px; padding-inline: 9px; }
+.market-news-controls { justify-content: space-between; gap: 5px 9px; }
+.market-news-preferences summary { min-height: 42px; line-height: 26px; }
+.market-news-follow { border: 1px solid var(--line); border-radius: 8px; padding-inline: 10px; }
+.market-news-actions { gap: 7px; }
+.market-news-article strong { font-size: 15px; }
+.market-news li:first-child strong { font-size: 19px; }
+.market-news-meta { font-size: 11px; }
+.market-news-original { font-size: 12px; }
+.market-news .market-news-followed > button { min-height: 38px; background: transparent; color: var(--accent); }
+.market-book-columns { gap: 7px; }
+.market-book th, .market-book td { padding-inline: 2px; }
+.market-metrics dd { font-size: 13px; }
+@media (min-width: 740px) {
+  #view-home { grid-template-columns: minmax(0, 1.65fr) minmax(220px, 1fr); gap: 20px; }
+  .home-right { padding-top: 47px; }
+  .market-chart, .market-news, .market-details { padding-inline: 17px; }
+}
+@media (max-width: 355px) {
+  main { padding-inline: 11px; }
+  .market-chart-heading { flex-wrap: wrap; }
+  .market-periods { flex: 1; }
+  .market-periods button { flex: 1; }
+  .market-chart-toolbar > div { margin-left: auto; }
+  .market-news-controls { display: block; }
+  .market-news-preferences[open] { margin-top: 4px; }
+}

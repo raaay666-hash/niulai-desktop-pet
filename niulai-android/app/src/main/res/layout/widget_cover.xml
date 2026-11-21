@@ -1,0 +1,37 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp" android:background="@drawable/widget_cover_surface">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical">
+        <TextView android:id="@id/widget_scene" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="match_parent" android:gravity="center_vertical" android:text="牛来 · 行情"
+            android:textColor="#EACB9B" android:textSize="14sp" android:textStyle="bold" android:maxLines="1" />
+        <TextView android:id="@id/widget_next" android:layout_width="wrap_content" android:layout_height="match_parent"
+            android:minWidth="64dp" android:gravity="center" android:text="木鱼" android:textColor="#F7F2E8"
+            android:textSize="14sp" android:textStyle="bold" android:background="@drawable/widget_cover_surface" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@id/widget_name" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="上证指数" android:textColor="#CEDAD0" android:textSize="15sp" android:textStyle="bold"
+                android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@id/widget_value" android:layout_width="match_parent" android:layout_height="56dp"
+                android:gravity="center_vertical" android:text="—" android:textColor="#F7F2E8" android:textSize="42sp" android:textStyle="bold"
+                android:maxLines="1" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="18sp"
+                android:autoSizeMaxTextSize="42sp" android:autoSizeStepGranularity="1sp" />
+            <TextView android:id="@id/widget_note" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="等待行情" android:textColor="#CEDAD0" android:textSize="13sp" android:maxLines="1" android:ellipsize="end" />
+        </LinearLayout>
+        <ImageView android:id="@id/widget_bull" android:layout_width="120dp" android:layout_height="120dp"
+            android:scaleType="fitCenter" android:contentDescription="牛来" />
+    </LinearLayout>
+    <ImageView android:id="@id/widget_chart" android:layout_width="match_parent" android:layout_height="36dp"
+        android:scaleType="fitXY" android:visibility="gone" android:contentDescription="最近报价走势" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="44dp" android:gravity="center_vertical">
+        <TextView android:id="@id/widget_time" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent"
+            android:gravity="center_vertical" android:text="等待行情快照" android:textColor="#B9CABE" android:textSize="11sp"
+            android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/widget_cover_stock" android:layout_width="76dp" android:layout_height="match_parent"
+            android:gravity="center" android:text="下一只 ›" android:textColor="#F7F2E8" android:textSize="13sp"
+            android:contentDescription="切换到下一只自选" android:background="@drawable/widget_cover_surface" />
+    </LinearLayout>
+</LinearLayout>

@@ -98,7 +98,8 @@ try {
   assert.equal(await page.locator('html').evaluate(e=>e.classList.contains('cover')),true);
   assert.equal(await page.locator('[data-tab=portfolio]').isVisible(),false);
   await page.screenshot({path:path.join(output,'cover-compact.png'),fullPage:true});
-  await page.locator('#settings-open').click();await page.locator('#settings-dialog .close-dialog').click();
+  await page.locator('#cover-mode').click();await page.locator('#cover-pet').click();
+  assert.equal(await page.locator('#cover-count').textContent(),'1');
   await page.locator('#cover-exit').click();await page.setViewportSize({width:390,height:844});
   pass('Xiaomi help and a 280dp cover preview keep position navigation private');
   await page.evaluate(() => window.__niulaiLifecycle(false));

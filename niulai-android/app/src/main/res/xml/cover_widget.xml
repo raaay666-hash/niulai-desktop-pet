@@ -1,1 +1,4 @@
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="352dp" android:minHeight="339dp" android:initialLayout="@layout/widget_stack" android:resizeMode="horizontal|vertical" android:updatePeriodMillis="0" android:widgetCategory="keyguard" android:description="@string/cover_description" />
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="352dp" android:minHeight="339dp"
+    android:minResizeWidth="220dp" android:minResizeHeight="130dp" android:initialLayout="@layout/widget_cover"
+    android:resizeMode="horizontal|vertical" android:updatePeriodMillis="0" android:widgetCategory="keyguard"
+    android:description="@string/cover_description" />

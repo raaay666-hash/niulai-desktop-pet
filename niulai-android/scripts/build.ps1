@@ -1,4 +1,4 @@
-param([string]$SdkRoot = '', [string]$KeyStore = '', [string]$KeyAlias = 'niulai')
+param([string]$SdkRoot = '', [string]$KeyStore = '', [string]$KeyAlias = 'niulai', [string]$OutputDirectory = '', [string]$BuildDirectory = '')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $repo = Split-Path $project -Parent
@@ -14,7 +14,7 @@ $toolsDir = Get-ChildItem -LiteralPath (Join-Path $sdk 'build-tools') -Directory
 if (-not $toolsDir -or -not (Test-Path -LiteralPath $platform)) { throw 'Install Android SDK platform 35 and build-tools 35 first.' }
 $tools = $toolsDir.FullName
 $java = Split-Path (Get-Command javac.exe -ErrorAction Stop).Source -Parent
-$buildDir = Join-Path $env:LOCALAPPDATA 'NiulaiAndroidBuild'
+$buildDir = if ($BuildDirectory) { [IO.Path]::GetFullPath($BuildDirectory) } else { Join-Path $env:LOCALAPPDATA 'NiulaiAndroidBuild' }
 $classes = Join-Path $buildDir 'classes'
 $dex = Join-Path $buildDir 'dex'
 $res = Join-Path $buildDir 'res/drawable'
@@ -67,7 +67,7 @@ if (-not $KeyStore) {
     }
 }
 if (-not $env:NIULAI_KEY_PASSWORD) { throw 'Set NIULAI_KEY_PASSWORD for the supplied keystore.' }
-$release = Join-Path $repo 'release/android'
+$release = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repo 'release/android' }
 New-Item -ItemType Directory -Force $release | Out-Null
 $apk = Join-Path $release "Niulai-Android-$version.apk"
 & (Join-Path $java 'java.exe') -jar (Join-Path $tools 'lib/apksigner.jar') sign --ks $KeyStore --ks-key-alias $KeyAlias --ks-pass env:NIULAI_KEY_PASSWORD --out $apk $aligned; Check 'APK signing'

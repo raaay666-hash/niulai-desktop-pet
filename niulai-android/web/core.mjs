@@ -1,14 +1,17 @@
 import { cleanFeatures } from './features.mjs';
 import symbols from '../../main-modules/market-symbols.js';
 import parsers from '../../main-modules/quote-parsers.js';
+import quoteTime from '../../main-modules/quote-time.js';
 export const { normalizeMarketSymbol, marketForSymbol, displaySymbol, quoteProviderSymbol, parseTencentSuggestions } = symbols;
 export const { parseSinaQuote, parseTencentQuote } = parsers;
+export const { marketClock } = quoteTime;
 export const DEFAULT_STOCKS = [
   { code: 's_sh000001', name: '上证指数' },
   { code: 's_sz399001', name: '深证成指' },
   { code: 's_sz399006', name: '创业板指' }
 ];
 const KEY = 'niulai:android:v1';
+export const MAX_NEWS_FOLLOWS = 12;
 export function loadState(storage) {
   let raw = {};
   try { raw = JSON.parse(storage.getItem(KEY) || '{}') || {}; } catch {}
@@ -17,12 +20,23 @@ export function loadState(storage) {
     .map(s => ({ code: s.code, name: String(s.name || displaySymbol(s.code)).slice(0, 50),
       cost: finitePositive(s.cost), shares: finitePositive(s.shares) })) : [];
   if (!stocks.length) stocks.push(...DEFAULT_STOCKS.map(s => ({ ...s, cost: 0, shares: 0 })));
+  const followed = [...new Set(Array.isArray(raw.news?.followed) ? raw.news.followed
+    .filter(code => stocks.some(stock => stock.code === code)) : [])].slice(0, MAX_NEWS_FOLLOWS);
+  const cursors = {};
+  for (const code of followed) {
+    const cursor = raw.news?.cursors?.[code];
+    if (Number.isFinite(cursor?.since) && Array.isArray(cursor.seen)) {
+      cursors[code] = { since: cursor.since, seen: cursor.seen.filter(id => typeof id === 'string' && /^[0-9a-f]{16}$/.test(id)).slice(-75) };
+    }
+  }
   return { stocks, selected: stocks.some(s => s.code === raw.selected) ? raw.selected : stocks[0].code,
     theme: ['system', 'light', 'dark'].includes(raw.theme) ? raw.theme : 'system',
     sound: raw.sound === true, haptic: raw.haptic !== false, motion: raw.motion !== false,
-    interval: [5, 10, 30].includes(raw.interval) ? raw.interval : 10,
+    interval: [1, 3, 5, 10, 30].includes(raw.interval) ? raw.interval : 3,
     private: raw.private !== false, scene: [0,1,2,3].includes(raw.scene) ? raw.scene : 0,
-    smartScene: raw.smartScene !== false, ...cleanFeatures(raw) };
+    smartScene: raw.smartScene !== false, ...cleanFeatures(raw),
+    news: { followed, cursors, notifications: raw.news?.notifications === true, autoTranslate: raw.news?.autoTranslate !== false }
+  };
 }
 export function saveState(storage, state) { storage.setItem(KEY, JSON.stringify(state)); }
 function finitePositive(value) { return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : 0; }

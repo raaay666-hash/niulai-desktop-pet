@@ -2,29 +2,31 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="theme-color" content="#f4f5f7">
   <title>牛来盯盘</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="market-chart.css">
+  <link rel="stylesheet" href="market-panels.css">
+  <link rel="stylesheet" href="market-mobile.css">
   <link rel="stylesheet" href="feedback-form.css">
+  <link rel="stylesheet" href="adaptive.css">
 </head>
 <body>
-  <div class="app">
+  <div class="app" data-page="home">
     <header class="topbar">
       <div class="brand"><img src="assets/icon.png" alt=""><div><h1>牛来盯盘</h1></div></div>
       <div class="topbar-actions"><button id="feedback-open" class="text-button" aria-haspopup="dialog" aria-controls="feedback-dialog">问题与建议</button>
       <button id="settings-open" class="icon-button" aria-label="设置"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 3.8l.5-1.3h3.4l.5 1.3 1.7 1 1.5-.2 1.7 2.8-.9 1.2v2l.9 1.2-1.7 2.8-1.5-.2-1.7 1-.5 1.3h-3.4l-.5-1.3-1.7-1-1.5.2-1.7-2.8.9-1.2v-2l-.9-1.2 1.7-2.8 1.5.2z" transform="translate(0 2)"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
-      <button id="cover-exit" class="text-button cover-exit">退出预览</button>
     </header>
-    <main>
+    <main id="app-content">
       <aside id="update-banner" class="update-banner" role="status" hidden><strong id="update-title"></strong><p id="update-note"></p><button id="update-download" class="text-button">查看更新</button></aside>
       <section id="view-home" class="view">
 
         <div class="home-left">
-        <div class="section-line"><span class="eyebrow">正在盯盘</span><button id="refresh" class="text-button">↻ 刷新行情</button></div>
+        <div class="section-line"><span class="eyebrow">正在盯盘</span><button id="refresh" class="text-button" type="button" aria-busy="false">↻ 刷新行情</button></div>
         <div id="scene-tabs" class="scene-tabs" aria-label="叠放场景"><button data-scene="0" class="active">桌宠</button><button data-scene="1">行情</button><button data-scene="2">持仓</button><button data-scene="3">休息</button></div>
         <article class="hero">
           <div class="quote-top"><button id="select-stock" class="stock-title"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001</span><span class="chevron">⌄</span></button><span id="session" class="pill">等待行情</span></div>
@@ -35,10 +37,48 @@
           <section id="scene-calm" class="calm-extra" hidden><p id="calm-message">休息计时</p><button id="calm-start" class="text-button">开始 20 秒</button></section>
           <div id="connection" class="connection" role="status"><span class="status-dot"></span><span id="connection-text">正在连接行情…</span></div>
         </article>
+        <nav class="market-shortcuts" aria-label="行情快捷入口">
+          <button id="show-book" class="text-button" type="button">盘口</button>
+          <button id="show-chart" class="text-button" type="button">走势</button>
+          <button id="show-news" class="text-button" type="button">个股新闻</button>
+        </nav>
+        <section id="market-book-panel" class="market-details" aria-labelledby="market-details-title">
+          <div class="section-heading"><h2 id="market-details-title" tabindex="-1">盘口与成交</h2></div>
+          <dl class="market-metrics"></dl><div class="market-book"></div>
+          <p class="market-detail-status" role="status"></p>
+        </section>
+        <section id="market-chart" aria-label="分时与历史 K 线"></section>
+        <section id="market-news" class="market-news" aria-labelledby="market-news-title">
+          <div class="section-heading">
+            <div><h2 id="market-news-title" tabindex="-1">财经新闻</h2><p class="market-news-context"></p></div>
+            <div class="market-news-actions">
+              <button type="button" class="market-news-follow text-button" aria-pressed="false">关注新闻</button>
+              <button type="button" class="market-news-refresh text-button" aria-label="刷新财经新闻">刷新</button>
+            </div>
+          </div>
+          <div class="market-news-controls">
+            <div class="market-news-switch" role="group" aria-label="新闻范围">
+              <button type="button" data-news-scope="stock" aria-pressed="true">个股</button>
+              <button type="button" data-news-scope="international" aria-pressed="false">国际媒体</button>
+              <button type="button" data-news-scope="market" aria-pressed="false">市场要闻</button>
+            </div>
+            <details class="market-news-preferences">
+              <summary>通知与翻译</summary>
+              <label><span>自动翻译外语标题</span><input class="market-news-translate" type="checkbox" role="switch"></label>
+              <label><span>关注股票的系统通知</span><input class="market-news-notify" type="checkbox" role="switch"></label>
+              <p class="footnote">在牛来前台查看时检查新消息。开启后从下一条新消息开始提醒。</p>
+              <div class="market-news-actions"><button type="button" class="market-news-permissions text-button">系统通知权限</button><button type="button" class="market-news-test text-button">测试通知</button></div>
+              <div class="market-news-followed" aria-label="已关注新闻的股票"></div>
+              <p class="market-news-notify-status footnote" role="status"></p>
+            </details>
+          </div>
+          <ol aria-label="新闻标题"></ol>
+          <p class="market-news-status" role="status"></p>
+          <button type="button" class="market-news-more text-button" aria-expanded="false" hidden>更多新闻</button>
+        </section>
         <div class="pet-actions"><button data-action="wave"><span>⌁</span>招手</button><button data-action="nod"><span>⌄</span>点头</button><button data-action="gallery"><span>▦</span>动作预览</button></div>
         
         <section class="desktop-card"><div><h2 id="desktop-title">桌宠</h2><p id="desktop-description">悬浮显示当前行情</p></div><button id="desktop-start" class="primary">开启桌宠</button><div class="desktop-links"><button id="desktop-home" class="text-button" hidden>返回桌面</button><button id="desktop-stop" class="text-button" hidden>关闭桌宠</button><button id="widget-pin" class="text-button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="12" rx="3"/><path d="M5 18h14M7 21h10"/></svg>叠放卡片</button><button id="island-home" class="text-button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="5"/><circle cx="8" cy="12" r="1"/></svg>灵动岛</button><button id="device-help" class="text-button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg>手机适配</button></div></section>
-        <section id="market-chart" aria-label="历史 K 线"></section>
         </div><div class="home-right">
         <article class="position-card"><div class="section-line"><h2>当前持仓</h2><button id="edit-position" class="text-button">设置持仓</button></div><div id="home-position" class="position-empty">尚未设置持仓</div></article>
         <div class="section-line list-heading"><h2>我的自选 <span id="stock-count" class="count">3</span></h2><button class="text-button add-stock">＋ 添加</button></div>
@@ -103,19 +143,46 @@
     <div class="setting-row"><label for="widgetTheme">卡片外观</label><select id="widgetTheme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
     <div class="setting-row"><label for="widgetSparkline">显示最近报价曲线</label><input id="widgetSparkline" type="checkbox" role="switch"></div><div class="setting-row"><label for="widgetBull">显示牛来</label><input id="widgetBull" type="checkbox" role="switch"></div><div class="setting-row"><label for="private">隐藏持仓金额</label><input id="private" type="checkbox" role="switch"></div>
     <button id="settings-widget" class="text-button full">添加桌面卡片</button>
+    <button id="settings-cover-preview" class="text-button full">外屏与背屏预览</button>
   </section>
   <section class="settings-section" id="general-settings" data-settings-panel="general" role="tabpanel" aria-labelledby="settings-tab-general" hidden><h3>外观与行情</h3>
     <div class="setting-row"><label for="theme">应用外观</label><select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
-    <div class="setting-row"><label for="interval">桌宠行情刷新</label><select id="interval"><option value="5">每 5 秒</option><option value="10">每 10 秒</option><option value="30">每 30 秒</option></select></div>
+    <div class="setting-row"><label for="interval">盯盘刷新</label><select id="interval" aria-describedby="interval-note"><option value="1">每 1 秒</option><option value="3">每 3 秒</option><option value="5">每 5 秒</option><option value="10">每 10 秒</option><option value="30">每 30 秒</option></select></div>
+    <p id="interval-note" class="subtext">前台交易时段最快每 1 秒请求公开行情。休市和限流时自动放慢。</p>
     <div class="setting-row"><label for="smartScene">首页跟随常规交易时段</label><input id="smartScene" type="checkbox" role="switch"></div>
       <p class="eyebrow">使用模式</p><div class="quick-stocks"><button data-preset="office">静音</button><button data-preset="commute">通勤</button><button data-preset="home">标准</button><button data-preset="battery">省电</button></div>
       <h3>版本更新</h3><div class="setting-row"><label for="update-notifications">系统更新提醒</label><input id="update-notifications" type="checkbox" role="switch" checked></div>
-      <p id="update-status" class="subtext" role="status">当前版本 1.5.1</p><p class="subtext">有新版本时提醒一次。</p>
+      <p id="update-status" class="subtext" role="status">当前版本 1.6.2</p><p class="subtext">有新版本时提醒一次。</p>
       <div class="quick-stocks"><button id="check-update">检查更新</button><button id="update-permission">系统通知设置</button><button id="update-history">更新记录</button></div>
   </section>
-  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.5.1</strong><button id="about-feedback" class="text-button full">问题与建议</button><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛可使用系统实时通知或顶部悬浮窗。在设置中选择显示方式。悬浮窗和桌宠需要悬浮窗权限，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
+  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.6.2</strong><button id="about-feedback" class="text-button full">问题与建议</button><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛可使用系统实时通知或顶部悬浮窗。在设置中选择显示方式。悬浮窗和桌宠需要悬浮窗权限，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
 </dialog>
-  <dialog id="device-dialog"><div class="sheet-head"><div><h2>手机设置</h2></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="device-name" class="subtext"></p><div id="device-guide" class="about"></div><div class="quick-stocks"><button id="app-settings">应用设置</button><button id="battery-settings">电池设置</button><button id="cover-preview">外屏精简预览</button><button id="compat-open">使用兼容界面</button></div><p class="subtext">桌宠需要悬浮窗权限。后台持续显示可能受系统省电策略限制；设置项名称因手机系统版本而异。</p></dialog>
+  <section id="cover-view" class="cover-view" aria-label="牛来背屏" hidden>
+    <div id="cover-tools" class="cover-tools" aria-label="预览尺寸" hidden>
+      <div><button type="button" data-cover-size="square" aria-pressed="true">方屏</button><button type="button" data-cover-size="strip" aria-pressed="false">条形屏</button><button type="button" data-cover-size="mini" aria-pressed="false">窄条屏</button></div>
+      <button id="cover-exit" type="button">退出预览</button>
+    </div>
+    <article class="cover-card" id="cover-card" data-mode="market" data-size="square">
+      <header class="cover-header">
+        <button id="cover-open" type="button" aria-label="打开牛来盯盘"><span class="cover-dot" aria-hidden="true"></span>牛来 <span aria-hidden="true">↗</span></button>
+        <button id="cover-mode" type="button">木鱼</button>
+      </header>
+      <div class="cover-center">
+        <div id="cover-market" class="cover-metric">
+          <h2 id="cover-name">上证指数</h2><strong id="cover-price">—</strong><span id="cover-percent" class="cover-percent">—</span>
+        </div>
+        <div id="cover-wood" class="cover-metric" hidden>
+          <h2>本轮敲击</h2><strong id="cover-count" aria-live="polite">0</strong>
+        </div>
+        <button id="cover-pet" class="cover-pet" type="button" aria-label="摸摸牛来"><canvas id="cover-canvas" width="192" height="192" aria-hidden="true"></canvas></button>
+      </div>
+      <footer class="cover-footer">
+        <p id="cover-status" role="status">等待行情</p>
+        <button id="cover-next" type="button" aria-label="下一只自选">下一只 <span aria-hidden="true">›</span></button>
+      </footer>
+    </article>
+  </section>
+  <dialog id="device-dialog"><div class="sheet-head"><div><h2>手机适配</h2></div><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="device-name" class="subtext"></p><div id="device-guide" class="about"></div><div class="quick-stocks"><button id="cover-preview">外屏与背屏预览</button><button id="app-settings">应用设置</button><button id="battery-settings">电池设置</button><button id="compat-open">使用兼容界面</button></div><p class="subtext">桌宠需要悬浮窗权限。后台持续显示可能受系统省电策略限制；设置项名称因手机系统版本而异。</p></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <dialog id="feedback-dialog" aria-labelledby="feedback-title">
     <div class="sheet-head"><h2 id="feedback-title">问题与建议</h2><button class="icon-button close-dialog" aria-label="关闭反馈">×</button></div>

@@ -9,7 +9,7 @@ test('corrupt or invalid persisted data recovers without accepting an arbitrary 
   const state = loadState(storage);
   assert.equal(state.stocks.length, 1); assert.equal(state.selected, 'gb_aapl');
   assert.equal(state.stocks[0].shares, 0); assert.equal(state.stocks[0].cost, 0);
-  assert.equal(state.theme, 'system'); assert.equal(state.interval, 10);
+  assert.equal(state.theme, 'system'); assert.equal(state.interval, 3);
 });
 test('saved watchlist, selected symbol and fractional positions survive a restart', () => {
   let raw;
