@@ -92,6 +92,31 @@ try {
   assert.equal(await page.evaluate(() => window.__focusedStock.isConnected && document.activeElement === window.__focusedStock), true);
   pass('50-stock quote refresh preserves row identity and keyboard focus');
 
+  await page.locator('#watch-stocks .stock-main').nth(1).press('Enter');
+  await page.locator('#view-home').waitFor({ timeout: 3000 });
+  assert.equal((await snapshot()).state.selected, seed.stocks[1].code);
+  assert.equal(await page.locator('#select-stock').evaluate(button => button === document.activeElement), true);
+  await page.evaluate(code => window.desktopPet.stock('select', { code }), seed.stocks[0].code);
+  pass('choosing a watchlist symbol opens its dashboard and restores keyboard focus');
+
+  await page.locator('#show-market-chart').click();
+  assert.equal(await page.locator('#market-chart-title').evaluate(title => title === document.activeElement), true);
+  await page.locator('#header-search').click();
+  assert.equal(await page.locator('#search-input').evaluate(input => input === document.activeElement), true);
+  await page.locator('#search-input').press('Escape');
+  pass('dashboard chart and global search shortcuts focus their destinations');
+
+  await page.locator('[data-tab=settings]').click();
+  const petSettings = page.locator('[data-settings-panel=pet]');
+  await petSettings.press('Enter');
+  assert.equal(await petSettings.evaluate(button => button === document.activeElement), true);
+  assert.equal(await petSettings.getAttribute('aria-current'), 'page');
+  const volume = page.locator('[data-setting=volume]');
+  assert.equal(await volume.locator('..').locator('output').textContent(), '90%');
+  await volume.press('ArrowLeft');
+  assert.equal(await volume.locator('..').locator('output').textContent(), '85%');
+  pass('keyboard navigation keeps the active settings category and updates slider units');
+
   await page.locator('[data-tab=portfolio]').click();
   await page.locator('.portfolio-item .link-button').first().focus();
   await page.evaluate(() => { window.__focusedPosition = document.activeElement; });
@@ -229,7 +254,13 @@ try {
 
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => !window.overlayKind).setSize(860, 640));
   await page.locator('[data-tab=watchlist]').click();
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  const aligned = await page.evaluate(() => {
+    const header = [...document.querySelectorAll('.table-head span')];
+    const fields = document.querySelector('#watch-stocks .stock-row').querySelectorAll('.stock-main > *, .row-actions');
+    return document.documentElement.scrollWidth === document.documentElement.clientWidth &&
+      header.every((cell, index) => Math.abs(cell.getBoundingClientRect().right - fields[index].getBoundingClientRect().right) < 1);
+  });
+  assert.equal(aligned, true);
   await page.screenshot({ path: path.join(output, 'watchlist-compact.png') });
   await page.locator('[data-tab=home]').click();
   await page.screenshot({ path: path.join(output, 'home-light.png'), fullPage: true });

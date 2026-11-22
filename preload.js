@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('desktopPet', {
   updates: operation => ipcRenderer.invoke('desktop:updates', operation),
   onUpdate: callback => subscribe('desktop:update', callback),
   quoteSource: (operation, payload) => ipcRenderer.invoke('desktop:quote-source', operation, payload),
+  orderbook: (operation, payload) => ipcRenderer.invoke('desktop:orderbook', operation, payload),
   knock: () => ipcRenderer.invoke('desktop:counts', false),
   newRound: () => ipcRenderer.invoke('desktop:counts', true),
   alerts: rules => ipcRenderer.invoke('desktop:alerts', rules),

@@ -120,3 +120,6 @@
 "renderer-modules/market-chart.css" -text
 "renderer-modules/market-insights.css" -text
 "renderer-modules/market-panels.css" -text
+"main-modules/orderbook-plugin.cjs" -text
+"main-modules/orderbook-trial.cjs" -text
+"renderer-modules/orderbook-panel.css" -text

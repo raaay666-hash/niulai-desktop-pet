@@ -13,8 +13,10 @@ import { MarketChart } from './renderer-modules/market-chart.js';
 import { MarketDetails, MarketNews } from './renderer-modules/market-insights.js';
 import symbols from './main-modules/market-symbols.js';
 import { createFeedbackForm } from './renderer-modules/feedback-form.js';
+import { mountOrderbookPanel } from './renderer-modules/orderbook-panel.js';
 
 let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
+let tabRevision = 0;
 let liveMood = 'loading', previewUntil = 0, motionPreview = 'loading';
 let featureCode = '', lastFeatureQuote = 0, wasOpen = false;
 let emotion, session, alerts;
@@ -56,6 +58,7 @@ function revealStockNews() {
 }
 $('show-market-news').onclick = revealStockNews;
 $('show-market-details').onclick = () => $('market-details-title').focus();
+$('show-market-chart').onclick = () => $('market-chart-title').focus();
 api.onNewsArrived(() => { if (data) revealStockNews(); });
 const bull = makeMotion($('bull'));
 const wood = makeMotion($('wood-canvas'));
@@ -69,6 +72,7 @@ const titles = {
   home: ['盯盘', ''],
   watchlist: ['自选', '选择一只股票，开始盯盘。'],
   portfolio: ['持仓', '查看和管理本机保存的持仓。'],
+  orderbook: ['量化插件', '用新盘口验证撮合延迟、成本与双腿成交。'],
   muyu: ['木鱼', '敲一敲，歇一会儿。'],
   settings: ['设置', '调整桌面显示与使用习惯。']
 };
@@ -78,10 +82,19 @@ const quiet = () => isQuietOfficeActive(settings().quietOffice);
 const currentEntry = () => data.quotes[data.state.selected];
 const money = value => settings().private ? '••••' : signed(value);
 function toast(message) {
-  $('toast').textContent = String(message).replace(/^Error invoking remote method '[^']+': Error: /, '');
-  $('toast').hidden = false;
+  const status = $('toast');
+  const surface = document.querySelector('dialog[open]') || document.body;
+  if (status.parentElement !== surface) surface.append(status);
+  status.textContent = String(message).replace(/^Error invoking remote method '[^']+': Error: /, '');
+  status.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $('toast').hidden = true, 3500);
+  toastTimer = setTimeout(() => status.hidden = true, 3500);
+}
+const changeOrderbookVisibility = mountOrderbookPanel($('view-orderbook'), {
+  api, toast, selected: () => data?.state?.selected
+});
+function syncOrderbookVisibility() {
+  changeOrderbookVisibility(tab === 'orderbook' && !document.hidden);
 }
 async function perform(task, done) {
   try {
@@ -177,7 +190,7 @@ function renderStocks() {
         item = {
           row, button, price,
           name: element('strong'), code: element('small'), value: element('strong'),
-          change: element('small'), warning: element('small'), percent: element('span')
+          change: element('small', '', 'stock-change'), warning: element('small', '', 'stock-warning'), percent: element('span')
         };
         name.append(item.name, item.code);
         price.append(item.value, item.change, item.warning);
@@ -208,7 +221,11 @@ function renderStocks() {
       item.warning.hidden = !quote || !presentation.warning;
       item.percent.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
       item.percent.className = 'stock-pct ' + tone(quote?.changePct);
-      item.remove?.setAttribute('aria-label', '移出 ' + stock.name);
+      if (item.remove) {
+        item.remove.setAttribute('aria-label', '移出 ' + stock.name);
+        item.remove.disabled = data.state.stocks.length === 1;
+        item.remove.title = item.remove.disabled ? '请保留至少一只自选' : '';
+      }
       if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
     }
   }
@@ -260,8 +277,7 @@ function syncControls() {
     const value = settings()[control.dataset.setting];
     if (control.type === 'checkbox') control.checked = value;
     else control.value = value;
-    const output = control.closest('.setting-row')?.querySelector('output');
-    if (output) output.value = control.value + (control.dataset.setting === 'volume' ? '' : ' px');
+    if (control.type === 'range') updateSliderValue(control);
   }
   for (const control of document.querySelectorAll('[data-quiet]')) {
     if (control.type === 'checkbox') control.checked = settings().quietOffice[control.dataset.quiet];
@@ -274,11 +290,14 @@ function renderSettingsPreview() {
   const preview = $('island-preview');
   if (!preview) return;
   const code = settings().islandSymbol || data.state.selected;
+  const stock = data.state.stocks.find(item => item.code === code);
   const quote = data.quotes[code]?.quote;
   const woodMode = settings().islandContent === 'muyu';
-  $('preview-name').textContent = woodMode ? '牛来木鱼' : quote?.name || selectedStock().name;
-  $('preview-price').textContent = woodMode ? '本轮 ' + data.counts.session : settings().islandPrice ? marketPrice(quote?.price, code) : '牛来';
-  $('preview-pct').textContent = woodMode ? '+1' : settings().islandPercent && Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '';
+  $('preview-name').textContent = woodMode ? '牛来木鱼' : quote?.name || stock?.name || displaySymbol(code);
+  $('preview-price').textContent = woodMode ? settings().islandCount ? '本轮 ' + data.counts.session.toLocaleString('zh-CN') : '轻触敲击' : marketPrice(quote?.price, code);
+  $('preview-price').hidden = !woodMode && !settings().islandPrice;
+  $('preview-pct').textContent = woodMode ? '+1' : Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
+  $('preview-pct').hidden = !woodMode && !settings().islandPercent;
   $('preview-pct').className = tone(quote?.changePct);
   $('preview-canvas').hidden = !settings().islandBull;
   mini?.state(woodMode ? 'muyu' : liveMood);
@@ -300,6 +319,7 @@ function renderManualRefresh() {
   $('refresh-label').textContent = refreshRequested ? '刷新中…' : '刷新行情';
 }
 function updateMarketPanels(force = false) {
+  if (!data) return;
   const stock = selectedStock();
   const active = tab === 'home' && !document.hidden && !data.suspended;
   const { markets, name, seriesConfigured, seriesRevision } = data.quoteSource;
@@ -336,12 +356,14 @@ function applySnapshot(next) {
   const changedStocks = JSON.stringify(data?.state.stocks.map(stock => stock.code)) !== JSON.stringify(next.state.stocks.map(stock => stock.code));
   data = next;
   if (changedStock) { moods.reset(); featureCode = ''; stopAudio(); }
-  if (changedStocks && tab === 'settings') buildSettings();
+  if (changedStocks && tab === 'settings' && (settingsPanel === 'island' || !$('settings-content').hasChildNodes())) buildSettings();
   render();
 }
 function changeTab(next) {
+  if (next === tab) return;
   tabScroll.set(tab, window.scrollY);
   tab = next;
+  tabRevision++;
   for (const button of document.querySelectorAll('[data-tab]')) {
     button.classList.toggle('active', button.dataset.tab === tab);
     button.setAttribute('aria-current', button.dataset.tab === tab ? 'page' : 'false');
@@ -350,12 +372,20 @@ function changeTab(next) {
   $('page-title').textContent = titles[tab][0];
   $('page-subtitle').textContent = titles[tab][1];
   $('page-subtitle').hidden = !titles[tab][1];
-  if (tab === 'settings') buildSettings();
+  syncOrderbookVisibility();
+  if (tab === 'settings' && data) buildSettings();
   window.scrollTo(0, tabScroll.get(next) || 0);
   updateMarketPanels();
   syncMotion();
 }
-function selectStock(code) { perform(api.stock('select', { code })); }
+function selectStock(code) {
+  const watchlistRevision = tab === 'watchlist' ? tabRevision : null;
+  perform(api.stock('select', { code }), () => {
+    if (watchlistRevision !== tabRevision || data.state.selected !== code) return;
+    changeTab('home');
+    $('select-stock').focus();
+  });
+}
 function openPosition(code = data.state.selected) {
   const stock = data.state.stocks.find(item => item.code === code);
   positionCode = code;
@@ -389,7 +419,7 @@ function searchButton(stock) {
   button.dataset.symbol = stock.code;
   const title = element('div');
   title.append(element('strong', stock.name), element('small', displaySymbol(stock.code)));
-  const existing = data.state.stocks.some(item => item.code === stock.code);
+  const existing = data?.state.stocks.some(item => item.code === stock.code);
   button.append(title, element('span', existing ? '已在自选 · 盯盘' : '＋ 添加', 'link-button'));
   button.onclick = () => addStock(stock.code);
   return button;
@@ -400,7 +430,7 @@ function setSearchBusy(busy) {
   for (const control of $('search-dialog').querySelectorAll('input, #search-form button, .quick-stocks button, .search-result')) control.disabled = busy;
 }
 async function addStock(code) {
-  if (adding) return;
+  if (adding || !data) return;
   adding = true;
   const epoch = ++searchEpoch;
   const existing = data.state.stocks.some(stock => stock.code === code);
@@ -448,7 +478,24 @@ async function search() {
 }
 
 const settingsSections = [['island', '悬浮窗'], ['pet', '桌宠'], ['muyu', '木鱼'], ['widget', '卡片'], ['source', '行情来源'], ['general', '通用'], ['alerts', '提醒与记录'], ['about', '关于']];
+for (const [key, label] of settingsSections) {
+  const button = element('button', label);
+  button.dataset.settingsPanel = key;
+  button.onclick = () => {
+    if (!data || settingsPanel === key) return;
+    settingsPanel = key;
+    buildSettings();
+  };
+  $('settings-nav').append(button);
+}
 function heading(title) { $('settings-content').append(element('h3', title)); }
+function updateSliderValue(input) {
+  const key = input.dataset.setting;
+  const value = input.valueAsNumber;
+  const label = key === 'volume' ? Math.round(value * 100) + '%' : value + (key === 'islandWidth' ? ' px' : '%');
+  input.setAttribute('aria-valuetext', label);
+  input.nextElementSibling.value = label;
+}
 function settingRow(label, key, type = 'checkbox', options = [], note = '') {
   const row = element('label', '', 'setting-row');
   const title = element('span', label, 'setting-label');
@@ -463,7 +510,15 @@ function settingRow(label, key, type = 'checkbox', options = [], note = '') {
     if (type === 'checkbox') input.setAttribute('role', 'switch');
     if (type === 'range') [input.min, input.max, input.step] = options;
   }
-  row.append(title, input);
+  row.append(title);
+  if (type === 'range') {
+    const slider = element('span', '', 'setting-slider');
+    const value = element('output');
+    value.setAttribute('aria-hidden', 'true');
+    slider.append(input, value);
+    input.oninput = () => updateSliderValue(input);
+    row.append(slider);
+  } else row.append(input);
   $('settings-content').append(row);
 }
 function settingsButton(label, action) {
@@ -475,12 +530,11 @@ function buildSettings() {
   const sourceEpoch = ++sourceFormEpoch;
   mini?.close(); mini = null;
   const container = $('settings-content'); container.replaceChildren();
-  $('settings-nav').replaceChildren(...settingsSections.map(([key, label]) => {
-    const button = element('button', label, key === settingsPanel ? 'active' : '');
-    button.dataset.settingsPanel = key;
-    button.onclick = () => { settingsPanel = key; buildSettings(); };
-    return button;
-  }));
+  for (const button of $('settings-nav').querySelectorAll('button')) {
+    const active = button.dataset.settingsPanel === settingsPanel;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  }
   container.append(element('h2', settingsSections.find(([key]) => key === settingsPanel)[1]));
   const themes = [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
   const intervals = [[.5, '最快（500 毫秒）'], [1, '每 1 秒'], [2, '每 2 秒'], [5, '每 5 秒'], [10, '每 10 秒'], [30, '每 30 秒']];
@@ -503,7 +557,7 @@ function buildSettings() {
     settingRow('显示牛来', 'islandBull'); settingRow('岛内动画', 'islandMotion');
     settingRow('显示木鱼计数', 'islandCount');
     settingRow('外观', 'islandTheme', 'select', themes);
-    settingRow('宽度', 'islandWidth', 'range', [260, 420, 8]);
+    settingRow('宽度', 'islandWidth', 'range', [260, 420, 1]);
     settingRow('行情刷新', 'islandInterval', 'select', intervals);
     settingRow('展开后 10 秒自动收起', 'islandAutoCollapse');
     settingRow('使用主面板时隐藏', 'islandHideInApp');
@@ -529,7 +583,9 @@ function buildSettings() {
     settingRow('隐藏持仓金额', 'private'); settingRow('跟随常规交易时段切换场景', 'smartScene');
     container.append(element('p', '行情来自应用内同一份数据。卡片标记获取时间，关闭程序后停止刷新。', 'footnote'));
   } else if (settingsPanel === 'source') {
-    buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === 'source' });
+    const content = element('div');
+    container.append(content);
+    buildQuoteSourceSettings(content, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && tab === 'settings' });
   } else if (settingsPanel === 'general') {
     heading('版本更新');
     settingRow('系统更新提醒', 'updateNotifications', 'checkbox', [], '有新版本时提醒一次');
@@ -683,6 +739,7 @@ api.onMamaVoice(({ volume }) => {
 for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => changeTab(button.dataset.tab);
 document.querySelector('.brand').onclick = event => { event.preventDefault(); changeTab('home'); };
 for (const button of document.querySelectorAll('.add-stock')) button.onclick = openSearch;
+$('header-search').onclick = openSearch;
 $('all-stocks').onclick = $('select-stock').onclick = () => changeTab('watchlist');
 $('refresh').onclick = async () => {
   if (refreshRequested || !data) return;
@@ -789,6 +846,7 @@ document.addEventListener('keydown', event => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopAudio();
   if (data) updateMarketPanels();
+  syncOrderbookVisibility();
   syncMotion();
 });
 window.addEventListener('online', () => perform(api.refresh()));

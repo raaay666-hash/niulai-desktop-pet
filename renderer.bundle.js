@@ -152,7 +152,7 @@
       var US_ZONE = "America/New_York";
       var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
       var clockFormats = /* @__PURE__ */ new Map();
-      function marketClock(code, now = Date.now()) {
+      function marketClock2(code, now = Date.now()) {
         const market = marketForSymbol2(code);
         const zone = market === "us" ? US_ZONE : "Asia/Shanghai";
         if (!clockFormats.has(zone)) {
@@ -190,11 +190,11 @@
         if (!Number.isFinite(wanted)) return null;
         let timestamp = wanted;
         for (let attempt = 0; attempt < 2; attempt++) {
-          const actual2 = marketClock(code, timestamp);
+          const actual2 = marketClock2(code, timestamp);
           const represented = Date.UTC(Number(actual2.year), Number(actual2.month) - 1, Number(actual2.day), Number(actual2.hour), Number(actual2.minute), Number(actual2.second));
           timestamp += wanted - represented;
         }
-        const actual = marketClock(code, timestamp);
+        const actual = marketClock2(code, timestamp);
         return Number(actual.year) === year && Number(actual.month) - 1 === month && Number(actual.day) === day && Number(actual.hour) === hour && Number(actual.minute) === minute ? timestamp : null;
       }
       function parseQuoteTime(value, code, reference = Date.now()) {
@@ -211,12 +211,12 @@
         const day = Number(american[2]), rawHour = Number(american[3]), minute = Number(american[4]);
         if (month < 0 || rawHour < 1 || rawHour > 12 || minute > 59 || day < 1 || day > 31) return null;
         const hour = rawHour % 12 + (american[5].toUpperCase() === "PM" ? 12 : 0);
-        const year = Number(marketClock(code, reference).year);
+        const year = Number(marketClock2(code, reference).year);
         const candidates = [year - 1, year, year + 1].map((candidate) => {
           if (american[6]) {
             const offset = american[6].toUpperCase() === "EDT" ? 4 : 5;
             const timestamp = Date.UTC(candidate, month, day, hour + offset, minute);
-            const clock = marketClock(code, timestamp);
+            const clock = marketClock2(code, timestamp);
             return Number(clock.month) - 1 === month && Number(clock.day) === day && Number(clock.hour) === hour ? timestamp : null;
           }
           return wallTime(candidate, month, day, hour, minute, 0, code);
@@ -235,10 +235,10 @@
         if (!Number.isFinite(quote.quotedAt) || quote.quotedAt > now + 9e4) {
           return { warning: true, actionable: false, message: "\u62A5\u4EF7\u65F6\u95F4\u672A\u786E\u8BA4" };
         }
-        const clock = marketClock(quote.code, now);
+        const clock = marketClock2(quote.code, now);
         const active = ["pre", "regular", "post"].includes(clock.phase);
         if (!active) return { warning: false, actionable: false, message: "\u4F11\u5E02" };
-        if (quote.session !== clock.phase || marketClock(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
+        if (quote.session !== clock.phase || marketClock2(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
           return { warning: true, actionable: false, message: { pre: "\u76D8\u524D\u62A5\u4EF7\u5F85\u66F4\u65B0", regular: "\u5E38\u89C4\u62A5\u4EF7\u5F85\u66F4\u65B0", post: "\u76D8\u540E\u62A5\u4EF7\u5F85\u66F4\u65B0" }[clock.phase] };
         }
         if (now - quote.quotedAt > Math.max(12e4, interval * 3e3)) {
@@ -257,7 +257,7 @@
         }
         return latest;
       }
-      module.exports = { marketClock, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
+      module.exports = { marketClock: marketClock2, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
     }
   });
 
@@ -269,7 +269,7 @@
         marketForSymbol: marketForSymbol2,
         quoteProviderSymbol: quoteProviderSymbol2
       } = require_market_symbols();
-      var { marketClock, parseQuoteTime } = require_quote_time();
+      var { marketClock: marketClock2, parseQuoteTime } = require_quote_time();
       function parseSinaQuote2(text, symbol, now = Date.now()) {
         const escaped = String(symbol).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`var hq_str_${escaped}="([^"]*)"`));
@@ -318,7 +318,7 @@
         const extendedPrice = Number.parseFloat(parts[21]);
         const extendedAt = parseQuoteTime(parts[24], symbol, reference);
         if (!(extendedPrice > 0) || !Number.isFinite(extendedAt) || extendedAt > now + 9e4) return quote;
-        const phase = marketClock(symbol, extendedAt).phase;
+        const phase = marketClock2(symbol, extendedAt).phase;
         if (!["pre", "post"].includes(phase) || Number.isFinite(regular.quotedAt) && extendedAt <= regular.quotedAt) return quote;
         const extendedChange = extendedPrice - regular.price;
         return {
@@ -5998,8 +5998,10 @@
   // niulai-android/web/core.mjs
   var import_market_symbols2 = __toESM(require_market_symbols(), 1);
   var import_quote_parsers = __toESM(require_quote_parsers(), 1);
+  var import_quote_time = __toESM(require_quote_time(), 1);
   var { normalizeMarketSymbol, marketForSymbol, displaySymbol, quoteProviderSymbol, parseTencentSuggestions } = import_market_symbols2.default;
   var { parseSinaQuote, parseTencentQuote } = import_quote_parsers.default;
+  var { marketClock } = import_quote_time.default;
   function position(stock, quote) {
     if (!stock?.cost || !stock?.shares || !quote || quote.code !== stock.code) return null;
     const dayPrevClose = Object.hasOwn(quote, "dayPrevClose") ? quote.dayPrevClose : quote.prevClose;
@@ -6027,8 +6029,8 @@
   }
 
   // renderer-modules/desktop-ui.js
-  var import_quote_time = __toESM(require_quote_time());
-  var { quoteHealth } = import_quote_time.default;
+  var import_quote_time2 = __toESM(require_quote_time());
+  var { quoteHealth } = import_quote_time2.default;
   var catalog = motion_catalog_default.map((spec) => ["cover", "slump"].includes(spec.id) ? { ...spec, action: "\u6342\u773C\u54ED\u6CE3" } : spec);
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
@@ -6045,7 +6047,7 @@
     const health = quoteHealth(record, interval, now);
     if (!quote) return { ...health, session: "", label: "", summary: health.message, compact: health.message, detail: health.message, basis: "" };
     const us = quote.market === "us" || quote.code.startsWith("gb_");
-    const clock = import_quote_time.default.marketClock(quote.code, now);
+    const clock = import_quote_time2.default.marketClock(quote.code, now);
     const label = us ? { pre: "\u76D8\u524D", regular: "\u5E38\u89C4", post: "\u76D8\u540E" }[quote.session] || "\u5E38\u89C4" : "";
     const provider = quote.source === "custom" ? quote.sourceName || "\u81EA\u6709\u6E90" : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
     const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString("zh-CN", {
@@ -6370,7 +6372,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       for (const event of events) {
         const impulse = EVENT_IMPULSE[event?.type];
         if (!impulse) continue;
-        for (const [key, amount] of Object.entries(impulse)) values[key] = clamp(values[key] + amount);
+        for (const [key, amount2] of Object.entries(impulse)) values[key] = clamp(values[key] + amount2);
       }
       this.state.mood = Object.entries(values).sort((a, b) => b[1] - a[1])[0][0];
       this.state.updatedAt = this.now();
@@ -6699,13 +6701,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       return control;
     }
     select(form, "mode", "\u884C\u60C5\u6765\u6E90", config.mode, [["public", "\u516C\u5171\u884C\u60C5 \xB7 \u65B0\u6D6A / \u817E\u8BAF"], ["custom", "\u4F7F\u7528\u81EA\u5DF1\u7684 HTTP JSON \u63A5\u53E3"]]);
-    const fields = element("fieldset", "", "source-options");
-    input(fields, "name", "\u6765\u6E90\u540D\u79F0", config.name);
-    const address = input(fields, "url", "\u62A5\u4EF7\u63A5\u53E3\u5730\u5740", config.url);
+    const fields2 = element("fieldset", "", "source-options");
+    input(fields2, "name", "\u6765\u6E90\u540D\u79F0", config.name);
+    const address = input(fields2, "url", "\u62A5\u4EF7\u63A5\u53E3\u5730\u5740", config.url);
     address.placeholder = "https://example.com/quote?symbol={symbol}";
-    fields.append(element("p", "\u5730\u5740\u652F\u6301 {symbol}\u3001{ticker}\u3001{code}\u3001{market}\u3001{exchange}\u3002\u672C\u5730\u8F6C\u63A5\u670D\u52A1\u4E5F\u53EF\u4F7F\u7528 HTTP \u5730\u5740\u3002", "footnote"));
-    input(fields, "seriesUrl", "\u5206\u65F6\u4E0E K \u7EBF\u63A5\u53E3\u5730\u5740\uFF08\u9009\u586B\uFF09", config.seriesUrl).placeholder = "https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}";
-    fields.append(element("p", "\u8D70\u52BF\u63A5\u53E3\u4E0E\u62A5\u4EF7\u63A5\u53E3\u5171\u7528\u57DF\u540D\u3001\u7AEF\u53E3\u548C\u9274\u6743\u3002\u81EA\u6709\u8D70\u52BF\u5730\u5740\u7559\u7A7A\u65F6\uFF0C\u5206\u65F6\u548C K \u7EBF\u7EE7\u7EED\u663E\u793A\u516C\u5F00\u884C\u60C5\u3002", "footnote"));
+    fields2.append(element("p", "\u5730\u5740\u652F\u6301 {symbol}\u3001{ticker}\u3001{code}\u3001{market}\u3001{exchange}\u3002\u672C\u5730\u8F6C\u63A5\u670D\u52A1\u4E5F\u53EF\u4F7F\u7528 HTTP \u5730\u5740\u3002", "footnote"));
+    input(fields2, "seriesUrl", "\u5206\u65F6\u4E0E K \u7EBF\u63A5\u53E3\u5730\u5740\uFF08\u9009\u586B\uFF09", config.seriesUrl).placeholder = "https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}";
+    fields2.append(element("p", "\u8D70\u52BF\u63A5\u53E3\u4E0E\u62A5\u4EF7\u63A5\u53E3\u5171\u7528\u57DF\u540D\u3001\u7AEF\u53E3\u548C\u9274\u6743\u3002\u81EA\u6709\u8D70\u52BF\u5730\u5740\u7559\u7A7A\u65F6\uFF0C\u5206\u65F6\u548C K \u7EBF\u7EE7\u7EED\u663E\u793A\u516C\u5F00\u884C\u60C5\u3002", "footnote"));
     const marketGroup = element("div", "", "source-markets");
     marketGroup.append(element("span", "\u9002\u7528\u5E02\u573A"));
     const markets = [];
@@ -6718,14 +6720,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       marketGroup.append(row);
       markets.push(control);
     }
-    fields.append(marketGroup, element("p", "\u6240\u9009\u5E02\u573A\u4F7F\u7528\u81EA\u6709\u63A5\u53E3\uFF0C\u5176\u4F59\u5E02\u573A\u7EE7\u7EED\u4F7F\u7528\u516C\u5171\u884C\u60C5\u3002", "footnote"));
+    fields2.append(marketGroup, element("p", "\u6240\u9009\u5E02\u573A\u4F7F\u7528\u81EA\u6709\u63A5\u53E3\uFF0C\u5176\u4F59\u5E02\u573A\u7EE7\u7EED\u4F7F\u7528\u516C\u5171\u884C\u60C5\u3002", "footnote"));
     const connectionGrid = element("div", "", "source-grid");
     select(connectionGrid, "symbolFormat", "\u80A1\u7968\u4EE3\u7801\u683C\u5F0F", config.symbolFormat, [["ticker", "\u539F\u59CB\u4EE3\u7801 \xB7 MP / 00700 / 600519"], ["yahoo", "Yahoo \u683C\u5F0F \xB7 MP / 0700.HK / 600519.SS"], ["niulai", "\u725B\u6765\u4EE3\u7801 \xB7 gb_mp / rt_hk00700"]]);
     select(connectionGrid, "interval", "\u81EA\u6709\u6E90\u6700\u77ED\u5237\u65B0\u95F4\u9694", String(config.interval), [[0.5, "500 \u6BEB\u79D2"], [1, "1 \u79D2"], [2, "2 \u79D2"], [5, "5 \u79D2"], [10, "10 \u79D2"], [30, "30 \u79D2"], [60, "60 \u79D2"]]);
     select(connectionGrid, "authType", "\u9274\u6743\u65B9\u5F0F", config.authType, [["none", "\u65E0\u9700\u9274\u6743"], ["bearer", "Authorization \xB7 Bearer"], ["header", "\u81EA\u5B9A\u4E49\u8BF7\u6C42\u5934"], ["query", "URL \u67E5\u8BE2\u53C2\u6570"]]);
     input(connectionGrid, "authName", "\u8BF7\u6C42\u5934 / \u53C2\u6570\u540D\u79F0", config.authName);
-    fields.append(connectionGrid);
-    const token = input(fields, "token", "API \u5BC6\u94A5 / Token", "", "password");
+    fields2.append(connectionGrid);
+    const token = input(fields2, "token", "API \u5BC6\u94A5 / Token", "", "password");
     token.placeholder = config.hasToken ? "\u5DF2\u4FDD\u5B58\uFF0C\u7559\u7A7A\u4FDD\u7559\u73B0\u6709\u5BC6\u94A5" : "\u4EC5\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111";
     const mapping = element("details", "", "source-mapping");
     mapping.append(element("summary", "JSON \u5B57\u6BB5\u4E0E\u65F6\u95F4\u8BBE\u7F6E"));
@@ -6763,15 +6765,15 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     );
     const example = element("pre", '{\n  "symbol": "MP", "price": 37.88,\n  "previousClose": 36.73,\n  "timestamp": "2026-11-12T13:47:00Z",\n  "session": "pre"\n}', "source-example");
     mapping.append(example);
-    fields.append(mapping);
+    fields2.append(mapping);
     const fallback = element("label", "", "setting-row"), fallbackInput = document.createElement("input");
     fallbackInput.type = "checkbox";
     fallbackInput.id = "source-fallback";
     fallbackInput.checked = config.fallback;
     fallback.append(element("span", "\u81EA\u6709\u6E90\u5931\u8D25\u6216\u62A5\u4EF7\u8FC7\u671F\u65F6\uFF0C\u5141\u8BB8\u56DE\u9000\u516C\u5171\u884C\u60C5"), fallbackInput);
-    fields.append(fallback, element("p", "\u56DE\u9000\u65F6\u4F1A\u663E\u793A\u5B9E\u9645\u91C7\u7528\u7684\u6765\u6E90\u3002\u6765\u6E90\u5207\u6362\u540E\u91CD\u65B0\u5EFA\u7ACB\u62A5\u4EF7\u91C7\u6837\u3002", "footnote"));
-    input(fields, "testCode", "\u6D4B\u8BD5\u80A1\u7968", config.markets.includes("us") ? "MP" : config.markets.includes("hk") ? "00700.HK" : "600519");
-    form.append(fields);
+    fields2.append(fallback, element("p", "\u56DE\u9000\u65F6\u4F1A\u663E\u793A\u5B9E\u9645\u91C7\u7528\u7684\u6765\u6E90\u3002\u6765\u6E90\u5207\u6362\u540E\u91CD\u65B0\u5EFA\u7ACB\u62A5\u4EF7\u91C7\u6837\u3002", "footnote"));
+    input(fields2, "testCode", "\u6D4B\u8BD5\u80A1\u7968", config.markets.includes("us") ? "MP" : config.markets.includes("hk") ? "00700.HK" : "600519");
+    form.append(fields2);
     const status = element("p", config.error || "", "source-status footnote");
     status.id = "source-status";
     status.setAttribute("role", "status");
@@ -6791,15 +6793,15 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       clear.onclick = () => run(async () => {
         await api2.quoteSource("clear");
         toast2("\u5DF2\u6E05\u9664\u81EA\u6709\u6E90\u914D\u7F6E");
-        onSaved();
+        if (isCurrent()) onSaved();
       });
       actions.append(clear);
     }
     form.append(status, actions);
     container.append(form);
     function updateVisibility() {
-      fields.hidden = controls.mode.value !== "custom";
-      test.hidden = fields.hidden;
+      fields2.hidden = controls.mode.value !== "custom";
+      test.hidden = fields2.hidden;
       controls.authName.disabled = !["header", "query"].includes(controls.authType.value);
       token.disabled = controls.authType.value === "none";
     }
@@ -6815,20 +6817,26 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         testCode: import_market_symbols3.default.normalizeMarketSymbol(controls.testCode.value)
       };
     }
+    let working = false;
     async function run(task) {
+      if (working) return;
+      working = true;
       for (const button of actions.querySelectorAll("button")) button.disabled = true;
       status.textContent = "\u6B63\u5728\u5904\u7406\u2026";
       try {
         await task();
       } catch (error) {
-        status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, "");
+        if (isCurrent()) status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, "");
+        else toast2(error.message);
       } finally {
+        working = false;
         for (const button of actions.querySelectorAll("button")) button.disabled = false;
       }
     }
     test.onclick = () => run(async () => {
-      const result = await api2.quoteSource("test", payload());
-      const presentation = quotePresentation(result, Number(controls.interval.value));
+      const config2 = payload();
+      const result = await api2.quoteSource("test", config2);
+      const presentation = quotePresentation(result, Number(config2.interval));
       const percent2 = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + "%" : "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B";
       const book = result.quote.details?.book;
       const series = result.series ? result.series.bars ? " \xB7 \u65E5 K " + result.series.bars + " \u6839" : " \xB7 \u8D70\u52BF\uFF1A" + result.series.error : "";
@@ -6839,8 +6847,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       run(async () => {
         const result = await api2.quoteSource("save", payload());
         toast2(result.mode === "public" ? "\u5DF2\u4F7F\u7528\u516C\u5171\u884C\u60C5" : result.storedSecurely ? "\u5DF2\u542F\u7528\u81EA\u6709\u6E90\uFF0C\u914D\u7F6E\u5DF2\u52A0\u5BC6\u4FDD\u5B58\u5728\u672C\u673A" : "\u5DF2\u542F\u7528\u81EA\u6709\u6E90\uFF0C\u672C\u673A\u5B89\u5168\u5B58\u50A8\u4E0D\u53EF\u7528\uFF0C\u672C\u6B21\u8FD0\u884C\u6709\u6548");
-        token.value = "";
-        onSaved();
+        if (isCurrent()) {
+          token.value = "";
+          onSaved();
+        }
       });
     };
   }
@@ -7040,7 +7050,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.cache = /* @__PURE__ */ new Map();
       root.classList.add("market-chart");
       root.innerHTML = `
-      <div class="market-chart-heading"><h2>\u884C\u60C5\u8D70\u52BF</h2><div class="market-periods" role="group" aria-label="\u884C\u60C5\u5468\u671F">${Object.entries(periods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === "day"}">${label}</button>`).join("")}</div></div>
+      <div class="market-chart-heading"><h2 id="market-chart-title" tabindex="-1">\u884C\u60C5\u8D70\u52BF</h2><div class="market-periods" role="group" aria-label="\u884C\u60C5\u5468\u671F">${Object.entries(periods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === "day"}">${label}</button>`).join("")}</div></div>
       <div class="market-chart-toolbar"><span class="market-chart-basis"></span><div><select class="market-adjustment" aria-label="K \u7EBF\u590D\u6743\u65B9\u5F0F"><option value="adjusted">\u524D\u590D\u6743</option><option value="raw">\u4E0D\u590D\u6743</option></select><button type="button" data-zoom="out" aria-label="\u7F29\u5C0F K \u7EBF">\u2212</button><button type="button" data-zoom="in" aria-label="\u653E\u5927 K \u7EBF">\uFF0B</button><button type="button" class="market-latest">\u6700\u8FD1</button><button type="button" class="market-retry" aria-label="\u5237\u65B0\u8D70\u52BF">\u5237\u65B0</button></div></div>
       <div class="market-chart-stats" aria-live="off"></div>
       <div class="market-ma" aria-label="\u79FB\u52A8\u5E73\u5747\u7EBF"></div>
@@ -7116,7 +7126,6 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       }
       if (!active) return;
       if (changed || !this.loading && (resumed || Date.now() - (this.lastAttempt || 0) >= 6e4)) this.load();
-      else this.draw();
     }
     async load(force = false) {
       const ticket = ++this.epoch;
@@ -7126,12 +7135,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       if (!code || !this.active) return;
       this.lastAttempt = Date.now();
       this.result = this.cache.get(key) || null;
-      this.loading = false;
+      this.loading = force || !this.result || Date.now() - this.result.received >= 6e4;
       this.error = "";
       this.draw();
-      if (!force && this.result && Date.now() - this.result.received < 6e4) return;
-      this.loading = true;
-      this.draw();
+      if (!this.loading) return;
       try {
         const custom = source === null ? null : await this.customSeries(code, period, isMinute || basis === "raw" ? "raw" : "qfq");
         if (ticket !== this.epoch) return;
@@ -7657,7 +7664,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       this.notifyStatus.textContent = "";
       try {
         const result = await this.save(operation, value);
-        if (operation === "test") this.notifyStatus.textContent = result ? "\u5DF2\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5" : "\u7CFB\u7EDF\u672A\u786E\u8BA4\u901A\u77E5\uFF0C\u8BF7\u68C0\u67E5\u5E94\u7528\u7684\u901A\u77E5\u6743\u9650\u3002";
+        if (operation === "test" && result !== null) this.notifyStatus.textContent = result ? "\u5DF2\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5" : "\u7CFB\u7EDF\u672A\u786E\u8BA4\u901A\u77E5\uFF0C\u8BF7\u68C0\u67E5\u5E94\u7528\u7684\u901A\u77E5\u6743\u9650\u3002";
       } catch (error) {
         this.notifyStatus.textContent = String(error.message).replace(/^Error invoking remote method '[^']+': Error: /, "");
         this.root.querySelector(".market-news-preferences").open = true;
@@ -7679,7 +7686,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const send = document.getElementById("feedback-send");
     const message = document.getElementById("feedback-message");
     const success = document.getElementById("feedback-success");
-    const fields = [...form.querySelectorAll("input, textarea, select")];
+    const fields2 = [...form.querySelectorAll("input, textarea, select")];
     let busy = false;
     let clientId;
     form.addEventListener("input", () => {
@@ -7710,7 +7717,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       send.disabled = true;
       send.textContent = "\u6B63\u5728\u63D0\u4EA4\u2026";
       form.setAttribute("aria-busy", "true");
-      fields.forEach((field) => field.disabled = true);
+      fields2.forEach((field) => field.disabled = true);
       status.textContent = "";
       try {
         await submit(value);
@@ -7726,7 +7733,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         send.disabled = false;
         send.textContent = "\u63D0\u4EA4\u53CD\u9988";
         form.setAttribute("aria-busy", "false");
-        fields.forEach((field) => field.disabled = false);
+        fields2.forEach((field) => field.disabled = false);
       }
     });
     document.getElementById("feedback-done").onclick = () => dialog.close();
@@ -7742,6 +7749,218 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     };
   }
 
+  // renderer-modules/orderbook-panel.js
+  var fields = {
+    quantity: "\u6BCF\u817F\u6570\u91CF\uFF08\u80A1\uFF09",
+    lotSize: "\u6BCF\u624B\u80A1\u6570",
+    edgeBp: "\u8D77\u59CB\u51C0\u4EF7\u5DEE\uFF08bp\uFF09",
+    maxSkewMs: "\u53CC\u573A\u6240\u6700\u5927\u65F6\u5DEE\uFF08ms\uFF09",
+    imbalance: "\u76D8\u53E3\u5931\u8861\u9608\u503C\uFF08%\uFF09",
+    spreadBp: "\u6700\u5927\u4E70\u5356\u4EF7\u5DEE\uFF08bp\uFF09",
+    buyFeeBp: "\u4E70\u5165\u8D39\u7387\uFF08bp\uFF09",
+    sellFeeBp: "\u5356\u51FA\u8D39\u7387\uFF08bp\uFF09",
+    minFee: "\u6BCF\u817F\u6700\u4F4E\u8D39\u7528",
+    slipBp: "\u6BCF\u817F\u4E0D\u5229\u6ED1\u70B9\uFF08bp\uFF09",
+    latencyMs: "\u6A21\u62DF\u5EF6\u8FDF\uFF08ms\uFF09",
+    maxAgeMs: "\u76D8\u53E3\u6700\u5927\u5E74\u9F84\uFF08ms\uFF09",
+    cooldownMs: "\u4FE1\u53F7\u51B7\u5374\uFF08ms\uFF09",
+    cash: "\u6BCF\u573A\u6240\u521D\u59CB\u73B0\u91D1",
+    inventoryA: "\u573A\u6240 A \u53EF\u5356\uFF08\u80A1\uFF09",
+    inventoryB: "\u573A\u6240 B \u53EF\u5356\uFF08\u80A1\uFF09"
+  };
+  var formatNumber = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 6 });
+  var formatAmount = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
+  var formatTime = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3, hourCycle: "h23" });
+  var statusLabel = { filled: "\u5DF2\u6210\u4EA4", unpaired: "\u5355\u817F\u672A\u914D\u5BF9", cancelled: "\u5DF2\u53D6\u6D88" };
+  var sideLabel = { buy: "\u4E70\u5165", sell: "\u5356\u51FA" };
+  var number = (value) => formatNumber.format(value);
+  var amount = (value) => formatAmount.format(value);
+  function mountOrderbookPanel(view, { api: api2, toast: toast2, selected }) {
+    const get = (name) => view.querySelector("#ob-" + name);
+    const source = get("source"), strategy = get("strategy"), form = get("setup");
+    const inputs = Object.fromEntries(Object.entries(fields).map(([key, label]) => {
+      const input = element("input");
+      input.type = "number";
+      input.required = true;
+      input.name = key;
+      const field = element("label", label);
+      field.append(input);
+      get("parameters").append(field);
+      return [key, input];
+    }));
+    let viewState, timer, readingGeneration, lastHistory;
+    let generation = 0, busy = false, visible = false, needsStatus = true;
+    function showFields() {
+      const usingSnapshot = source.value === "snapshot";
+      const usingStream = source.value === "stream";
+      strategy.options[0].disabled = usingSnapshot;
+      if (usingSnapshot) strategy.value = "sweep";
+      const paired = strategy.value === "spread";
+      for (const [name, show2] of [["snapshot-fields", usingSnapshot], ["stream-fields", usingStream]]) {
+        get(name).hidden = !show2;
+        get(name).disabled = !show2;
+      }
+      if (usingSnapshot && !get("watch").value) get("watch").value = selected() || "";
+      get("second-venue").hidden = !paired;
+      get("venue-b").disabled = !paired;
+      for (const [keys, enabled] of [[["edgeBp", "inventoryB", "maxSkewMs"], paired], [["imbalance", "spreadBp"], !paired]]) {
+        for (const key of keys) {
+          inputs[key].parentElement.hidden = !enabled;
+          inputs[key].disabled = !enabled;
+        }
+      }
+    }
+    function enableControls() {
+      const running = viewState?.running;
+      for (const name of ["install", "uninstall", "start", "stop", "export"]) get(name).disabled = busy;
+      get("fields").disabled = busy || running;
+      get("uninstall").disabled = busy || running;
+      get("start").hidden = Boolean(running);
+      get("stop").hidden = !running;
+    }
+    function show(next) {
+      const previous = viewState;
+      viewState = next;
+      needsStatus = false;
+      const installed = Boolean(next.version);
+      if (installed && next.version !== previous?.version) {
+        for (const [key, input] of Object.entries(inputs)) {
+          const [min, max, step] = next.limits[key];
+          input.min = min;
+          input.max = max;
+          input.step = step === 1 ? "1" : "any";
+          input.value = next.defaults[key];
+        }
+        showFields();
+      }
+      get("install").hidden = installed;
+      get("uninstall").hidden = !installed;
+      get("empty").hidden = installed;
+      form.hidden = !installed;
+      get("results").hidden = !next.trial;
+      const status = [installed ? "\u5DF2\u5B89\u88C5 " + next.version : "\u672A\u5B89\u88C5", next.status].filter(Boolean).join(" \xB7 ");
+      if (get("status").textContent !== status) get("status").textContent = status;
+      enableControls();
+      if (!next.trial) return;
+      const { trial } = next;
+      const { currency: currency2, stats, history, signal } = trial;
+      get("note").textContent = trial.symbol + " \xB7 " + trial.note;
+      get("note").classList.toggle("orderbook-warning", trial.paused);
+      get("signal").hidden = !signal;
+      if (signal) {
+        const legs = signal.legs.map((leg) => leg.venue + " " + sideLabel[leg.side]);
+        const edge = signal.edgeBp === null ? "" : " \xB7 \u9884\u4F30\u51C0\u5DEE " + amount(signal.edgeBp) + " bp";
+        get("signal").textContent = "\u6700\u8FD1\u4FE1\u53F7 " + formatTime.format(signal.at) + " \xB7 " + legs.join(" / ") + edge;
+      }
+      const metrics = [
+        ["\u6709\u6548\u76D8\u53E3", number(stats.received)],
+        ["\u88AB\u62D2\u76D8\u53E3", number(stats.rejected)],
+        ["\u4FE1\u53F7", number(stats.signals)],
+        ["\u6A21\u62DF\u6210\u4EA4 / \u53D6\u6D88\u817F\u6570", number(stats.fills) + " / " + number(stats.cancelled)]
+      ];
+      if (trial.strategy === "spread") metrics.push(["\u5DF2\u914D\u5BF9\u51C0\u5DEE\u989D", amount(stats.pairedNet) + " " + currency2], ["\u672A\u914D\u5BF9\u4FE1\u53F7", number(stats.unpaired)]);
+      get("metrics").replaceChildren(...metrics.map(([key, value]) => {
+        const item = element("div");
+        item.append(element("dt", key), element("dd", value));
+        return item;
+      }));
+      get("books").replaceChildren(...trial.accounts.map((account) => {
+        const book = trial.books.find((item) => item.venue === account.venue);
+        const article = element("article");
+        article.append(element("h3", account.venue));
+        if (book) {
+          article.append(
+            element("p", "\u4E70\u4E00 " + number(book.bid.price) + " \xD7 " + number(book.bid.size) + "\u3000\u5356\u4E00 " + number(book.ask.price) + " \xD7 " + number(book.ask.size)),
+            element("p", "\u76D8\u53E3\u5E74\u9F84 " + number(book.ageMs) + " ms \xB7 \u63A5\u6536\u5EF6\u8FDF " + number(book.delayMs) + " ms", book.ageMs > trial.settings.maxAgeMs ? "orderbook-warning" : "muted"),
+            element("p", "\u5931\u8861 " + amount(book.imbalance) + "% \xB7 \u4E70\u5356\u4EF7\u5DEE " + amount(book.spreadBp) + " bp", "muted")
+          );
+        } else article.append(element("p", "\u7B49\u5F85\u6709\u6548\u76D8\u53E3", "muted"));
+        article.append(element("p", "\u73B0\u91D1 " + amount(account.cash) + " " + currency2 + " \xB7 \u6301\u6709 " + number(account.quantity) + " \u80A1 \xB7 \u53EF\u5356 " + number(account.sellable) + " \u80A1", "muted"));
+        return article;
+      }));
+      const historyKey = [next.sequence, history[0]?.id, history.length].join("/");
+      if (historyKey === lastHistory) return;
+      lastHistory = historyKey;
+      get("no-trades").hidden = history.length > 0;
+      get("rows").replaceChildren(...history.slice(0, 12).map((record) => {
+        const row = element("tr");
+        const legs = element("td", "", "orderbook-legs");
+        for (const leg of record.legs) {
+          const action2 = leg.venue + " " + sideLabel[leg.side] + " " + number(leg.quantity) + " \u80A1";
+          const result = leg.status === "filled" ? "\u6210\u4EA4 " + number(leg.price) + " \xB7 \u8D39\u7528 " + amount(leg.fee) : leg.reason;
+          legs.append(element("span", action2 + " \xB7 " + result));
+        }
+        row.append(
+          element("td", formatTime.format(record.at)),
+          element("td", statusLabel[record.status], record.status === "unpaired" ? "orderbook-warning" : ""),
+          legs,
+          element("td", record.net === null ? "\u2014" : amount(record.net) + " " + currency2)
+        );
+        return row;
+      }));
+    }
+    async function refresh() {
+      if (!visible || busy || readingGeneration === generation) return;
+      const epoch = generation;
+      readingGeneration = epoch;
+      try {
+        const next = await api2.orderbook("status");
+        if (epoch === generation && !busy) show(next);
+      } catch (error) {
+        if (epoch === generation) get("status").textContent = "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u63D2\u4EF6\u72B6\u6001";
+      } finally {
+        if (readingGeneration === epoch) readingGeneration = void 0;
+      }
+    }
+    async function action(operation, input) {
+      if (busy) return;
+      busy = true;
+      generation++;
+      enableControls();
+      try {
+        show(await api2.orderbook(operation, input));
+      } catch (error) {
+        toast2(error.message);
+      } finally {
+        busy = false;
+        enableControls();
+      }
+    }
+    source.onchange = showFields;
+    strategy.onchange = showFields;
+    get("install").onclick = () => action("install");
+    get("uninstall").onclick = () => action("uninstall");
+    get("export").onclick = () => action("export");
+    get("stop").onclick = () => action("stop");
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      void action("start", {
+        source: source.value,
+        strategy: strategy.value,
+        symbol: source.value === "snapshot" ? get("watch").value : get("symbol").value,
+        currency: get("currency").value.trim().toUpperCase(),
+        venueA: get("venue-a").value,
+        venueB: get("venue-b").value,
+        url: get("url").value,
+        settings: Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, input.disabled ? viewState.defaults[key] : input.valueAsNumber]))
+      });
+    };
+    showFields();
+    return (active) => {
+      if (active === visible) return;
+      visible = active;
+      clearInterval(timer);
+      generation++;
+      if (active) {
+        needsStatus = true;
+        void refresh();
+        timer = setInterval(() => {
+          if (needsStatus || viewState?.running) void refresh();
+        }, 350);
+      }
+    };
+  }
+
   // renderer.js
   var data;
   var tab = "home";
@@ -7750,6 +7969,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var toastTimer;
   var searchTimer;
   var searchEpoch = 0;
+  var tabRevision = 0;
   var liveMood = "loading";
   var previewUntil = 0;
   var motionPreview = "loading";
@@ -7801,6 +8021,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   $("show-market-news").onclick = revealStockNews;
   $("show-market-details").onclick = () => $("market-details-title").focus();
+  $("show-market-chart").onclick = () => $("market-chart-title").focus();
   api.onNewsArrived(() => {
     if (data) revealStockNews();
   });
@@ -7816,6 +8037,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     home: ["\u76EF\u76D8", ""],
     watchlist: ["\u81EA\u9009", "\u9009\u62E9\u4E00\u53EA\u80A1\u7968\uFF0C\u5F00\u59CB\u76EF\u76D8\u3002"],
     portfolio: ["\u6301\u4ED3", "\u67E5\u770B\u548C\u7BA1\u7406\u672C\u673A\u4FDD\u5B58\u7684\u6301\u4ED3\u3002"],
+    orderbook: ["\u91CF\u5316\u63D2\u4EF6", "\u7528\u65B0\u76D8\u53E3\u9A8C\u8BC1\u64AE\u5408\u5EF6\u8FDF\u3001\u6210\u672C\u4E0E\u53CC\u817F\u6210\u4EA4\u3002"],
     muyu: ["\u6728\u9C7C", "\u6572\u4E00\u6572\uFF0C\u6B47\u4E00\u4F1A\u513F\u3002"],
     settings: ["\u8BBE\u7F6E", "\u8C03\u6574\u684C\u9762\u663E\u793A\u4E0E\u4F7F\u7528\u4E60\u60EF\u3002"]
   };
@@ -7825,10 +8047,21 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var currentEntry = () => data.quotes[data.state.selected];
   var money = (value) => settings().private ? "\u2022\u2022\u2022\u2022" : signed(value);
   function toast(message) {
-    $("toast").textContent = String(message).replace(/^Error invoking remote method '[^']+': Error: /, "");
-    $("toast").hidden = false;
+    const status = $("toast");
+    const surface = document.querySelector("dialog[open]") || document.body;
+    if (status.parentElement !== surface) surface.append(status);
+    status.textContent = String(message).replace(/^Error invoking remote method '[^']+': Error: /, "");
+    status.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => $("toast").hidden = true, 3500);
+    toastTimer = setTimeout(() => status.hidden = true, 3500);
+  }
+  var changeOrderbookVisibility = mountOrderbookPanel($("view-orderbook"), {
+    api,
+    toast,
+    selected: () => data?.state?.selected
+  });
+  function syncOrderbookVisibility() {
+    changeOrderbookVisibility(tab === "orderbook" && !document.hidden);
   }
   async function perform(task, done) {
     try {
@@ -7948,8 +8181,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
             name: element("strong"),
             code: element("small"),
             value: element("strong"),
-            change: element("small"),
-            warning: element("small"),
+            change: element("small", "", "stock-change"),
+            warning: element("small", "", "stock-warning"),
             percent: element("span")
           };
           name.append(item.name, item.code);
@@ -7982,7 +8215,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         item.warning.hidden = !quote || !presentation.warning;
         item.percent.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
         item.percent.className = "stock-pct " + tone(quote?.changePct);
-        item.remove?.setAttribute("aria-label", "\u79FB\u51FA " + stock.name);
+        if (item.remove) {
+          item.remove.setAttribute("aria-label", "\u79FB\u51FA " + stock.name);
+          item.remove.disabled = data.state.stocks.length === 1;
+          item.remove.title = item.remove.disabled ? "\u8BF7\u4FDD\u7559\u81F3\u5C11\u4E00\u53EA\u81EA\u9009" : "";
+        }
         if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
       }
     }
@@ -8040,8 +8277,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const value = settings()[control.dataset.setting];
       if (control.type === "checkbox") control.checked = value;
       else control.value = value;
-      const output = control.closest(".setting-row")?.querySelector("output");
-      if (output) output.value = control.value + (control.dataset.setting === "volume" ? "" : " px");
+      if (control.type === "range") updateSliderValue(control);
     }
     for (const control of document.querySelectorAll("[data-quiet]")) {
       if (control.type === "checkbox") control.checked = settings().quietOffice[control.dataset.quiet];
@@ -8054,11 +8290,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const preview = $("island-preview");
     if (!preview) return;
     const code = settings().islandSymbol || data.state.selected;
+    const stock = data.state.stocks.find((item) => item.code === code);
     const quote = data.quotes[code]?.quote;
     const woodMode = settings().islandContent === "muyu";
-    $("preview-name").textContent = woodMode ? "\u725B\u6765\u6728\u9C7C" : quote?.name || selectedStock().name;
-    $("preview-price").textContent = woodMode ? "\u672C\u8F6E " + data.counts.session : settings().islandPrice ? marketPrice(quote?.price, code) : "\u725B\u6765";
-    $("preview-pct").textContent = woodMode ? "+1" : settings().islandPercent && Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "";
+    $("preview-name").textContent = woodMode ? "\u725B\u6765\u6728\u9C7C" : quote?.name || stock?.name || displaySymbol(code);
+    $("preview-price").textContent = woodMode ? settings().islandCount ? "\u672C\u8F6E " + data.counts.session.toLocaleString("zh-CN") : "\u8F7B\u89E6\u6572\u51FB" : marketPrice(quote?.price, code);
+    $("preview-price").hidden = !woodMode && !settings().islandPrice;
+    $("preview-pct").textContent = woodMode ? "+1" : Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
+    $("preview-pct").hidden = !woodMode && !settings().islandPercent;
     $("preview-pct").className = tone(quote?.changePct);
     $("preview-canvas").hidden = !settings().islandBull;
     mini?.state(woodMode ? "muyu" : liveMood);
@@ -8080,6 +8319,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("refresh-label").textContent = refreshRequested ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u884C\u60C5";
   }
   function updateMarketPanels(force = false) {
+    if (!data) return;
     const stock = selectedStock();
     const active = tab === "home" && !document.hidden && !data.suspended;
     const { markets, name, seriesConfigured, seriesRevision } = data.quoteSource;
@@ -8125,12 +8365,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       featureCode = "";
       stopAudio();
     }
-    if (changedStocks && tab === "settings") buildSettings();
+    if (changedStocks && tab === "settings" && (settingsPanel === "island" || !$("settings-content").hasChildNodes())) buildSettings();
     render();
   }
   function changeTab(next) {
+    if (next === tab) return;
     tabScroll.set(tab, window.scrollY);
     tab = next;
+    tabRevision++;
     for (const button of document.querySelectorAll("[data-tab]")) {
       button.classList.toggle("active", button.dataset.tab === tab);
       button.setAttribute("aria-current", button.dataset.tab === tab ? "page" : "false");
@@ -8139,13 +8381,19 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("page-title").textContent = titles[tab][0];
     $("page-subtitle").textContent = titles[tab][1];
     $("page-subtitle").hidden = !titles[tab][1];
-    if (tab === "settings") buildSettings();
+    syncOrderbookVisibility();
+    if (tab === "settings" && data) buildSettings();
     window.scrollTo(0, tabScroll.get(next) || 0);
     updateMarketPanels();
     syncMotion();
   }
   function selectStock(code) {
-    perform(api.stock("select", { code }));
+    const watchlistRevision = tab === "watchlist" ? tabRevision : null;
+    perform(api.stock("select", { code }), () => {
+      if (watchlistRevision !== tabRevision || data.state.selected !== code) return;
+      changeTab("home");
+      $("select-stock").focus();
+    });
   }
   function openPosition(code = data.state.selected) {
     const stock = data.state.stocks.find((item) => item.code === code);
@@ -8184,7 +8432,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     button.dataset.symbol = stock.code;
     const title = element("div");
     title.append(element("strong", stock.name), element("small", displaySymbol(stock.code)));
-    const existing = data.state.stocks.some((item) => item.code === stock.code);
+    const existing = data?.state.stocks.some((item) => item.code === stock.code);
     button.append(title, element("span", existing ? "\u5DF2\u5728\u81EA\u9009 \xB7 \u76EF\u76D8" : "\uFF0B \u6DFB\u52A0", "link-button"));
     button.onclick = () => addStock(stock.code);
     return button;
@@ -8195,7 +8443,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     for (const control of $("search-dialog").querySelectorAll("input, #search-form button, .quick-stocks button, .search-result")) control.disabled = busy;
   }
   async function addStock(code) {
-    if (adding) return;
+    if (adding || !data) return;
     adding = true;
     const epoch = ++searchEpoch;
     const existing = data.state.stocks.some((stock) => stock.code === code);
@@ -8246,8 +8494,25 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }
   }
   var settingsSections = [["island", "\u60AC\u6D6E\u7A97"], ["pet", "\u684C\u5BA0"], ["muyu", "\u6728\u9C7C"], ["widget", "\u5361\u7247"], ["source", "\u884C\u60C5\u6765\u6E90"], ["general", "\u901A\u7528"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
+  for (const [key, label] of settingsSections) {
+    const button = element("button", label);
+    button.dataset.settingsPanel = key;
+    button.onclick = () => {
+      if (!data || settingsPanel === key) return;
+      settingsPanel = key;
+      buildSettings();
+    };
+    $("settings-nav").append(button);
+  }
   function heading(title) {
     $("settings-content").append(element("h3", title));
+  }
+  function updateSliderValue(input) {
+    const key = input.dataset.setting;
+    const value = input.valueAsNumber;
+    const label = key === "volume" ? Math.round(value * 100) + "%" : value + (key === "islandWidth" ? " px" : "%");
+    input.setAttribute("aria-valuetext", label);
+    input.nextElementSibling.value = label;
   }
   function settingRow(label, key, type = "checkbox", options = [], note = "") {
     const row = element("label", "", "setting-row");
@@ -8267,7 +8532,15 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       if (type === "checkbox") input.setAttribute("role", "switch");
       if (type === "range") [input.min, input.max, input.step] = options;
     }
-    row.append(title, input);
+    row.append(title);
+    if (type === "range") {
+      const slider = element("span", "", "setting-slider");
+      const value = element("output");
+      value.setAttribute("aria-hidden", "true");
+      slider.append(input, value);
+      input.oninput = () => updateSliderValue(input);
+      row.append(slider);
+    } else row.append(input);
     $("settings-content").append(row);
   }
   function settingsButton(label, action) {
@@ -8281,15 +8554,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     mini = null;
     const container = $("settings-content");
     container.replaceChildren();
-    $("settings-nav").replaceChildren(...settingsSections.map(([key, label]) => {
-      const button = element("button", label, key === settingsPanel ? "active" : "");
-      button.dataset.settingsPanel = key;
-      button.onclick = () => {
-        settingsPanel = key;
-        buildSettings();
-      };
-      return button;
-    }));
+    for (const button of $("settings-nav").querySelectorAll("button")) {
+      const active = button.dataset.settingsPanel === settingsPanel;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-current", active ? "page" : "false");
+    }
     container.append(element("h2", settingsSections.find(([key]) => key === settingsPanel)[1]));
     const themes = [["system", "\u8DDF\u968F\u7CFB\u7EDF"], ["light", "\u6D45\u8272"], ["dark", "\u6DF1\u8272"]];
     const intervals = [[0.5, "\u6700\u5FEB\uFF08500 \u6BEB\u79D2\uFF09"], [1, "\u6BCF 1 \u79D2"], [2, "\u6BCF 2 \u79D2"], [5, "\u6BCF 5 \u79D2"], [10, "\u6BCF 10 \u79D2"], [30, "\u6BCF 30 \u79D2"]];
@@ -8322,7 +8591,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       settingRow("\u5C9B\u5185\u52A8\u753B", "islandMotion");
       settingRow("\u663E\u793A\u6728\u9C7C\u8BA1\u6570", "islandCount");
       settingRow("\u5916\u89C2", "islandTheme", "select", themes);
-      settingRow("\u5BBD\u5EA6", "islandWidth", "range", [260, 420, 8]);
+      settingRow("\u5BBD\u5EA6", "islandWidth", "range", [260, 420, 1]);
       settingRow("\u884C\u60C5\u5237\u65B0", "islandInterval", "select", intervals);
       settingRow("\u5C55\u5F00\u540E 10 \u79D2\u81EA\u52A8\u6536\u8D77", "islandAutoCollapse");
       settingRow("\u4F7F\u7528\u4E3B\u9762\u677F\u65F6\u9690\u85CF", "islandHideInApp");
@@ -8355,7 +8624,9 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       settingRow("\u8DDF\u968F\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5\u5207\u6362\u573A\u666F", "smartScene");
       container.append(element("p", "\u884C\u60C5\u6765\u81EA\u5E94\u7528\u5185\u540C\u4E00\u4EFD\u6570\u636E\u3002\u5361\u7247\u6807\u8BB0\u83B7\u53D6\u65F6\u95F4\uFF0C\u5173\u95ED\u7A0B\u5E8F\u540E\u505C\u6B62\u5237\u65B0\u3002", "footnote"));
     } else if (settingsPanel === "source") {
-      buildQuoteSourceSettings(container, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && settingsPanel === "source" });
+      const content = element("div");
+      container.append(content);
+      buildQuoteSourceSettings(content, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && tab === "settings" });
     } else if (settingsPanel === "general") {
       heading("\u7248\u672C\u66F4\u65B0");
       settingRow("\u7CFB\u7EDF\u66F4\u65B0\u63D0\u9192", "updateNotifications", "checkbox", [], "\u6709\u65B0\u7248\u672C\u65F6\u63D0\u9192\u4E00\u6B21");
@@ -8587,6 +8858,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     changeTab("home");
   };
   for (const button of document.querySelectorAll(".add-stock")) button.onclick = openSearch;
+  $("header-search").onclick = openSearch;
   $("all-stocks").onclick = $("select-stock").onclick = () => changeTab("watchlist");
   $("refresh").onclick = async () => {
     if (refreshRequested || !data) return;
@@ -8740,6 +9012,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAudio();
     if (data) updateMarketPanels();
+    syncOrderbookVisibility();
     syncMotion();
   });
   window.addEventListener("online", () => perform(api.refresh()));

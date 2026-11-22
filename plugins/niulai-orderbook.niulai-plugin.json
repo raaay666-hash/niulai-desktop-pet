@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "id": "niulai.orderbook-trial",
+  "version": "0.1.0",
+  "settings": {
+    "quantity": 100,
+    "lotSize": 1,
+    "imbalance": 55,
+    "spreadBp": 15,
+    "edgeBp": 5,
+    "buyFeeBp": 1.5,
+    "sellFeeBp": 2.5,
+    "minFee": 1,
+    "slipBp": 1,
+    "latencyMs": 120,
+    "maxAgeMs": 1200,
+    "maxSkewMs": 250,
+    "cooldownMs": 650,
+    "cash": 100000,
+    "inventoryA": 500,
+    "inventoryB": 500
+  }
+}

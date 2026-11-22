@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, powerMonitor, shell, Tray, Menu, nativeTheme, Notification, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, powerMonitor, shell, Tray, Menu, nativeTheme, Notification, safeStorage, dialog } = require('electron');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
@@ -14,7 +14,8 @@ const { OFFICIAL } = require('./main-modules/update-policy.cjs');
 const { submitFeedback } = require('./main-modules/feedback.cjs');
 const { parseMarketDetails, parseTencentMinutes, parseYahooMinutes } = require('./main-modules/market-insights.cjs');
 const { parseNews, newsRequest, stockNewsTerms, newsMatchesStock, globalNewsRequests, mergeNews, translateTitle, newsNotificationBatch } = require('./main-modules/market-news.cjs');
-let updater, updateTimer;
+const { OrderbookPlugin } = require('./main-modules/orderbook-plugin.cjs');
+let updater, updateTimer, orderbook;
 
 const argument = prefix => (process.argv.find(value => value.startsWith(prefix)) || '').slice(prefix.length);
 const qaProfile = argument('--qa-user-data-dir=');
@@ -212,7 +213,7 @@ async function requestText(url, referer, encoding = 'gbk') {
 function quoteCodes() {
   return [...new Set([...state.stocks.map(stock => stock.code), state.settings.islandSymbol].filter(Boolean))];
 }
-function quotePollDelay() {
+function quotePollInterval() {
   const settings = state.settings;
   const requested = settings.islandEnabled ? Math.min(settings.interval, settings.islandInterval) : settings.interval;
   const custom = settings.quoteSourceMode === 'custom' ? customQuoteConfig : null;
@@ -220,7 +221,10 @@ function quotePollDelay() {
   const now = Date.now();
   const marketOpen = publicCodes.some(code => ['pre', 'regular', 'post'].includes(marketClock(code, now).phase));
   const publicFloor = marketOpen ? 1 : publicCodes.length ? 10 : 0;
-  const interval = Math.max(requested, custom?.interval || 0, publicFloor) * 1000;
+  return Math.max(requested, custom?.interval || 0, publicFloor) * 1000;
+}
+function quotePollDelay() {
+  const interval = quotePollInterval();
   if (!failedPolls) return interval;
   return Math.min(60000, Math.max(interval, 2000) * 2 ** (failedPolls - 1));
 }
@@ -289,12 +293,16 @@ async function poll() {
   refreshPending = false;
   const epoch = quoteEpoch;
   const codes = quoteCodes();
+  const snapshotRun = orderbook.snapshotCode ? orderbook.runId : null;
   try {
     const { resolved, errors, limited } = await resolveQuotes(codes);
     if (epoch !== quoteEpoch || suspended || quitting) return;
     failedPolls = limited || !resolved.size ? Math.min(7, failedPolls + 1) : 0;
     let namesChanged = false;
     const received = Date.now();
+    if (orderbook.snapshotCode && orderbook.runId === snapshotRun) {
+      orderbook.ingestSnapshot(resolved.get(orderbook.snapshotCode), received);
+    }
     for (const code of codes) {
       let quote = resolved.get(code);
       if (quote) {
@@ -343,8 +351,15 @@ handle('desktop:updates', async (_event, operation) => {
   if (operation === 'history') { await shell.openExternal(OFFICIAL + '/download/updates/'); return updater.status(); }
   return operation === 'check' ? updater.check(true) : updater.status();
 });
+handle('desktop:orderbook', (event, operation, input) => {
+  if (event.sender !== dashboard?.webContents || quitting) throw new Error('请在牛来主面板操作插件');
+  if (operation === 'start' && suspended) throw new Error('系统休眠，模拟已暂停');
+  return orderbook.command(operation, input, dashboard);
+});
 handle('desktop:settings', async (_event, patch) => {
+  const sourceMode = state.settings.quoteSourceMode;
   state.settings = normalizeSettings({ ...state.settings, ...patch });
+  if (orderbook.snapshotCode && sourceMode !== state.settings.quoteSourceMode) orderbook.stop('行情来源已变化，本轮已停止');
   syncOverlays(); broadcast();
   if (['interval', 'islandInterval', 'islandEnabled', 'islandSymbol'].some(key => Object.hasOwn(patch, key))) {
     quoteEpoch++;
@@ -383,6 +398,7 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
     if (state.selected === code) state.selected = state.stocks[0].code;
     if (state.settings.islandSymbol === code) state.settings.islandSymbol = '';
     quotes.delete(code); histories.delete(code);
+    if (orderbook.snapshotCode === code) orderbook.stop('监控标的已移出自选');
     state.news.followed = state.news.followed.filter(followed => followed !== code);
     newsCursors.delete(code);
     scheduleNews();
@@ -676,6 +692,7 @@ handle('desktop:quote-source', async (event, operation, payload = {}) => {
     state.settings.quoteSourceMode = payload.mode === 'custom' ? 'custom' : 'public';
     state.settings.quoteSourceFallback = payload.fallback === true;
   }
+  if (orderbook.snapshotCode) orderbook.stop('行情来源已变化，本轮已停止');
   quoteEpoch++;
   seriesRevision++;
   failedPolls = 0;
@@ -813,6 +830,22 @@ app.whenReady().then(async () => {
       log('WARN', '自有行情凭据解密失败');
     }
   }
+  orderbook = new OrderbookPlugin({
+    file: path.join(app.getPath('userData'), 'orderbook-plugin.json'),
+    dialog,
+    checkSnapshot: (code, { latencyMs, maxAgeMs }) => {
+      if (!code || !state?.stocks.some(stock => stock.code === code)) throw new Error('请先将标的加入牛来自选');
+      if (state.settings.quoteSourceMode !== 'custom' || !customQuoteConfig?.markets.includes(marketForSymbol(code))) {
+        throw new Error('请先在设置中启用该市场的自有行情源');
+      }
+      const interval = quotePollInterval();
+      const window = latencyMs + maxAgeMs;
+      if (interval >= window) {
+        throw new Error('行情轮询间隔 ' + interval + ' ms 达到或超过 ' + window + ' ms 的模拟等待窗口。请缩短行情轮询间隔或改用深度推送。');
+      }
+    }
+  });
+  await orderbook.load();
   const updateFile = path.join(app.getPath('userData'), 'updates.json');
   updater = createUpdateChecker({ current: app.getVersion(),
     read: () => { try { return JSON.parse(fs.readFileSync(updateFile, 'utf8')); } catch { return {}; } },
@@ -839,6 +872,7 @@ app.whenReady().then(async () => {
   tray.on('double-click', showDashboard);
   const suspend = () => {
     suspended = true; quoteEpoch++; newsGeneration++; clearTimeout(pollTimer); clearTimeout(newsTimer);
+    orderbook.stop('系统休眠或锁屏，本轮已停止');
     finishManualRefresh(new Error('系统休眠，刷新已暂停'));
     for (const code of crying.entries.keys()) crying.invalidate(code);
     syncOverlays(); broadcast();
@@ -865,6 +899,7 @@ app.on('before-quit', event => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
+  orderbook?.stop('牛来已退出');
   finishManualRefresh(new Error('程序正在退出'));
   clearTimeout(pollTimer);
   clearTimeout(newsTimer);

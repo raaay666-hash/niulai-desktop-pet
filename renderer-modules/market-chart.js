@@ -23,7 +23,7 @@ export class MarketChart {
     this.cache = new Map();
     root.classList.add('market-chart');
     root.innerHTML = `
-      <div class="market-chart-heading"><h2>行情走势</h2><div class="market-periods" role="group" aria-label="行情周期">${Object.entries(periods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === 'day'}">${label}</button>`).join('')}</div></div>
+      <div class="market-chart-heading"><h2 id="market-chart-title" tabindex="-1">行情走势</h2><div class="market-periods" role="group" aria-label="行情周期">${Object.entries(periods).map(([key, label]) => `<button type="button" data-period="${key}" aria-pressed="${key === 'day'}">${label}</button>`).join('')}</div></div>
       <div class="market-chart-toolbar"><span class="market-chart-basis"></span><div><select class="market-adjustment" aria-label="K 线复权方式"><option value="adjusted">前复权</option><option value="raw">不复权</option></select><button type="button" data-zoom="out" aria-label="缩小 K 线">−</button><button type="button" data-zoom="in" aria-label="放大 K 线">＋</button><button type="button" class="market-latest">最近</button><button type="button" class="market-retry" aria-label="刷新走势">刷新</button></div></div>
       <div class="market-chart-stats" aria-live="off"></div>
       <div class="market-ma" aria-label="移动平均线"></div>
@@ -87,7 +87,6 @@ export class MarketChart {
     }
     if (!active) return;
     if (changed || !this.loading && (resumed || Date.now() - (this.lastAttempt || 0) >= 60000)) this.load();
-    else this.draw();
   }
 
   async load(force = false) {
@@ -98,12 +97,10 @@ export class MarketChart {
     if (!code || !this.active) return;
     this.lastAttempt = Date.now();
     this.result = this.cache.get(key) || null;
-    this.loading = false;
+    this.loading = force || !this.result || Date.now() - this.result.received >= 60000;
     this.error = '';
     this.draw();
-    if (!force && this.result && Date.now() - this.result.received < 60000) return;
-    this.loading = true;
-    this.draw();
+    if (!this.loading) return;
     try {
       const custom = source === null ? null : await this.customSeries(code, period, isMinute || basis === 'raw' ? 'raw' : 'qfq');
       if (ticket !== this.epoch) return;

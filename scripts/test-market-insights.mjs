@@ -65,8 +65,9 @@ try {
   const chart = page.locator('#market-chart');
   const detail = page.locator('#market-details');
   const news = page.locator('#market-news');
-  assert.equal(await chart.evaluate(node => node.previousElementSibling.id), 'market-details');
-  assert.equal(await news.evaluate(node => node.previousElementSibling.id), 'market-chart');
+  const sectionOrder = await page.locator('#market-chart, #market-details, #market-news')
+    .evaluateAll(sections => sections.map(section => section.id));
+  assert.deepEqual(sectionOrder, ['market-chart', 'market-details', 'market-news']);
   const readyChart = text => page.waitForFunction(value =>
     document.querySelector('#market-chart').getAttribute('aria-busy') === 'false' && document.querySelector('.market-chart-source').textContent.includes(value), text);
 
@@ -245,7 +246,6 @@ try {
   await page.locator('#show-market-news').click();
   assert.equal(await page.evaluate(() => document.activeElement.id), 'market-news-title');
   assert.equal(await page.locator('[data-news-scope=stock]').getAttribute('aria-pressed'), 'true');
-  assert.equal(await news.evaluate(node => node.previousElementSibling.id), 'market-chart');
 
   await app.evaluate(() => { Date.now = () => globalThis.__realNow() + 600000; });
   await page.locator('[data-news-scope=international]').click();

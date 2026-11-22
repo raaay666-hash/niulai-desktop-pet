@@ -305,7 +305,7 @@ export class MarketNews {
     this.notifyStatus.textContent = '';
     try {
       const result = await this.save(operation, value);
-      if (operation === 'test') this.notifyStatus.textContent = result ? '已发送测试通知' : '系统未确认通知，请检查应用的通知权限。';
+      if (operation === 'test' && result !== null) this.notifyStatus.textContent = result ? '已发送测试通知' : '系统未确认通知，请检查应用的通知权限。';
     } catch (error) {
       this.notifyStatus.textContent = String(error.message).replace(/^Error invoking remote method '[^']+': Error: /, '');
       this.root.querySelector('.market-news-preferences').open = true;

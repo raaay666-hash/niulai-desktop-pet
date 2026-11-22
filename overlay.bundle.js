@@ -152,7 +152,7 @@
       var US_ZONE = "America/New_York";
       var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
       var clockFormats = /* @__PURE__ */ new Map();
-      function marketClock(code2, now = Date.now()) {
+      function marketClock2(code2, now = Date.now()) {
         const market = marketForSymbol2(code2);
         const zone = market === "us" ? US_ZONE : "Asia/Shanghai";
         if (!clockFormats.has(zone)) {
@@ -190,11 +190,11 @@
         if (!Number.isFinite(wanted)) return null;
         let timestamp = wanted;
         for (let attempt = 0; attempt < 2; attempt++) {
-          const actual2 = marketClock(code2, timestamp);
+          const actual2 = marketClock2(code2, timestamp);
           const represented = Date.UTC(Number(actual2.year), Number(actual2.month) - 1, Number(actual2.day), Number(actual2.hour), Number(actual2.minute), Number(actual2.second));
           timestamp += wanted - represented;
         }
-        const actual = marketClock(code2, timestamp);
+        const actual = marketClock2(code2, timestamp);
         return Number(actual.year) === year && Number(actual.month) - 1 === month && Number(actual.day) === day && Number(actual.hour) === hour && Number(actual.minute) === minute ? timestamp : null;
       }
       function parseQuoteTime(value, code2, reference = Date.now()) {
@@ -211,12 +211,12 @@
         const day = Number(american[2]), rawHour = Number(american[3]), minute = Number(american[4]);
         if (month < 0 || rawHour < 1 || rawHour > 12 || minute > 59 || day < 1 || day > 31) return null;
         const hour = rawHour % 12 + (american[5].toUpperCase() === "PM" ? 12 : 0);
-        const year = Number(marketClock(code2, reference).year);
+        const year = Number(marketClock2(code2, reference).year);
         const candidates = [year - 1, year, year + 1].map((candidate) => {
           if (american[6]) {
             const offset = american[6].toUpperCase() === "EDT" ? 4 : 5;
             const timestamp = Date.UTC(candidate, month, day, hour + offset, minute);
-            const clock = marketClock(code2, timestamp);
+            const clock = marketClock2(code2, timestamp);
             return Number(clock.month) - 1 === month && Number(clock.day) === day && Number(clock.hour) === hour ? timestamp : null;
           }
           return wallTime(candidate, month, day, hour, minute, 0, code2);
@@ -235,10 +235,10 @@
         if (!Number.isFinite(quote.quotedAt) || quote.quotedAt > now + 9e4) {
           return { warning: true, actionable: false, message: "\u62A5\u4EF7\u65F6\u95F4\u672A\u786E\u8BA4" };
         }
-        const clock = marketClock(quote.code, now);
+        const clock = marketClock2(quote.code, now);
         const active = ["pre", "regular", "post"].includes(clock.phase);
         if (!active) return { warning: false, actionable: false, message: "\u4F11\u5E02" };
-        if (quote.session !== clock.phase || marketClock(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
+        if (quote.session !== clock.phase || marketClock2(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
           return { warning: true, actionable: false, message: { pre: "\u76D8\u524D\u62A5\u4EF7\u5F85\u66F4\u65B0", regular: "\u5E38\u89C4\u62A5\u4EF7\u5F85\u66F4\u65B0", post: "\u76D8\u540E\u62A5\u4EF7\u5F85\u66F4\u65B0" }[clock.phase] };
         }
         if (now - quote.quotedAt > Math.max(12e4, interval * 3e3)) {
@@ -257,7 +257,7 @@
         }
         return latest;
       }
-      module.exports = { marketClock, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
+      module.exports = { marketClock: marketClock2, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
     }
   });
 
@@ -269,7 +269,7 @@
         marketForSymbol: marketForSymbol2,
         quoteProviderSymbol: quoteProviderSymbol2
       } = require_market_symbols();
-      var { marketClock, parseQuoteTime } = require_quote_time();
+      var { marketClock: marketClock2, parseQuoteTime } = require_quote_time();
       function parseSinaQuote2(text, symbol, now = Date.now()) {
         const escaped = String(symbol).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`var hq_str_${escaped}="([^"]*)"`));
@@ -318,7 +318,7 @@
         const extendedPrice = Number.parseFloat(parts[21]);
         const extendedAt = parseQuoteTime(parts[24], symbol, reference);
         if (!(extendedPrice > 0) || !Number.isFinite(extendedAt) || extendedAt > now + 9e4) return quote;
-        const phase = marketClock(symbol, extendedAt).phase;
+        const phase = marketClock2(symbol, extendedAt).phase;
         if (!["pre", "post"].includes(phase) || Number.isFinite(regular.quotedAt) && extendedAt <= regular.quotedAt) return quote;
         const extendedChange = extendedPrice - regular.price;
         return {
@@ -5833,8 +5833,10 @@
   // niulai-android/web/core.mjs
   var import_market_symbols2 = __toESM(require_market_symbols(), 1);
   var import_quote_parsers = __toESM(require_quote_parsers(), 1);
+  var import_quote_time = __toESM(require_quote_time(), 1);
   var { normalizeMarketSymbol, marketForSymbol, displaySymbol, quoteProviderSymbol, parseTencentSuggestions } = import_market_symbols2.default;
   var { parseSinaQuote, parseTencentQuote } = import_quote_parsers.default;
+  var { marketClock } = import_quote_time.default;
   function position(stock, quote) {
     if (!stock?.cost || !stock?.shares || !quote || quote.code !== stock.code) return null;
     const dayPrevClose = Object.hasOwn(quote, "dayPrevClose") ? quote.dayPrevClose : quote.prevClose;
@@ -5862,8 +5864,8 @@
   }
 
   // renderer-modules/desktop-ui.js
-  var import_quote_time = __toESM(require_quote_time());
-  var { quoteHealth } = import_quote_time.default;
+  var import_quote_time2 = __toESM(require_quote_time());
+  var { quoteHealth } = import_quote_time2.default;
   var catalog = motion_catalog_default.map((spec) => ["cover", "slump"].includes(spec.id) ? { ...spec, action: "\u6342\u773C\u54ED\u6CE3" } : spec);
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
@@ -5880,7 +5882,7 @@
     const health = quoteHealth(record, interval, now);
     if (!quote) return { ...health, session: "", label: "", summary: health.message, compact: health.message, detail: health.message, basis: "" };
     const us = quote.market === "us" || quote.code.startsWith("gb_");
-    const clock = import_quote_time.default.marketClock(quote.code, now);
+    const clock = import_quote_time2.default.marketClock(quote.code, now);
     const label = us ? { pre: "\u76D8\u524D", regular: "\u5E38\u89C4", post: "\u76D8\u540E" }[quote.session] || "\u5E38\u89C4" : "";
     const provider = quote.source === "custom" ? quote.sourceName || "\u81EA\u6709\u6E90" : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
     const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString("zh-CN", {

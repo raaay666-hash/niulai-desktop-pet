@@ -2,6 +2,7 @@ const { marketForSymbol, displaySymbol } = require('./market-symbols');
 const { marketClock, parseQuoteTime } = require('./quote-time');
 const { normalizeDetails, parseCustomSeries } = require('./market-insights.cjs');
 
+const MAX_DATE_MS = 8.64e15;
 const DEFAULT_FIELDS = Object.freeze({
   price: 'price', prevClose: 'previousClose', change: 'change', changePct: 'changePercent',
   timestamp: 'timestamp', session: 'session', name: 'name', symbol: 'symbol',
@@ -94,11 +95,13 @@ function readPath(data, path) {
 }
 
 function sourceTimestamp(value, config, code, now) {
-  if (typeof value === 'number' || /^\d{10,13}$/.test(String(value))) {
+  if (typeof value === 'number' || typeof value === 'string' && /^\d{10,13}$/.test(value)) {
     const number = Number(value);
-    return Number.isFinite(number) && number > 0 ? number < 1e12 ? number * 1000 : number : null;
+    const timestamp = Math.trunc(number < 1e12 ? number * 1000 : number);
+    return timestamp > 0 && timestamp <= MAX_DATE_MS ? timestamp : null;
   }
-  const text = String(value || '').trim();
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
   if (/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) {
     const timestamp = Date.parse(text);
     return Number.isFinite(timestamp) ? timestamp : null;
@@ -131,10 +134,16 @@ function parseCustomQuote(data, code, config, now = Date.now()) {
   const returnedSymbol = field(item, 'symbol');
   if (returnedSymbol && ![sourceSymbol(code, config.symbolFormat), sourceSymbol(code), code].includes(String(returnedSymbol))) throw new Error('接口返回的股票代码与请求不符');
   const quotedAt = sourceTimestamp(field(item, 'timestamp'), config, code, now);
-  const rawSession = String(field(item, 'session') || '').toLowerCase().replace(/[\s_-]/g, '');
+  const sessionValue = field(item, 'session');
+  const rawSession = typeof sessionValue === 'string' ? sessionValue.toLowerCase().replace(/[\s_-]/g, '') : '';
   const sessions = { pre: 'pre', premarket: 'pre', '盘前': 'pre', post: 'post', postmarket: 'post', afterhours: 'post', '盘后': 'post', regular: 'regular', market: 'regular', '盘中': 'regular' };
-  const inferred = Number.isFinite(quotedAt) ? marketClock(code, quotedAt).phase : 'regular';
-  const session = marketForSymbol(code) === 'us' ? sessions[rawSession] || (config.defaultSession === 'auto' && ['pre', 'post'].includes(inferred) ? inferred : 'regular') : 'regular';
+  const market = marketForSymbol(code);
+  let session = 'regular';
+  if (market === 'us' && Object.hasOwn(sessions, rawSession)) session = sessions[rawSession];
+  else if (market === 'us' && config.defaultSession === 'auto' && Number.isFinite(quotedAt)) {
+    const inferred = marketClock(code, quotedAt).phase;
+    if (inferred === 'pre' || inferred === 'post') session = inferred;
+  }
   const regularPrice = number('regularPrice');
   let prevClose = number('prevClose');
   let change = number('change'), changePct = number('changePct');
@@ -146,14 +155,16 @@ function parseCustomQuote(data, code, config, now = Date.now()) {
     code, name: String(field(item, 'name') || displaySymbol(code)).slice(0, 60), price, prevClose,
     change, changePct, quotedAt, time: Number.isFinite(quotedAt) ? new Date(quotedAt).toISOString() : '',
     session, dayPrevClose: number('dayPrevClose') ?? (session === 'post' ? null : prevClose),
-    market: marketForSymbol(code), source: 'custom', sourceName: config.name, volume: '', amount: ''
+    market, source: 'custom', sourceName: config.name, volume: '', amount: ''
   };
   const book = field(item, 'book');
+  const bookAt = book ? sourceTimestamp(book.timestamp, config, code, now) : null;
   const details = normalizeDetails({
     open: number('open'), high: number('high'), low: number('low'), previousClose: quote.dayPrevClose,
     volume: number('volume'), volumeUnit: field(item, 'volumeUnit'), amount: number('amount'), quotedAt,
-    book: book && { ...book, quotedAt: sourceTimestamp(book.timestamp, config, code, now) }
+    book: book && { ...book, quotedAt: bookAt }
   });
+  if (details.book && Number.isFinite(bookAt)) details.book.snapshotAt = bookAt;
   quote.details = { ...details, source: config.name, depthLabel: '自有源盘口' };
   if (regularPrice > 0) quote.regular = { price: regularPrice };
   return quote;

@@ -87,7 +87,11 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
   actions.append(test, save);
   if (config.url) {
     const clear = element('button', '清除自有源配置', 'link-button'); clear.type = 'button'; clear.id = 'source-clear';
-    clear.onclick = () => run(async () => { await api.quoteSource('clear'); toast('已清除自有源配置'); onSaved(); });
+    clear.onclick = () => run(async () => {
+      await api.quoteSource('clear');
+      toast('已清除自有源配置');
+      if (isCurrent()) onSaved();
+    });
     actions.append(clear);
   }
   form.append(status, actions); container.append(form);
@@ -105,16 +109,25 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
       fallback: fallbackInput.checked, testCode: symbols.normalizeMarketSymbol(controls.testCode.value)
     };
   }
+  let working = false;
   async function run(task) {
+    if (working) return;
+    working = true;
     for (const button of actions.querySelectorAll('button')) button.disabled = true;
     status.textContent = '正在处理…';
     try { await task(); }
-    catch (error) { status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, ''); }
-    finally { for (const button of actions.querySelectorAll('button')) button.disabled = false; }
+    catch (error) {
+      if (isCurrent()) status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+      else toast(error.message);
+    } finally {
+      working = false;
+      for (const button of actions.querySelectorAll('button')) button.disabled = false;
+    }
   }
   test.onclick = () => run(async () => {
-    const result = await api.quoteSource('test', payload());
-    const presentation = quotePresentation(result, Number(controls.interval.value));
+    const config = payload();
+    const result = await api.quoteSource('test', config);
+    const presentation = quotePresentation(result, Number(config.interval));
     const percent = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + '%' : '涨跌幅未提供';
     const book = result.quote.details?.book;
     const series = result.series ? result.series.bars ? ' · 日 K ' + result.series.bars + ' 根' : ' · 走势：' + result.series.error : '';
@@ -126,7 +139,7 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
     run(async () => {
       const result = await api.quoteSource('save', payload());
       toast(result.mode === 'public' ? '已使用公共行情' : result.storedSecurely ? '已启用自有源，配置已加密保存在本机' : '已启用自有源，本机安全存储不可用，本次运行有效');
-      token.value = ''; onSaved();
+      if (isCurrent()) { token.value = ''; onSaved(); }
     });
   };
 }
