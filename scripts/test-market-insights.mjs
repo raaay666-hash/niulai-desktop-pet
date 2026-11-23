@@ -234,6 +234,14 @@ try {
   assert.ok(auth.every(value => value === 'Bearer ' + token));
   pass('custom quote, book, both adjustment modes and minute series share validated credentials');
 
+  const bidSize = detail.locator('table.market-book-bid tbody tr').first().locator('td').last();
+  await bidSize.evaluate(cell => { window.__existingDepth = cell; });
+  book.bids[1].size = 188;
+  await page.evaluate(() => window.desktopPet.refresh(true));
+  await detail.locator('table.market-book-bid td[title="188股"]').waitFor();
+  assert.equal(await bidSize.evaluate(cell => window.__existingDepth === cell), true);
+  pass('incremental custom depth updates the existing price-level cells');
+
   brokenSeries = true;
   await chart.locator('.market-retry').click();
   await readyChart('保留上次数据');

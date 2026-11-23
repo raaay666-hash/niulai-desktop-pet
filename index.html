@@ -11,6 +11,8 @@
   <link rel="stylesheet" href="renderer-modules/market-insights.css">
   <link rel="stylesheet" href="renderer-modules/feedback-form.css">
   <link rel="stylesheet" href="renderer-modules/orderbook-panel.css">
+  <link rel="stylesheet" href="renderer-modules/desktop-plugins.css">
+  <link rel="stylesheet" href="renderer-modules/desktop-settings.css">
 </head>
 <body>
   <aside class="sidebar">
@@ -19,21 +21,21 @@
       <button data-tab="home" class="active" aria-current="page" aria-label="盯盘" title="盯盘"><span data-icon="home"></span><span class="sidebar-label">盯盘</span></button>
       <button data-tab="watchlist" aria-label="自选" title="自选"><span data-icon="chart"></span><span class="sidebar-label">自选</span></button>
       <button data-tab="portfolio" aria-label="持仓" title="持仓"><span data-icon="wallet"></span><span class="sidebar-label">持仓</span></button>
-      <button data-tab="orderbook" aria-label="量化插件" title="量化插件"><span data-icon="card"></span><span class="sidebar-label">量化插件</span></button>
+      <button data-tab="orderbook" aria-label="插件" title="插件"><span data-icon="card"></span><span class="sidebar-label">插件</span></button>
       <button data-tab="muyu" aria-label="木鱼" title="木鱼"><span data-icon="wood"></span><span class="sidebar-label">木鱼</span></button>
     </nav>
     <div class="sidebar-bottom">
       <button data-tab="settings" aria-label="设置" title="设置"><span data-icon="settings"></span><span class="sidebar-label">设置</span></button>
-      <button id="feedback-open" aria-label="问题与建议" title="问题与建议" aria-haspopup="dialog" aria-controls="feedback-dialog"><span data-icon="feedback"></span><span class="sidebar-label">问题与建议</span></button>
-      <button id="hide-dashboard" aria-label="收起到托盘" title="收起到托盘"><span data-icon="desktop"></span><span class="sidebar-label">收起到托盘</span></button>
-      <span class="version"><span class="sidebar-label">电脑版 </span><span id="app-version"></span></span>
+      <button id="feedback-open" aria-label="反馈问题与建议" title="问题与建议" aria-haspopup="dialog" aria-controls="feedback-dialog"><span data-icon="feedback"></span><span class="sidebar-label">反馈</span></button>
+      <button id="hide-dashboard" aria-label="收起到托盘" title="收起到托盘"><span data-icon="desktop"></span><span class="sidebar-label">收起</span></button>
+      <span class="version"><span id="app-version"></span></span>
     </div>
   </aside>
   <div class="workspace">
     <header class="page-header">
-      <div><h1 id="page-title">盯盘</h1><p id="page-subtitle" hidden></p></div>
+      <h1 id="page-title">盯盘</h1>
       <div class="header-actions">
-        <button id="header-search" class="button secondary" aria-label="搜索股票并添加自选" title="搜索股票并添加自选" aria-haspopup="dialog" aria-controls="search-dialog"><span data-icon="search"></span><span class="header-search-label">搜索股票</span></button>
+        <button id="header-search" class="button secondary" aria-label="搜索股票并添加自选" title="搜索股票并添加自选" aria-keyshortcuts="Control+K Meta+K" aria-haspopup="dialog" aria-controls="search-dialog"><span data-icon="search"></span><span class="header-search-label">搜索股票</span></button>
         <button id="privacy-toggle" class="icon-button secondary" aria-label="切换持仓隐私" title="切换持仓隐私"><span data-icon="eye"></span></button>
         <button id="refresh" class="button primary" aria-busy="false"><span data-icon="refresh"></span><span id="refresh-label">刷新行情</span></button>
       </div>
@@ -43,22 +45,30 @@
       <section id="view-home" class="view">
         <div class="dashboard-grid">
           <div class="primary-column">
-            <article class="hero card">
-              <div class="hero-quote">
-                <button id="select-stock" class="stock-title" title="切换盯盘标的"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001 · CNY</span></button>
-                <span id="session" class="session">等待行情</span>
-                <div id="quote-number" class="quote-number"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div>
-              </div>
-              <div class="pet-scene"><span id="pet-state" class="pet-state">等待行情</span><button id="pet" aria-label="摸摸牛来"><canvas id="bull" width="384" height="384"></canvas></button><span id="pet-message">点击牛来互动</span></div>
-              <div class="market-quick-links">
-                <button id="show-market-chart" class="link-button">走势</button>
-                <button id="show-market-details" class="link-button">盘口</button>
-                <button id="show-market-news" class="link-button">个股新闻</button>
-                <button id="open-quote" class="link-button" title="在浏览器打开行情页">外部行情 <span aria-hidden="true">↗</span></button>
-              </div>
-              <div class="hero-footer"><span id="connection" class="connection" role="status">正在连接行情…</span><button id="motions-open" class="link-button">动作预览</button></div>
-            </article>
-            <section id="market-chart" aria-label="分时与历史 K 线"></section>
+            <div class="quote-workspace card">
+              <article class="hero">
+                <div class="hero-quote">
+                  <div class="quote-instrument">
+                    <button id="select-stock" class="stock-title" title="切换盯盘标的"><strong id="quote-name">上证指数</strong><span id="quote-code">sh000001 · CNY</span></button>
+                    <span id="session" class="session">等待行情</span>
+                  </div>
+                  <div id="quote-number" class="quote-number"><strong id="price">—</strong><div><span id="change">—</span><span id="percent">—</span></div></div>
+                  <div class="quote-source"><span id="connection" class="connection" role="status">正在连接行情…</span><span id="pet-message" hidden></span></div>
+                </div>
+                <div class="pet-scene">
+                  <span id="pet-state" class="sr-only">等待行情</span>
+                  <button id="pet" aria-label="摸摸牛来" title="摸摸牛来"><canvas id="bull" width="384" height="384"></canvas></button>
+                  <button id="motions-open" class="link-button">动作预览</button>
+                </div>
+                <nav class="market-quick-links" aria-label="个股行情">
+                  <button id="show-market-chart" class="link-button">走势</button>
+                  <button id="show-market-details" class="link-button">盘口</button>
+                  <button id="show-market-news" class="link-button">新闻</button>
+                  <button id="open-quote" class="link-button" title="在浏览器打开行情页">外部行情 <span aria-hidden="true">↗</span></button>
+                </nav>
+              </article>
+              <section id="market-chart" aria-label="分时与历史 K 线"></section>
+            </div>
             <section id="market-details" class="card market-details" aria-labelledby="market-details-title">
               <div class="section-heading"><h2 id="market-details-title" tabindex="-1">盘口与成交</h2></div>
               <dl class="market-metrics"></dl>
@@ -100,9 +110,10 @@
             <section class="card floating-controls"><div class="section-heading"><h2>桌面显示</h2><button id="reset-overlays" class="link-button">窗口归位</button></div><div class="overlay-toggles"><label><span data-icon="pet"></span><span>桌宠</span><input type="checkbox" data-setting="petEnabled" role="switch"></label><label><span data-icon="island"></span><span>悬浮窗</span><input type="checkbox" data-setting="islandEnabled" role="switch"></label><label><span data-icon="card"></span><span>卡片</span><input type="checkbox" data-setting="widgetEnabled" role="switch"></label></div></section>
           </div>
           <aside class="watch-column card" aria-labelledby="home-watch-title">
-            <div class="section-heading"><h2 id="home-watch-title">我的自选 <span id="stock-count" class="muted">0</span></h2><button class="icon-button secondary add-stock" title="添加自选" aria-label="添加自选">＋</button></div>
+            <div class="section-heading"><h2 id="home-watch-title">自选 <span id="stock-count" class="muted">0</span></h2><button class="icon-button add-stock" title="添加自选" aria-label="添加自选">＋</button></div>
+            <div class="watch-headers" aria-hidden="true"><span>名称</span><span>最新价</span><span>涨跌幅</span></div>
             <div id="home-stocks" class="stock-list"></div>
-            <button id="all-stocks" class="link-button full">管理自选 <span aria-hidden="true">→</span></button>
+            <button id="all-stocks" class="link-button full">管理自选</button>
           </aside>
         </div>
       </section>
@@ -116,6 +127,12 @@
       <section id="view-portfolio" class="view" hidden><div class="section-heading"><p class="muted">金额按标的原币展示</p><button id="portfolio-edit" class="button primary">设置当前持仓</button></div><div id="portfolio-list" class="portfolio-list"></div><p class="footnote">今日盈亏按当前持股数估算，不反映日内买卖。成本与股数仅保存在本机。</p></section>
       <section id="view-muyu" class="view" hidden><div class="wood-layout"><article class="card wood-card"><span class="muted">本轮敲击</span><strong id="wood-count">0</strong><button id="wood-tap" class="wood-tap" aria-label="敲木鱼"><canvas id="wood-canvas" width="440" height="440"></canvas><span id="wood-feedback" aria-hidden="true"></span></button><div class="wood-totals"><div><span>今日</span><strong id="wood-today">0</strong></div><div><span>累计</span><strong id="wood-total">0</strong></div></div></article><aside class="card wood-options"><h2>牛来木鱼</h2><p class="muted">点击牛来，或按空格敲击。</p><label class="setting-row"><span>敲击音效</span><input type="checkbox" data-setting="muyuSound" role="switch"></label><label class="setting-row"><span>牛气＋1 动效</span><input type="checkbox" data-setting="muyuEffects" role="switch"></label><button id="wood-floating" class="button primary full">开启悬浮木鱼</button><button id="wood-round" class="button secondary full">新一轮</button><p class="footnote">主面板、桌宠、悬浮窗和卡片共用计数。</p></aside></div></section>
       <section id="view-orderbook" class="view" hidden>
+        <nav class="plugin-nav" aria-label="插件切换">
+          <button type="button" data-plugin="orderbook" aria-pressed="true" aria-controls="orderbook-pane">盘口模拟</button>
+          <button type="button" data-plugin="heatmap" aria-pressed="false" aria-controls="desktop-plugins">自选热图</button>
+          <button type="button" data-plugin="replay" aria-pressed="false" aria-controls="desktop-plugins">报价回放</button>
+        </nav>
+        <div id="orderbook-pane" class="orderbook-pane">
         <section class="card orderbook-card">
           <div class="orderbook-heading">
             <div><h2>盘口抢单与双场所套利</h2><p id="ob-status" class="muted" role="status">正在读取插件状态</p></div>
@@ -124,7 +141,7 @@
               <button id="ob-uninstall" class="link-button" type="button" hidden>卸载插件</button>
             </div>
           </div>
-          <p id="ob-empty" class="muted" hidden>选择 niulai-orderbook.niulai-plugin.json 后即可运行样例回放或接入自有深度行情。</p>
+          <p id="ob-empty" class="muted" hidden>导入 niulai-orderbook.niulai-plugin.json 后，可回放样例或接入自有盘口。</p>
           <form id="ob-setup" hidden>
             <fieldset id="ob-fields" class="orderbook-fields">
               <div class="orderbook-form-grid">
@@ -176,8 +193,15 @@
             <p id="ob-no-trades" class="muted">等待模拟委托完成。</p>
           </div>
         </section>
+        </div>
+        <div id="desktop-plugins" hidden></div>
       </section>
-      <section id="view-settings" class="view" hidden><div class="settings-layout"><nav id="settings-nav" aria-label="设置分类"></nav><div class="card settings-content" id="settings-content"></div></div></section>
+      <section id="view-settings" class="view" hidden>
+        <div class="settings-layout">
+          <aside class="settings-sidebar"><nav id="settings-nav" aria-label="设置分类"></nav></aside>
+          <div class="settings-content" id="settings-content"></div>
+        </div>
+      </section>
     </main>
     <footer class="app-footer"><span id="footer-status">正在连接</span><span>Ctrl + K 搜索　·　Ctrl + 1–4 切换页面</span></footer>
   </div>

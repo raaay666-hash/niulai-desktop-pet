@@ -68,7 +68,7 @@ export class MarketChart {
       window.addEventListener('resize', () => this.draw());
     }
     this.theme = new MutationObserver(() => this.draw());
-    this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
   }
 
   update(code, active = true, source = null) {

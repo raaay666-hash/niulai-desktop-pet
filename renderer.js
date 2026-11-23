@@ -1,4 +1,4 @@
-import { $, api, fmt, marketPrice, signed, tone, time, element, makeMotion, catalog, paintIcons, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
+import { $, api, fmt, marketPrice, signed, tone, time, setText, setAttributeValue, streamStatusText, element, makeMotion, catalog, paintIcons, drawSparkline, desktopMood, quotePresentation, quoteHealth } from './renderer-modules/desktop-ui.js';
 import { position, currency, displaySymbol, marketSession, normalizeMarketSymbol } from './niulai-android/web/core.mjs';
 import { MarketMood } from './niulai-android/web/market-mood.mjs';
 import { TapVoice } from './niulai-android/web/tap-voice.mjs';
@@ -14,6 +14,8 @@ import { MarketDetails, MarketNews } from './renderer-modules/market-insights.js
 import symbols from './main-modules/market-symbols.js';
 import { createFeedbackForm } from './renderer-modules/feedback-form.js';
 import { mountOrderbookPanel } from './renderer-modules/orderbook-panel.js';
+import { mountDesktopPlugins } from './renderer-modules/desktop-plugins.js';
+import { applyAppearance } from './renderer-modules/system-appearance.js';
 
 let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
 let tabRevision = 0;
@@ -25,6 +27,7 @@ let sourceFormEpoch = 0;
 let searchComposing = false, refreshRequested = false;
 const stockRows = { 'home-stocks': new Map(), 'watch-stocks': new Map() };
 const portfolioCards = new Map();
+const positionDisplays = new WeakMap();
 const tabScroll = new Map();
 let updateStatus = { available: false, checking: false };
 const openFeedback = createFeedbackForm({
@@ -68,14 +71,7 @@ wood.state('muyu');
 const voice = new TapVoice('assets/audio/niulai-tap.wav');
 const mamaVoice = new MamaVoice();
 const sounds = { rise: new Audio('assets/audio/niulai.mp3'), fall: new Audio('assets/audio/mama.mp3') };
-const titles = {
-  home: ['盯盘', ''],
-  watchlist: ['自选', '选择一只股票，开始盯盘。'],
-  portfolio: ['持仓', '查看和管理本机保存的持仓。'],
-  orderbook: ['量化插件', '用新盘口验证撮合延迟、成本与双腿成交。'],
-  muyu: ['木鱼', '敲一敲，歇一会儿。'],
-  settings: ['设置', '调整桌面显示与使用习惯。']
-};
+const titles = { home: '盯盘', watchlist: '自选', portfolio: '持仓', orderbook: '插件', muyu: '木鱼', settings: '设置' };
 const selectedStock = () => data.state.stocks.find(stock => stock.code === data.state.selected);
 const settings = () => data.state.settings;
 const quiet = () => isQuietOfficeActive(settings().quietOffice);
@@ -90,11 +86,30 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => status.hidden = true, 3500);
 }
-const changeOrderbookVisibility = mountOrderbookPanel($('view-orderbook'), {
+const changeOrderbookVisibility = mountOrderbookPanel($('orderbook-pane'), {
   api, toast, selected: () => data?.state?.selected
 });
-function syncOrderbookVisibility() {
-  changeOrderbookVisibility(tab === 'orderbook' && !document.hidden);
+let activePlugin = 'orderbook';
+const pluginButtons = document.querySelectorAll('[data-plugin]');
+const desktopPlugins = mountDesktopPlugins($('desktop-plugins'), {
+  select: code => selectStock(code, true)
+});
+for (const button of pluginButtons) {
+  button.onclick = () => {
+    if (activePlugin === button.dataset.plugin) return;
+    activePlugin = button.dataset.plugin;
+    tabRevision++;
+    syncPluginVisibility();
+    render();
+  };
+}
+function syncPluginVisibility() {
+  const shown = tab === 'orderbook' && !document.hidden;
+  const orderbook = activePlugin === 'orderbook';
+  $('orderbook-pane').hidden = !orderbook;
+  for (const button of pluginButtons) button.setAttribute('aria-pressed', String(button.dataset.plugin === activePlugin));
+  changeOrderbookVisibility(shown && orderbook);
+  desktopPlugins.setActive(shown && !orderbook ? activePlugin : null);
 }
 async function perform(task, done) {
   try {
@@ -146,7 +161,7 @@ function updateMood() {
   liveMood = settings().autoActions ? moods.update(entry?.quote ? { ...entry.quote, received: entry.received } : null, entry?.error || (entry?.quote && health.warning ? health.message : null), Date.now(), settings().interval, data.state.selected) : 'idle';
   liveMood = desktopMood(liveMood, data, data.state.selected);
   const spec = catalog.find(item => item.id === liveMood);
-  $('pet-state').textContent = spec.label;
+  setText($('pet-state'), spec.label);
   if (Date.now() > previewUntil) bull.state(liveMood);
   if (settings().muted || quiet() || data.suspended) stopAudio();
   if (!settings().mamaSound) mamaVoice.stop();
@@ -154,82 +169,119 @@ function updateMood() {
   syncMotion();
 }
 function renderPosition(container, stock, entry) {
-  container.replaceChildren();
-  if (!stock.cost || !stock.shares) {
-    container.append(element('p', '尚未设置持仓', 'position-empty'));
-    return;
-  }
-  const result = position(stock, entry?.quote);
-  if (!result) {
-    container.append(element('p', '持仓已保存，等待行情', 'position-empty'));
-    return;
-  }
-  const grid = element('div', '', 'pnl-grid');
-  for (const [label, value] of [['今日盈亏', result.today], ['累计盈亏', result.total]]) {
-    const cell = element('div');
-    cell.append(element('small', label + ' · ' + currency(stock.code)), element('strong', money(value), settings().private ? '' : tone(value)));
-    grid.append(cell);
-  }
-  container.append(grid);
-}
-function renderStocks() {
-  for (const [id, full] of [['home-stocks', false], ['watch-stocks', true]]) {
-    const container = $(id);
-    const rows = stockRows[id];
-    for (const [code, item] of rows) {
-      if (!data.state.stocks.some(stock => stock.code === code)) { item.row.remove(); rows.delete(code); }
+  const result = position(stock, entry?.quote), privateMode = settings().private;
+  const empty = result ? '' : stock.cost && stock.shares ? '持仓已保存，等待行情' : '尚未设置持仓';
+  let display = positionDisplays.get(container);
+  if (display?.empty !== empty) {
+    display = { empty, cells: [] };
+    if (empty) container.replaceChildren(element('p', empty, 'position-empty'));
+    else {
+      const grid = element('div', '', 'pnl-grid');
+      display.cells = ['今日盈亏', '累计盈亏'].map(label => {
+        const cell = element('div'), title = element('small'), amount = element('strong');
+        cell.append(title, amount);
+        grid.append(cell);
+        return { label, title, amount };
+      });
+      container.replaceChildren(grid);
     }
-    for (const [index, stock] of data.state.stocks.entries()) {
-      const entry = data.quotes[stock.code], quote = entry?.quote;
-      const presentation = quotePresentation(entry, settings().interval);
-      let item = rows.get(stock.code);
-      if (!item) {
-        const row = element('div', '', 'stock-row');
-        const button = element('button', '', 'stock-main');
-        const name = element('div'), price = element('div');
-        item = {
-          row, button, price,
-          name: element('strong'), code: element('small'), value: element('strong'),
-          change: element('small', '', 'stock-change'), warning: element('small', '', 'stock-warning'), percent: element('span')
-        };
+    positionDisplays.set(container, display);
+  }
+  if (result) {
+    const values = [result.today, result.total], unit = currency(stock.code);
+    for (const [index, { label, title, amount }] of display.cells.entries()) {
+      setText(title, label + ' · ' + unit);
+      setText(amount, money(values[index]));
+      setAttributeValue(amount, 'class', privateMode ? '' : tone(values[index]));
+    }
+  }
+  return result;
+}
+function renderStocks(id) {
+  const full = id === 'watch-stocks';
+  const container = $(id);
+  const rows = stockRows[id];
+  const { stocks, selected } = data.state;
+  const codes = new Set(stocks.map(stock => stock.code));
+  const now = Date.now(), second = Math.floor(now / 1000), interval = settings().interval;
+  for (const [code, item] of rows) {
+    if (!codes.has(code)) { item.row.remove(); rows.delete(code); }
+  }
+  for (const [index, stock] of stocks.entries()) {
+    const entry = data.quotes[stock.code], quote = entry?.quote;
+    let item = rows.get(stock.code);
+    if (!item) {
+      const row = element('div', '', 'stock-row');
+      const button = element('button', '', 'stock-main');
+      const name = element('div'), price = element('div');
+      item = {
+        row, button, price,
+        name: element('strong'), code: element('small'), value: element('strong'),
+        change: element('small', '', 'stock-change'), warning: element('small', '', 'stock-warning'), percent: element('span')
+      };
+      if (full) {
         name.append(item.name, item.code);
         price.append(item.value, item.change, item.warning);
-        button.append(name, price);
-        if (full) button.append(item.percent);
-        button.onclick = () => selectStock(stock.code);
-        row.append(button);
-        if (full) {
-          const actions = element('div', '', 'row-actions');
-          const edit = element('button', '持仓');
-          edit.onclick = () => openPosition(stock.code);
-          item.remove = element('button', '移出');
-          item.remove.onclick = () => confirmRemove(data.state.stocks.find(current => current.code === stock.code));
-          actions.append(edit, item.remove); row.append(actions);
-        }
-        rows.set(stock.code, item);
+      } else {
+        const metadata = element('div', '', 'stock-meta');
+        metadata.append(item.code, item.warning);
+        name.append(item.name, metadata);
+        price.append(item.value, item.change);
       }
-      item.row.classList.toggle('selected', stock.code === data.state.selected);
-      item.row.title = stock.name + '\n' + presentation.detail;
-      item.button.setAttribute('aria-label', '盯盘 ' + stock.name);
-      item.button.setAttribute('aria-current', stock.code === data.state.selected ? 'true' : 'false');
-      item.name.textContent = stock.name;
-      item.code.textContent = displaySymbol(stock.code) + (presentation.label ? ' · ' + presentation.label : '');
-      item.price.className = 'stock-price ' + tone(quote?.changePct);
-      item.value.textContent = marketPrice(quote?.price, stock.code);
-      item.change.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : quote ? '涨跌幅未提供' : '等待行情';
-      item.warning.textContent = presentation.message;
-      item.warning.hidden = !quote || !presentation.warning;
-      item.percent.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
-      item.percent.className = 'stock-pct ' + tone(quote?.changePct);
-      if (item.remove) {
-        item.remove.setAttribute('aria-label', '移出 ' + stock.name);
-        item.remove.disabled = data.state.stocks.length === 1;
-        item.remove.title = item.remove.disabled ? '请保留至少一只自选' : '';
+      button.append(name, price);
+      if (full) button.append(item.percent);
+      button.onclick = () => selectStock(stock.code);
+      row.append(button);
+      if (full) {
+        const actions = element('div', '', 'row-actions');
+        const edit = element('button', '持仓');
+        edit.onclick = () => openPosition(stock.code);
+        item.remove = element('button', '移出');
+        item.remove.onclick = () => confirmRemove(data.state.stocks.find(current => current.code === stock.code));
+        actions.append(edit, item.remove); row.append(actions);
       }
-      if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
+      rows.set(stock.code, item);
+    }
+    const active = stock.code === selected;
+    if (item.active !== active) {
+      item.active = active;
+      item.row.classList.toggle('selected', active);
+      item.button.setAttribute('aria-current', String(active));
+    }
+    if (item.remove && item.remove.disabled !== (stocks.length === 1)) {
+      item.remove.disabled = stocks.length === 1;
+      item.remove.title = item.remove.disabled ? '请保留至少一只自选' : '';
+    }
+    if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
+    // IPC copies quote objects. Compare fields used by this row and recheck aging once per second.
+    const fields = [
+      stock.name, entry?.received, entry?.error, entry?.transport, quote?.price, quote?.changePct,
+      quote?.code, quote?.market, quote?.source, quote?.sourceName, quote?.fallbackFrom, quote?.session,
+      quote?.quotedAt, quote?.time, quote?.timePrecision, quote?.regular?.price, interval, quote ? second : 0
+    ];
+    if (item.fields && fields.every((value, field) => Object.is(value, item.fields[field]))) continue;
+    item.fields = fields;
+    const presentation = quotePresentation(entry, interval, now);
+    const warning = quote && presentation.warning ? presentation.message : '';
+    setAttributeValue(item.row, 'title', [stock.name, warning, presentation.detail].filter(Boolean).join('\n'));
+    setAttributeValue(item.button, 'aria-label', '盯盘 ' + stock.name + (warning ? '，' + warning : ''));
+    setText(item.name, stock.name);
+    setText(item.code, displaySymbol(stock.code) + (presentation.label ? ' · ' + presentation.label : ''));
+    const color = tone(quote?.changePct);
+    const percent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '';
+    setAttributeValue(item.price, 'class', 'stock-price ' + color);
+    setText(item.value, marketPrice(quote?.price, stock.code));
+    setText(item.change, percent || (quote ? '涨跌幅未提供' : '等待行情'));
+    setText(item.warning, full ? warning : warning ? '待更新' : '');
+    const hideWarning = !warning;
+    if (item.warning.hidden !== hideWarning) item.warning.hidden = hideWarning;
+    if (full) {
+      setText(item.percent, percent || '—');
+      setAttributeValue(item.percent, 'class', 'stock-pct ' + color);
+      setAttributeValue(item.remove, 'aria-label', '移出 ' + stock.name);
     }
   }
-  $('stock-count').textContent = data.state.stocks.length;
+  if (!full) setText($('stock-count'), stocks.length);
 }
 function renderPortfolio() {
   const container = $('portfolio-list');
@@ -247,71 +299,88 @@ function renderPortfolio() {
       const header = element('div', '', 'section-heading'), title = element('div');
       item = {
         card, name: element('h2'), content: element('div'),
-        details: element('div', '', 'holding-details'), status: element('p', '', 'footnote')
+        holding: element('span'), percent: element('span'), status: element('p', '', 'footnote')
       };
+      const details = element('div', '', 'holding-details');
+      details.append(item.holding, item.percent);
       title.append(item.name, element('p', displaySymbol(stock.code) + ' · ' + currency(stock.code)));
       const edit = element('button', '编辑', 'link-button');
       edit.onclick = () => openPosition(stock.code);
       header.append(title, edit);
-      card.append(header, item.content, item.details, item.status);
+      card.append(header, item.content, details, item.status);
       portfolioCards.set(stock.code, item);
     }
     const entry = data.quotes[stock.code];
-    item.name.textContent = stock.name;
-    renderPosition(item.content, stock, entry);
-    const result = position(stock, entry?.quote);
-    item.details.replaceChildren(element('span', settings().private ? '成本与股数已隐藏' : `成本 ${fmt(stock.cost, 3)} · ${stock.shares} 股`), element('span', settings().private || !result ? '' : signed(result.percent) + '%', tone(result?.percent)));
+    setText(item.name, stock.name);
+    const result = renderPosition(item.content, stock, entry);
+    setText(item.holding, settings().private ? '成本与股数已隐藏' : `成本 ${fmt(stock.cost, 3)} · ${stock.shares} 股`);
+    setText(item.percent, settings().private || !result ? '' : signed(result.percent) + '%');
+    setAttributeValue(item.percent, 'class', settings().private ? '' : tone(result?.percent));
     const presentation = quotePresentation(entry, settings().interval);
-    item.card.title = presentation.detail;
-    item.status.textContent = presentation.summary;
+    setAttributeValue(item.card, 'title', presentation.detail);
+    setText(item.status, presentation.summary);
     if (container.children[index] !== item.card) container.insertBefore(item.card, container.children[index] || null);
   }
 }
 function renderCounts() {
   if (!data) return;
-  for (const [id, key] of [['wood-count', 'session'], ['wood-today', 'today'], ['wood-total', 'total']]) $(id).textContent = data.counts[key].toLocaleString('zh-CN');
+  for (const [id, key] of [['wood-count', 'session'], ['wood-today', 'today'], ['wood-total', 'total']]) setText($(id), data.counts[key].toLocaleString('zh-CN'));
 }
 function syncControls() {
   for (const control of document.querySelectorAll('[data-setting]')) {
     if (document.activeElement === control) continue;
     const value = settings()[control.dataset.setting];
-    if (control.type === 'checkbox') control.checked = value;
-    else control.value = value;
+    if (control.type === 'checkbox') {
+      if (control.checked !== value) control.checked = value;
+    } else if (control.value !== String(value)) control.value = value;
     if (control.type === 'range') updateSliderValue(control);
   }
   for (const control of document.querySelectorAll('[data-quiet]')) {
-    if (control.type === 'checkbox') control.checked = settings().quietOffice[control.dataset.quiet];
-    else if (document.activeElement !== control) control.value = settings().quietOffice[control.dataset.quiet];
+    const value = settings().quietOffice[control.dataset.quiet];
+    if (control.type === 'checkbox') {
+      if (control.checked !== value) control.checked = value;
+    } else if (document.activeElement !== control && control.value !== value) control.value = value;
   }
-  $('privacy-toggle').setAttribute('aria-pressed', String(settings().private));
-  $('privacy-toggle').title = settings().private ? '显示持仓金额' : '隐藏持仓金额';
 }
 function renderSettingsPreview() {
   const preview = $('island-preview');
   if (!preview) return;
+  applyAppearance(data, settings().islandTheme, preview);
   const code = settings().islandSymbol || data.state.selected;
   const stock = data.state.stocks.find(item => item.code === code);
-  const quote = data.quotes[code]?.quote;
+  const entry = data.quotes[code];
+  const quote = entry?.quote;
   const woodMode = settings().islandContent === 'muyu';
-  $('preview-name').textContent = woodMode ? '牛来木鱼' : quote?.name || stock?.name || displaySymbol(code);
-  $('preview-price').textContent = woodMode ? settings().islandCount ? '本轮 ' + data.counts.session.toLocaleString('zh-CN') : '轻触敲击' : marketPrice(quote?.price, code);
-  $('preview-price').hidden = !woodMode && !settings().islandPrice;
-  $('preview-pct').textContent = woodMode ? '+1' : Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
-  $('preview-pct').hidden = !woodMode && !settings().islandPercent;
-  $('preview-pct').className = tone(quote?.changePct);
+  const name = quote?.name || stock?.name || displaySymbol(code);
+  const label = quotePresentation(entry, settings().islandInterval).label;
+  setText($('preview-name'), woodMode ? '牛来木鱼' : [name, label].filter(Boolean).join(' · '));
+  setText($('preview-meta'), woodMode ? settings().islandCount ? '本轮敲击' : '点击敲击' : displaySymbol(code));
+  setText($('preview-price'), woodMode ? data.counts.session.toLocaleString('zh-CN') : marketPrice(quote?.price, code));
+  $('preview-price').hidden = woodMode ? !settings().islandCount : !settings().islandPrice;
+  setText($('preview-pct'), Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—');
+  $('preview-pct').hidden = woodMode || !settings().islandPercent;
+  setAttributeValue($('preview-pct'), 'class', tone(quote?.changePct));
   $('preview-canvas').hidden = !settings().islandBull;
   mini?.state(woodMode ? 'muyu' : liveMood);
 }
 function renderQuoteStatus() {
-  if (!data?.state) return;
+  if (!data?.state || document.hidden) return;
   const entry = currentEntry(), quote = entry?.quote;
   const presentation = quotePresentation(entry, settings().interval);
-  $('session').textContent = presentation.session || marketSession(data.state.selected);
-  $('connection').className = 'connection ' + (presentation.warning ? 'error' : quote ? 'ok' : '');
-  $('connection').textContent = presentation.summary;
-  $('connection').title = presentation.detail;
-  $('footer-status').textContent = data.suspended ? '系统休眠，已暂停' : quiet() ? '安静办公中' : quote ? quote.market === 'us' ? presentation.basis : quote.time ? '源时间 ' + quote.time : '行情源未提供成交时间' : '等待行情';
-  $('footer-status').title = presentation.detail;
+  if (tab === 'home') {
+    setText($('session'), presentation.session || marketSession(data.state.selected));
+    setAttributeValue($('connection'), 'class', 'connection ' + (presentation.warning ? 'error' : quote ? 'ok' : ''));
+    setText($('connection'), presentation.summary);
+    setAttributeValue($('connection'), 'title', presentation.detail);
+  }
+  let footer = '等待行情';
+  if (data.suspended) footer = '系统休眠，已暂停';
+  else if (quiet()) footer = '安静办公中';
+  else if (entry?.transport === 'ndjson' && presentation.receipt) footer = ['本机接收 ' + presentation.receipt, presentation.timing].filter(Boolean).join(' · ');
+  else if (quote?.market === 'us') footer = presentation.basis;
+  else if (quote) footer = quote.time ? '源时间 ' + quote.time : '行情源未提供成交时间';
+  setText($('footer-status'), footer);
+  setAttributeValue($('footer-status'), 'title', presentation.detail);
 }
 function renderManualRefresh() {
   $('refresh').disabled = refreshRequested;
@@ -328,35 +397,61 @@ function updateMarketPanels(force = false) {
   marketDetails.update(stock.code, active, { entry: currentEntry(), custom, source: name, interval: settings().interval, force });
   marketNews.update(stock, active, data.state.news, data.state.stocks);
 }
+function renderPrimaryQuote(stock, quote) {
+  setText($('quote-name'), stock.name);
+  setText($('quote-code'), displaySymbol(stock.code) + ' · ' + currency(stock.code));
+  setText($('price'), marketPrice(quote?.price, stock.code));
+  setText($('change'), signed(quote?.change));
+  setText($('percent'), Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—');
+  const className = 'quote-number ' + tone(quote?.changePct);
+  if ($('quote-number').className !== className) $('quote-number').className = className;
+}
+function renderHome(stock, entry) {
+  renderPosition($('home-position'), stock, entry);
+  renderStocks('home-stocks');
+  const samples = data.histories[stock.code] || [];
+  setText($('sample-count'), samples.length < 2 ? '等待采样' : samples.length + ' 个样本');
+  setText($('sample-start'), time(samples[0]?.at));
+  setText($('sample-end'), time(samples.at(-1)?.at));
+  drawSparkline($('sparkline'), samples, getComputedStyle($('sparkline')).getPropertyValue(entry?.quote?.changePct < 0 ? '--fall' : '--rise'));
+}
+function renderSourceStatus() {
+  const status = $('source-runtime-status');
+  if (!status) return;
+  const text = settings().quoteSourceMode === 'custom' ? streamStatusText(data.quoteSource) : '';
+  if (status.hidden !== !text) status.hidden = !text;
+  setText(status, text);
+}
 function render() {
   if (!data?.state) return;
-  const stock = selectedStock(), entry = currentEntry(), quote = entry?.quote;
-  document.documentElement.classList.toggle('dark', settings().theme === 'dark' || settings().theme === 'system' && data.dark);
-  $('app-version').textContent = data.version;
-  $('quote-name').textContent = stock.name;
-  $('quote-code').textContent = displaySymbol(stock.code) + ' · ' + currency(stock.code);
-  $('price').textContent = marketPrice(quote?.price, stock.code);
-  $('change').textContent = signed(quote?.change);
-  $('percent').textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—';
-  $('quote-number').className = 'quote-number ' + tone(quote?.changePct);
-  renderQuoteStatus();
-  renderPosition($('home-position'), stock, entry);
-  renderStocks(); renderPortfolio(); renderCounts(); syncControls();
-  const samples = data.histories[stock.code] || [];
-  $('sample-count').textContent = samples.length < 2 ? '等待采样' : samples.length + ' 个样本';
-  $('sample-start').textContent = time(samples[0]?.at);
-  $('sample-end').textContent = time(samples.at(-1)?.at);
-  drawSparkline($('sparkline'), samples, getComputedStyle($('sparkline')).getPropertyValue(quote?.changePct < 0 ? '--fall' : '--rise'));
+  if (!document.hidden) {
+    applyAppearance(data, settings().theme);
+    setText($('app-version'), data.version);
+    setAttributeValue($('privacy-toggle'), 'aria-pressed', String(settings().private));
+    setAttributeValue($('privacy-toggle'), 'title', settings().private ? '显示持仓金额' : '隐藏持仓金额');
+    const stock = selectedStock(), entry = currentEntry();
+    renderPrimaryQuote(stock, entry?.quote);
+    if (tab === 'home') renderHome(stock, entry);
+    else if (tab === 'watchlist') renderStocks('watch-stocks');
+    else if (tab === 'portfolio') renderPortfolio();
+    else if (tab === 'muyu') renderCounts();
+    else if (tab === 'settings') { syncControls(); renderSourceStatus(); }
+    else if (tab === 'orderbook' && activePlugin !== 'orderbook') desktopPlugins.update(data);
+    renderQuoteStatus();
+  }
   updateMarketPanels();
-  updateMood(); renderSettingsPreview(); processFeatures();
+  updateMood();
+  if (tab === 'settings' && !document.hidden) renderSettingsPreview();
+  processFeatures();
 }
 function applySnapshot(next) {
   if (!next?.state) return;
   const changedStock = data?.state.selected !== next.state.selected;
-  const changedStocks = JSON.stringify(data?.state.stocks.map(stock => stock.code)) !== JSON.stringify(next.state.stocks.map(stock => stock.code));
+  const changedStocks = tab === 'settings' && settingsPanel === 'island' &&
+    JSON.stringify(data?.state.stocks.map(stock => stock.code)) !== JSON.stringify(next.state.stocks.map(stock => stock.code));
   data = next;
   if (changedStock) { moods.reset(); featureCode = ''; stopAudio(); }
-  if (changedStocks && tab === 'settings' && (settingsPanel === 'island' || !$('settings-content').hasChildNodes())) buildSettings();
+  if (tab === 'settings' && (changedStocks || !$('settings-content').hasChildNodes())) buildSettings();
   render();
 }
 function changeTab(next) {
@@ -369,19 +464,16 @@ function changeTab(next) {
     button.setAttribute('aria-current', button.dataset.tab === tab ? 'page' : 'false');
   }
   for (const view of document.querySelectorAll('.view')) view.hidden = view.id !== 'view-' + tab;
-  $('page-title').textContent = titles[tab][0];
-  $('page-subtitle').textContent = titles[tab][1];
-  $('page-subtitle').hidden = !titles[tab][1];
-  syncOrderbookVisibility();
+  $('page-title').textContent = titles[tab];
+  syncPluginVisibility();
   if (tab === 'settings' && data) buildSettings();
+  render();
   window.scrollTo(0, tabScroll.get(next) || 0);
-  updateMarketPanels();
-  syncMotion();
 }
-function selectStock(code) {
-  const watchlistRevision = tab === 'watchlist' ? tabRevision : null;
+function selectStock(code, returnHome = tab === 'watchlist') {
+  const revision = tabRevision;
   perform(api.stock('select', { code }), () => {
-    if (watchlistRevision !== tabRevision || data.state.selected !== code) return;
+    if (!returnHome || revision !== tabRevision || data.state.selected !== code) return;
     changeTab('home');
     $('select-stock').focus();
   });
@@ -477,7 +569,7 @@ async function search() {
   }
 }
 
-const settingsSections = [['island', '悬浮窗'], ['pet', '桌宠'], ['muyu', '木鱼'], ['widget', '卡片'], ['source', '行情来源'], ['general', '通用'], ['alerts', '提醒与记录'], ['about', '关于']];
+const settingsSections = [['general', '通用'], ['source', '行情来源'], ['island', '灵动岛'], ['pet', '桌宠'], ['widget', '桌面卡片'], ['muyu', '木鱼'], ['alerts', '提醒与记录'], ['about', '关于']];
 for (const [key, label] of settingsSections) {
   const button = element('button', label);
   button.dataset.settingsPanel = key;
@@ -493,8 +585,15 @@ function updateSliderValue(input) {
   const key = input.dataset.setting;
   const value = input.valueAsNumber;
   const label = key === 'volume' ? Math.round(value * 100) + '%' : value + (key === 'islandWidth' ? ' px' : '%');
-  input.setAttribute('aria-valuetext', label);
-  input.nextElementSibling.value = label;
+  setAttributeValue(input, 'aria-valuetext', label);
+  if (input.nextElementSibling.value !== label) input.nextElementSibling.value = label;
+  if (key === 'islandWidth') {
+    const preview = $('island-preview');
+    const width = (value - 12) + 'px';
+    if (preview && preview.style.getPropertyValue('--island-preview-width') !== width) {
+      preview.style.setProperty('--island-preview-width', width);
+    }
+  }
 }
 function settingRow(label, key, type = 'checkbox', options = [], note = '') {
   const row = element('label', '', 'setting-row');
@@ -526,6 +625,28 @@ function settingsButton(label, action) {
   button.onclick = action;
   $('settings-content').append(button);
 }
+function groupSettingsContent(container) {
+  let body = container, actions = null;
+  for (const node of [...container.children].slice(1)) {
+    if (node.tagName === 'H3') {
+      const group = element('section', '', 'settings-group');
+      body = element('div', '', 'settings-group-body');
+      node.before(group);
+      group.append(node, body);
+      actions = null;
+    } else if (node.matches('button.button')) {
+      if (!actions) {
+        actions = element('div', '', 'settings-actions');
+        if (body === container) node.before(actions);
+        else body.append(actions);
+      }
+      actions.append(node);
+    } else {
+      actions = null;
+      if (body !== container) body.append(node);
+    }
+  }
+}
 function buildSettings() {
   const sourceEpoch = ++sourceFormEpoch;
   mini?.close(); mini = null;
@@ -535,58 +656,76 @@ function buildSettings() {
     button.classList.toggle('active', active);
     button.setAttribute('aria-current', active ? 'page' : 'false');
   }
-  container.append(element('h2', settingsSections.find(([key]) => key === settingsPanel)[1]));
+  const header = element('header', '', 'settings-panel-header');
+  header.append(element('h2', settingsSections.find(([key]) => key === settingsPanel)[1]));
+  container.append(header);
   const themes = [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
-  const intervals = [[.5, '最快（500 毫秒）'], [1, '每 1 秒'], [2, '每 2 秒'], [5, '每 5 秒'], [10, '每 10 秒'], [30, '每 30 秒']];
+  const intervals = [[.2, '每 200 毫秒（自有源）'], [.5, '每 500 毫秒（自有源）'], [1, '每 1 秒'], [2, '每 2 秒'], [5, '每 5 秒'], [10, '每 10 秒'], [30, '每 30 秒']];
   const modes = [['market', '股票行情'], ['muyu', '木鱼计数']];
   if (settingsPanel === 'island') {
     const preview = element('div', '', 'settings-preview'); preview.id = 'island-preview';
     const canvas = document.createElement('canvas'); canvas.id = 'preview-canvas'; canvas.width = canvas.height = 100;
-    const name = element('small'); name.id = 'preview-name';
+    const name = element('strong'); name.id = 'preview-name';
+    const meta = element('small'); meta.id = 'preview-meta';
+    const identity = element('div', '', 'settings-preview-name'); identity.append(name, meta);
     const price = element('b'); price.id = 'preview-price';
-    const values = element('div'); values.append(name, price);
     const pct = element('span'); pct.id = 'preview-pct';
-    preview.append(canvas, values, pct); container.append(preview);
+    const values = element('div', '', 'settings-preview-values'); values.append(price, pct);
+    preview.append(canvas, identity, values); container.append(preview);
     mini = makeMotion(canvas, true);
-    container.append(element('p', '点击展开，滚轮切换自选。拖动左侧手柄移动。', 'muted'));
+    heading('窗口');
     settingRow('开启悬浮窗', 'islandEnabled');
     settingRow('显示内容', 'islandContent', 'select', modes);
-    settingRow('显示股票', 'islandSymbol', 'select', [['', '跟随当前自选'], ...data.state.stocks.map(stock => [stock.code, stock.name])]);
-    settingRow('显示价格', 'islandPrice'); settingRow('显示涨跌幅', 'islandPercent');
-    settingRow('展开显示持仓', 'islandHoldings', 'checkbox', [], '开启隐私模式后隐藏金额');
-    settingRow('显示牛来', 'islandBull'); settingRow('岛内动画', 'islandMotion');
-    settingRow('显示木鱼计数', 'islandCount');
     settingRow('外观', 'islandTheme', 'select', themes);
     settingRow('宽度', 'islandWidth', 'range', [260, 420, 1]);
-    settingRow('行情刷新', 'islandInterval', 'select', intervals);
     settingRow('展开后 10 秒自动收起', 'islandAutoCollapse');
     settingRow('使用主面板时隐藏', 'islandHideInApp');
+    heading('行情');
+    settingRow('显示股票', 'islandSymbol', 'select', [['', '跟随主面板'], ...data.state.stocks.map(stock => [stock.code, stock.name])]);
+    settingRow('显示价格', 'islandPrice'); settingRow('显示涨跌幅', 'islandPercent');
+    settingRow('展开显示持仓', 'islandHoldings', 'checkbox', [], '开启隐私模式后隐藏金额');
+    settingRow('行情刷新', 'islandInterval', 'select', intervals);
+    heading('桌宠与木鱼');
+    settingRow('显示牛来', 'islandBull'); settingRow('岛内动画', 'islandMotion');
+    settingRow('显示木鱼计数', 'islandCount');
   } else if (settingsPanel === 'pet') {
+    heading('显示');
     settingRow('开启桌宠', 'petEnabled'); settingRow('桌宠模式', 'petMode', 'select', [['market', '盯盘桌宠'], ['muyu', '牛来木鱼']]);
-    settingRow('显示行情卡', 'petQuote'); settingRow('按行情切换动作', 'autoActions');
+    settingRow('显示行情卡', 'petQuote');
+    settingRow('桌宠大小', 'petScale', 'range', [75, 125, 5]);
+    settingRow('使用主面板时隐藏', 'petHideInApp');
+    heading('动作与声音');
+    settingRow('按行情切换动作', 'autoActions');
     settingRow('播放动画', 'motion'); settingRow('点击音效', 'sound');
     settingRow('下跌时播放妈妈音效', 'mamaSound');
     settingRow('音量', 'volume', 'range', [0, 1, .05]);
-    settingRow('桌宠大小', 'petScale', 'range', [75, 125, 5]);
-    settingRow('使用主面板时隐藏', 'petHideInApp');
     settingsButton('查看动作与姿势', openMotions);
-    container.append(element('p', '拖动牛身移动，单击互动，三连击触发不耐烦。顶部按钮打开主面板、收起或关闭桌宠。', 'footnote'));
   } else if (settingsPanel === 'muyu') {
     settingRow('敲击音效', 'muyuSound'); settingRow('牛气＋1 动效', 'muyuEffects'); settingRow('显示悬浮计数', 'muyuCount');
     settingsButton('打开木鱼', () => changeTab('muyu'));
     container.append(element('p', '各窗口共用计数，每次敲击都会记录。', 'footnote'));
   } else if (settingsPanel === 'widget') {
-    container.append(element('p', '桌宠、行情、持仓、休息，四个场景可以切换。', 'muted'));
+    heading('显示');
     settingRow('开启桌面卡片', 'widgetEnabled');
     settingRow('卡片外观', 'widgetTheme', 'select', themes);
     settingRow('显示最近报价曲线', 'widgetSparkline'); settingRow('显示牛来', 'widgetBull');
     settingRow('隐藏持仓金额', 'private'); settingRow('跟随常规交易时段切换场景', 'smartScene');
-    container.append(element('p', '行情来自应用内同一份数据。卡片标记获取时间，关闭程序后停止刷新。', 'footnote'));
   } else if (settingsPanel === 'source') {
+    const status = element('p', '', 'muted');
+    status.id = 'source-runtime-status';
+    status.setAttribute('role', 'status');
     const content = element('div');
-    container.append(content);
+    container.append(status, content);
+    renderSourceStatus();
     buildQuoteSourceSettings(content, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && tab === 'settings' });
   } else if (settingsPanel === 'general') {
+    heading('外观');
+    settingRow('应用外观', 'theme', 'select', themes, '跟随系统时同步浅色、深色和系统强调色。');
+    settingRow('播放动画', 'motion');
+    heading('行情与声音');
+    settingRow('行情自动刷新', 'interval', 'select', intervals, '公开行情最快每秒刷新一次。推送按源的发送频率更新。');
+    settingRow('隐藏持仓金额', 'private');
+    settingRow('静音', 'muted');
     heading('版本更新');
     settingRow('系统更新提醒', 'updateNotifications', 'checkbox', [], '有新版本时提醒一次');
     const updateLabel = element('p', '', 'muted'); updateLabel.id = 'update-status'; container.append(updateLabel);
@@ -594,11 +733,6 @@ function buildSettings() {
     check.onclick = () => perform(api.updates('check'), paintUpdate); container.append(check);
     settingsButton('查看更新记录', () => perform(api.updates('history'))); paintUpdate();
     settingsButton('系统通知设置', () => perform(api.updates('permissions')));
-    heading('外观与使用');
-    settingRow('应用外观', 'theme', 'select', themes);
-    settingRow('静音', 'muted');
-    settingRow('行情自动刷新', 'interval', 'select', intervals, '公开源交易时段最快每 1 秒。500 毫秒适用于支持该频率的自有源。');
-    settingRow('播放动画', 'motion'); settingRow('隐藏持仓金额', 'private');
     heading('使用模式');
     const presets = element('div', '', 'preset-buttons');
     for (const [name, values] of [
@@ -626,6 +760,7 @@ function buildSettings() {
       'Ctrl + K 搜索，Ctrl + 1–4 切换页面，Esc 关闭弹窗。木鱼页按空格敲击。'
     ]) container.append(element('p', paragraph, 'footnote'));
   }
+  if (settingsPanel !== 'source') groupSettingsContent(container);
   syncControls(); renderSettingsPreview(); syncMotion();
 }
 
@@ -666,7 +801,10 @@ function buildFeatureSettings() {
 }
 function processFeatures() {
   const code = data.state.selected, entry = currentEntry();
+  const petMessage = $('pet-message');
+  if (!settings().emotionMemory) petMessage.hidden = true;
   if (featureCode !== code) {
+    petMessage.hidden = true;
     featureCode = code; lastFeatureQuote = 0; wasOpen = false;
     emotion = new EmotionMemory({ state: readJson('niulai:emotion-memory-v1:' + code) || readJson('niulai:emotion-memory-v1') });
     session = new DailySessionTracker({ state: readJson('niulai:daily-session-v1:' + code) });
@@ -693,7 +831,10 @@ function processFeatures() {
         stopAudio(); const sound = sounds[hit.direction > 0 ? 'rise' : 'fall']; sound.volume = settings().volume; sound.play().catch(() => {});
       }
     }
-    if (settings().emotionMemory && Date.now() > previewUntil) $('pet-message').textContent = emotion.quips(marketOpen ? 'flat' : 'closed')[0];
+    if (settings().emotionMemory && Date.now() > previewUntil) {
+      setText(petMessage, emotion.quips(marketOpen ? 'flat' : 'closed')[0]);
+      petMessage.hidden = false;
+    }
   }
   if (wasOpen && !marketOpen && settings().closeSummary && !session.snapshot().shown) {
     const summary = session.summary(emotion.snapshot().label);
@@ -845,9 +986,8 @@ document.addEventListener('keydown', event => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopAudio();
-  if (data) updateMarketPanels();
-  syncOrderbookVisibility();
-  syncMotion();
+  syncPluginVisibility();
+  render();
 });
 window.addEventListener('online', () => perform(api.refresh()));
 paintIcons();
@@ -858,6 +998,10 @@ for (const key of ['niulai:pet-settings', 'niulai:saved-stocks-v1', 'niulai:port
 api.bootstrap(desktopState.migrateLegacy(legacyValues)).then(next => {
   applySnapshot(next);
   api.updates('status').then(paintUpdate).catch(() => {});
-  setInterval(() => { renderQuoteStatus(); updateMood(); processFeatures(); }, 1000);
+  setInterval(() => {
+    if (!document.hidden && tab === 'home') renderStocks('home-stocks');
+    if (!document.hidden && tab === 'watchlist') renderStocks('watch-stocks');
+    renderQuoteStatus(); updateMood(); processFeatures();
+  }, 1000);
   window.__NIULAI_RENDERER_READY__ = true;
 }).catch(error => toast('启动失败 · ' + error.message));

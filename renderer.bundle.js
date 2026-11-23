@@ -38,7 +38,7 @@
         [MARKET.HK]: "\u6E2F\u80A1",
         [MARKET.US]: "\u7F8E\u80A1"
       });
-      function marketForSymbol2(symbol) {
+      function marketForSymbol3(symbol) {
         const value = String(symbol || "").toLowerCase();
         if (value.startsWith("rt_hk")) return MARKET.HK;
         if (value.startsWith("gb_")) return MARKET.US;
@@ -78,21 +78,21 @@
         }
         return null;
       }
-      function displaySymbol2(symbol) {
+      function displaySymbol3(symbol) {
         const value = String(symbol || "s_sh000001");
         if (value.startsWith("rt_hk")) return `HK ${value.slice(5)}`;
         if (value.startsWith("gb_")) return value.slice(3).toUpperCase();
         return value.replace(/^s_/, "");
       }
       function quoteProviderSymbol2(symbol, provider = "sina") {
-        const market = marketForSymbol2(symbol);
+        const market = marketForSymbol3(symbol);
         if (provider === "sina") return String(symbol);
         if (market === MARKET.HK) return `hk${String(symbol).slice(5)}`;
         if (market === MARKET.US) return `us${String(symbol).slice(3).toUpperCase()}`;
         return String(symbol);
       }
       function decodeJavascriptString(value) {
-        return String(value || "").replace(/\\u([0-9a-f]{4})/gi, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16))).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        return String(value || "").replace(/\\u([0-9a-f]{4})/gi, (_match, hex2) => String.fromCharCode(Number.parseInt(hex2, 16))).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
       }
       function parseTencentSuggestions2(text, markets) {
         const allowed = normalizeMarketList(markets);
@@ -110,14 +110,14 @@
             const ticker = String(rawCode).replace(/\.(oq|o|n|a|ps|k)$/i, "").toLowerCase();
             code = `gb_${ticker}`;
           }
-          if (!code || !allowed.includes(marketForSymbol2(code)) || seen.has(code)) continue;
+          if (!code || !allowed.includes(marketForSymbol3(code)) || seen.has(code)) continue;
           seen.add(code);
           results.push({
             code,
-            name: name || displaySymbol2(code),
-            market: marketForSymbol2(code),
-            marketLabel: MARKET_LABEL[marketForSymbol2(code)],
-            displayCode: displaySymbol2(code)
+            name: name || displaySymbol3(code),
+            market: marketForSymbol3(code),
+            marketLabel: MARKET_LABEL[marketForSymbol3(code)],
+            displayCode: displaySymbol3(code)
           });
           if (results.length >= 12) break;
         }
@@ -126,7 +126,7 @@
       function externalQuoteUrl(symbol) {
         const code = normalizeMarketSymbol2(symbol);
         if (!code) return null;
-        const market = marketForSymbol2(code);
+        const market = marketForSymbol3(code);
         if (market === MARKET.HK) return `https://gu.qq.com/hk${code.slice(5)}/gp`;
         if (market === MARKET.US) return `https://gu.qq.com/us${code.slice(3).toUpperCase()}/gp`;
         return `https://gu.qq.com/${code.replace(/^s_/, "")}/gp`;
@@ -136,8 +136,8 @@
         MARKET_LABEL,
         normalizeMarketList,
         normalizeMarketSymbol: normalizeMarketSymbol2,
-        marketForSymbol: marketForSymbol2,
-        displaySymbol: displaySymbol2,
+        marketForSymbol: marketForSymbol3,
+        displaySymbol: displaySymbol3,
         quoteProviderSymbol: quoteProviderSymbol2,
         parseTencentSuggestions: parseTencentSuggestions2,
         externalQuoteUrl
@@ -148,15 +148,15 @@
   // main-modules/quote-time.js
   var require_quote_time = __commonJS({
     "main-modules/quote-time.js"(exports, module) {
-      var { marketForSymbol: marketForSymbol2 } = require_market_symbols();
+      var { marketForSymbol: marketForSymbol3 } = require_market_symbols();
       var US_ZONE = "America/New_York";
       var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-      var clockFormats = /* @__PURE__ */ new Map();
-      function marketClock2(code, now = Date.now()) {
-        const market = marketForSymbol2(code);
+      var clockFormats2 = /* @__PURE__ */ new Map();
+      function marketClock3(code, now = Date.now()) {
+        const market = marketForSymbol3(code);
         const zone = market === "us" ? US_ZONE : "Asia/Shanghai";
-        if (!clockFormats.has(zone)) {
-          clockFormats.set(zone, new Intl.DateTimeFormat("en-US", {
+        if (!clockFormats2.has(zone)) {
+          clockFormats2.set(zone, new Intl.DateTimeFormat("en-US", {
             timeZone: zone,
             year: "numeric",
             month: "2-digit",
@@ -168,7 +168,7 @@
             hourCycle: "h23"
           }));
         }
-        const parts = Object.fromEntries(clockFormats.get(zone).formatToParts(new Date(now)).map((part) => [part.type, part.value]));
+        const parts = Object.fromEntries(clockFormats2.get(zone).formatToParts(new Date(now)).map((part) => [part.type, part.value]));
         const minute = Number(parts.hour) * 60 + Number(parts.minute);
         const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
         let phase = "closed";
@@ -190,11 +190,11 @@
         if (!Number.isFinite(wanted)) return null;
         let timestamp = wanted;
         for (let attempt = 0; attempt < 2; attempt++) {
-          const actual2 = marketClock2(code, timestamp);
+          const actual2 = marketClock3(code, timestamp);
           const represented = Date.UTC(Number(actual2.year), Number(actual2.month) - 1, Number(actual2.day), Number(actual2.hour), Number(actual2.minute), Number(actual2.second));
           timestamp += wanted - represented;
         }
-        const actual = marketClock2(code, timestamp);
+        const actual = marketClock3(code, timestamp);
         return Number(actual.year) === year && Number(actual.month) - 1 === month && Number(actual.day) === day && Number(actual.hour) === hour && Number(actual.minute) === minute ? timestamp : null;
       }
       function parseQuoteTime(value, code, reference = Date.now()) {
@@ -204,19 +204,19 @@
           const [, year2, month2, day2, hour2, minute2, second] = numeric.map(Number);
           return wallTime(year2, month2 - 1, day2, hour2, minute2, second, code);
         }
-        if (marketForSymbol2(code) !== "us") return null;
+        if (marketForSymbol3(code) !== "us") return null;
         const american = /^([a-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(AM|PM)(?:\s+(EST|EDT))?$/i.exec(text);
         if (!american) return null;
         const month = MONTHS.indexOf(american[1].toLowerCase());
         const day = Number(american[2]), rawHour = Number(american[3]), minute = Number(american[4]);
         if (month < 0 || rawHour < 1 || rawHour > 12 || minute > 59 || day < 1 || day > 31) return null;
         const hour = rawHour % 12 + (american[5].toUpperCase() === "PM" ? 12 : 0);
-        const year = Number(marketClock2(code, reference).year);
+        const year = Number(marketClock3(code, reference).year);
         const candidates = [year - 1, year, year + 1].map((candidate) => {
           if (american[6]) {
             const offset = american[6].toUpperCase() === "EDT" ? 4 : 5;
             const timestamp = Date.UTC(candidate, month, day, hour + offset, minute);
-            const clock = marketClock2(code, timestamp);
+            const clock = marketClock3(code, timestamp);
             return Number(clock.month) - 1 === month && Number(clock.day) === day && Number(clock.hour) === hour ? timestamp : null;
           }
           return wallTime(candidate, month, day, hour, minute, 0, code);
@@ -231,14 +231,14 @@
         if (record.error || !record.received || now - record.received > maxReceiveAge || record.received > now + 5e3) {
           return { warning: true, actionable: false, message: record.error ? "\u66F4\u65B0\u5EF6\u8FDF \xB7 " + record.error : "\u8FDE\u63A5\u66F4\u65B0\u5EF6\u8FDF" };
         }
-        if (marketForSymbol2(quote.code) !== "us" && quote.source !== "custom") return { warning: false, actionable: true, message: "" };
+        if (marketForSymbol3(quote.code) !== "us" && quote.source !== "custom") return { warning: false, actionable: true, message: "" };
         if (!Number.isFinite(quote.quotedAt) || quote.quotedAt > now + 9e4) {
           return { warning: true, actionable: false, message: "\u62A5\u4EF7\u65F6\u95F4\u672A\u786E\u8BA4" };
         }
-        const clock = marketClock2(quote.code, now);
+        const clock = marketClock3(quote.code, now);
         const active = ["pre", "regular", "post"].includes(clock.phase);
         if (!active) return { warning: false, actionable: false, message: "\u4F11\u5E02" };
-        if (quote.session !== clock.phase || marketClock2(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
+        if (quote.session !== clock.phase || marketClock3(quote.code, quote.quotedAt).dateKey !== clock.dateKey) {
           return { warning: true, actionable: false, message: { pre: "\u76D8\u524D\u62A5\u4EF7\u5F85\u66F4\u65B0", regular: "\u5E38\u89C4\u62A5\u4EF7\u5F85\u66F4\u65B0", post: "\u76D8\u540E\u62A5\u4EF7\u5F85\u66F4\u65B0" }[clock.phase] };
         }
         if (now - quote.quotedAt > Math.max(12e4, interval * 3e3)) {
@@ -257,7 +257,7 @@
         }
         return latest;
       }
-      module.exports = { marketClock: marketClock2, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
+      module.exports = { marketClock: marketClock3, parseQuoteTime, quoteHealth: quoteHealth2, newestQuote };
     }
   });
 
@@ -266,16 +266,16 @@
     "main-modules/quote-parsers.js"(exports, module) {
       var {
         MARKET,
-        marketForSymbol: marketForSymbol2,
+        marketForSymbol: marketForSymbol3,
         quoteProviderSymbol: quoteProviderSymbol2
       } = require_market_symbols();
-      var { marketClock: marketClock2, parseQuoteTime } = require_quote_time();
+      var { marketClock: marketClock3, parseQuoteTime } = require_quote_time();
       function parseSinaQuote2(text, symbol, now = Date.now()) {
         const escaped = String(symbol).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = String(text || "").match(new RegExp(`var hq_str_${escaped}="([^"]*)"`));
         if (!match || !match[1]) return null;
         const parts = match[1].split(",");
-        const market = marketForSymbol2(symbol);
+        const market = marketForSymbol3(symbol);
         const layout = market === MARKET.HK ? { name: 1, price: 6, change: 7, changePct: 8, prevClose: 3, volume: 12, amount: 11, date: 17, time: 18 } : market === MARKET.US ? { name: 0, price: 1, change: 4, changePct: 2, prevClose: 26, volume: 10, amount: 12, time: 3 } : { name: 0, price: 1, change: 2, changePct: 3, volume: 4, amount: 5, time: 31 };
         const price = Number.parseFloat(parts[layout.price]);
         const change = Number.parseFloat(parts[layout.change]);
@@ -318,7 +318,7 @@
         const extendedPrice = Number.parseFloat(parts[21]);
         const extendedAt = parseQuoteTime(parts[24], symbol, reference);
         if (!(extendedPrice > 0) || !Number.isFinite(extendedAt) || extendedAt > now + 9e4) return quote;
-        const phase = marketClock2(symbol, extendedAt).phase;
+        const phase = marketClock3(symbol, extendedAt).phase;
         if (!["pre", "post"].includes(phase) || Number.isFinite(regular.quotedAt) && extendedAt <= regular.quotedAt) return quote;
         const extendedChange = extendedPrice - regular.price;
         return {
@@ -343,7 +343,7 @@
       function parseTencentQuote2(text, symbol) {
         const parts = tencentQuoteParts(text, quoteProviderSymbol2(symbol, "tencent"));
         if (!parts) return null;
-        const market = marketForSymbol2(symbol);
+        const market = marketForSymbol3(symbol);
         const detailed = market !== MARKET.CN;
         const price = Number.parseFloat(parts[3]);
         const change = Number.parseFloat(parts[detailed ? 31 : 4]);
@@ -378,7 +378,7 @@
   // main-modules/desktop-state.cjs
   var require_desktop_state = __commonJS({
     "main-modules/desktop-state.cjs"(exports, module) {
-      var { normalizeMarketSymbol: normalizeMarketSymbol2, displaySymbol: displaySymbol2 } = require_market_symbols();
+      var { normalizeMarketSymbol: normalizeMarketSymbol2, displaySymbol: displaySymbol3 } = require_market_symbols();
       var DEFAULTS = Object.freeze({
         theme: "system",
         sound: false,
@@ -402,7 +402,7 @@
         muyuCount: true,
         islandEnabled: false,
         islandContent: "market",
-        islandTheme: "dark",
+        islandTheme: "system",
         islandPrice: true,
         islandPercent: true,
         islandBull: true,
@@ -443,7 +443,7 @@
           if (["system", "light", "dark"].includes(raw[key])) result[key] = raw[key];
         }
         for (const key of ["petMode", "islandContent"]) result[key] = raw[key] === "muyu" ? "muyu" : "market";
-        for (const key of ["interval", "islandInterval"]) result[key] = [0.5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
+        for (const key of ["interval", "islandInterval"]) result[key] = [0.2, 0.5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
         result.volume = clamp2(raw.volume, 0, 1, DEFAULTS.volume);
         result.petScale = clamp2(raw.petScale, 75, 125, DEFAULTS.petScale);
         result.islandWidth = Math.round(clamp2(raw.islandWidth, 260, 420, DEFAULTS.islandWidth));
@@ -466,7 +466,7 @@
           const code = normalizeMarketSymbol2(item?.code || item?.symbol);
           if (!code || seen.has(code) || stocks.length >= 50) continue;
           seen.add(code);
-          stocks.push({ code, name: String(item.name || displaySymbol2(code)).slice(0, 50), cost: positive(item.cost), shares: positive(item.shares) });
+          stocks.push({ code, name: String(item.name || displaySymbol3(code)).slice(0, 50), cost: positive(item.cost), shares: positive(item.shares) });
         }
         if (!stocks.length) stocks.push(...DEFAULT_STOCKS.map((stock) => ({ ...stock })));
         const selected = normalizeMarketSymbol2(raw.selected);
@@ -492,16 +492,16 @@
         };
       }
       function migrateLegacy(values = {}) {
-        const parse = (key, fallback) => {
+        const parse2 = (key, fallback) => {
           try {
             return JSON.parse(values[key] || "null") || fallback;
           } catch {
             return fallback;
           }
         };
-        const old = parse("niulai:pet-settings", {});
-        const portfolio = parse("niulai:portfolio", {});
-        const stocks = parse("niulai:saved-stocks-v1", []);
+        const old = parse2("niulai:pet-settings", {});
+        const portfolio = parse2("niulai:portfolio", {});
+        const stocks = parse2("niulai:saved-stocks-v1", []);
         const candidates = Array.isArray(stocks) ? [...stocks] : [];
         const selected = normalizeMarketSymbol2(values["niulai:selected-symbol"] || portfolio.symbol) || "s_sh000001";
         const existing = candidates.find((stock) => normalizeMarketSymbol2(stock?.symbol) === normalizeMarketSymbol2(portfolio.symbol));
@@ -519,7 +519,7 @@
             petQuote: old.showQuote !== false,
             petScale: old.modelScale ? Number(old.modelScale) * 100 : 100
           },
-          alerts: parse("niulai:alert-triggers-v1", [])
+          alerts: parse2("niulai:alert-triggers-v1", [])
         });
       }
       function dayKey(now = /* @__PURE__ */ new Date()) {
@@ -6034,14 +6034,62 @@
   var catalog = motion_catalog_default.map((spec) => ["cover", "slump"].includes(spec.id) ? { ...spec, action: "\u6342\u773C\u54ED\u6CE3" } : spec);
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
-  var fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "\u2014";
-  var marketPrice = (value, code = "") => Number.isFinite(value) ? value.toLocaleString("en-US", {
-    minimumFractionDigits: code.startsWith("rt_hk") ? 3 : 2,
-    maximumFractionDigits: 4
-  }) : "\u2014";
+  var numberFormats = /* @__PURE__ */ new Map();
+  var priceFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  var hkPriceFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 4 });
+  var localClock = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  var receiptClock = new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+    hourCycle: "h23"
+  });
+  var sourceClocks = /* @__PURE__ */ new Map();
+  function fmt(value, digits = 2) {
+    if (!Number.isFinite(value)) return "\u2014";
+    if (!numberFormats.has(digits)) numberFormats.set(digits, new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
+    return numberFormats.get(digits).format(value);
+  }
+  var marketPrice = (value, code = "") => Number.isFinite(value) ? (code.startsWith("rt_hk") ? hkPriceFormat : priceFormat).format(value) : "\u2014";
   var signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${fmt(Math.abs(value), digits)}` : "\u2014";
   var tone = (value) => value > 0 ? "rise" : value < 0 ? "fall" : "neutral";
-  var time = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false }) : "\u2014";
+  var time = (value) => Number.isFinite(value) ? localClock.format(value) : "\u2014";
+  function setText(node, value) {
+    const text = String(value);
+    if (node.textContent !== text) node.textContent = text;
+  }
+  function setAttributeValue(node, name, value) {
+    if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+  }
+  function sourceReceiptTiming(delay) {
+    if (!Number.isFinite(delay)) return "";
+    if (delay < 0) return "\u6E90\u65F6\u95F4\u665A\u4E8E\u672C\u673A\u63A5\u6536\u65F6\u95F4";
+    return `\u6E90\u65F6\u95F4\u81F3\u63A5\u6536 ${delay < 1e4 ? Math.round(delay) + " \u6BEB\u79D2" : fmt(delay / 1e3, 1) + " \u79D2"}`;
+  }
+  function streamStatusText(source) {
+    if (!source?.streamConfigured) return "";
+    return { connecting: "\u6B63\u5728\u8FDE\u63A5\u63A8\u9001", live: "\u63A8\u9001\u5DF2\u8FDE\u63A5", reconnecting: "\u63A8\u9001\u5DF2\u65AD\u5F00\uFF0C\u6B63\u5728\u91CD\u8FDE" }[source.streamStatus] || "\u7B49\u5F85\u63A8\u9001\u8FDE\u63A5";
+  }
+  function sourceTimestamp(quote, us, isPush) {
+    if (!Number.isFinite(quote.quotedAt)) return quote.time || "\u65F6\u95F4\u672A\u63D0\u4F9B";
+    const zone = us ? "America/New_York" : "Asia/Shanghai";
+    const precision = quote.timePrecision === "minute" ? "minute" : isPush && quote.timePrecision === "millisecond" ? "millisecond" : "second";
+    const key = `${zone}/${precision}`;
+    if (!sourceClocks.has(key)) sourceClocks.set(key, new Intl.DateTimeFormat("zh-CN", {
+      timeZone: zone,
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      second: precision === "minute" ? void 0 : "2-digit",
+      fractionalSecondDigits: precision === "millisecond" ? 3 : void 0
+    }));
+    return sourceClocks.get(key).format(quote.quotedAt) + (us ? " \u7F8E\u4E1C" : "");
+  }
   function quotePresentation(record, interval = 10, now = Date.now()) {
     const quote = record?.quote;
     const health = quoteHealth(record, interval, now);
@@ -6049,33 +6097,33 @@
     const us = quote.market === "us" || quote.code.startsWith("gb_");
     const clock = import_quote_time2.default.marketClock(quote.code, now);
     const label = us ? { pre: "\u76D8\u524D", regular: "\u5E38\u89C4", post: "\u76D8\u540E" }[quote.session] || "\u5E38\u89C4" : "";
-    const provider = quote.source === "custom" ? quote.sourceName || "\u81EA\u6709\u6E90" : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
-    const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString("zh-CN", {
-      timeZone: us ? "America/New_York" : "Asia/Shanghai",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: quote.timePrecision === "minute" ? void 0 : "2-digit",
-      hour12: false
-    }) + (us ? " \u7F8E\u4E1C" : "") : quote.time || "\u65F6\u95F4\u672A\u63D0\u4F9B";
+    const custom = quote.source === "custom", isPush = custom && record.transport === "ndjson";
+    const provider = custom ? (quote.sourceName || "\u81EA\u6709\u6E90") + " \xB7 " + (isPush ? "\u63A8\u9001" : "HTTP \u5FEB\u7167") : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
+    const stamp = sourceTimestamp(quote, us, isPush);
     const prefix = health.message ? health.message + " \xB7 " : "";
-    const quoteText = us || quote.source === "custom" ? `${label ? label + " \xB7 " : ""}\u62A5\u4EF7 ${stamp}` : `\u83B7\u53D6\u4E8E ${time(record.received)}`;
+    const quoteText = us || custom ? `${label ? label + " \xB7 " : ""}\u62A5\u4EF7 ${stamp}` : `\u83B7\u53D6\u4E8E ${time(record.received)}`;
     const currentSession = { pre: "\u76D8\u524D", regular: "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5", post: "\u76D8\u540E", closed: "\u5E38\u89C4\u65F6\u6BB5\u5916", weekend: "\u5468\u672B\u4F11\u5E02", lunch: "\u5348\u95F4\u4F11\u5E02" }[clock.phase];
     const basis = quote.session === "pre" ? "\u76D8\u524D\u6DA8\u8DCC\u8F83\u4E0A\u4E00\u5E38\u89C4\u6536\u76D8" : quote.session === "post" ? "\u76D8\u540E\u6DA8\u8DCC\u8F83\u5F53\u65E5\u5E38\u89C4\u6536\u76D8" : "\u6DA8\u8DCC\u8F83\u524D\u6536\u76D8";
     const reference = quote.regular && quote.session !== "regular" ? ` \xB7 \u5E38\u89C4\u6536\u76D8 ${fmt(quote.regular.price)}` : "";
+    const timing = custom && quote.timePrecision !== "minute" && Number.isFinite(quote.quotedAt) && Number.isFinite(record.received) ? sourceReceiptTiming(record.received - quote.quotedAt) : "";
+    const receipt = Number.isFinite(record.received) ? receiptClock.format(record.received) : "\u2014";
     return {
       ...health,
       label,
       session: us ? currentSession + (label && quote.session !== clock.phase ? ` \xB7 \u6700\u8FD1${label}\u62A5\u4EF7` : "") : marketSession(quote.code),
-      summary: `${prefix}${provider} \xB7 ${quoteText}`,
-      compact: `${prefix}${quote.source === "custom" || quote.fallbackFrom ? provider + " \xB7 " : ""}${quoteText}`,
-      detail: `${provider} \xB7 ${label || "\u5E38\u89C4"}\u62A5\u4EF7
-\u62A5\u4EF7\u65F6\u95F4 ${stamp}
-\u83B7\u53D6\u65F6\u95F4 ${new Date(record.received).toLocaleString("zh-CN", { hour12: false })}
-${basis}${reference}
-${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\u56F4\u4E0E\u65F6\u6548\u4EE5\u81EA\u6709\u63A5\u53E3\u4E3A\u51C6" : "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\uFF0C\u4E0D\u540C\u6765\u6E90\u7684\u6210\u4EA4\u8303\u56F4\u53EF\u80FD\u4E0D\u540C"}`,
-      basis: basis + reference
+      summary: isPush ? `${prefix}${provider}${label ? " \xB7 " + label : ""}` : `${prefix}${provider} \xB7 ${quoteText}`,
+      compact: `${prefix}${custom || quote.fallbackFrom ? provider + " \xB7 " : ""}${quoteText}`,
+      detail: [
+        `${provider} \xB7 ${label || "\u5E38\u89C4"}\u62A5\u4EF7`,
+        `\u62A5\u4EF7\u65F6\u95F4 ${stamp}`,
+        `\u672C\u673A\u63A5\u6536 ${receipt}`,
+        timing,
+        basis + reference,
+        custom ? "\u65F6\u95F4\u5DEE\u53D6\u51B3\u4E8E\u6E90\u65F6\u95F4\u6233\u4E0E\u4E24\u7AEF\u65F6\u949F\u3002\u4EA4\u6613\u8303\u56F4\u4EE5\u81EA\u6709\u63A5\u53E3\u4E3A\u51C6\u3002" : "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\uFF0C\u4E0D\u540C\u6765\u6E90\u7684\u6210\u4EA4\u8303\u56F4\u53EF\u80FD\u4E0D\u540C"
+      ].filter(Boolean).join("\n"),
+      basis: basis + reference,
+      timing,
+      receipt
     };
   }
   function element(tag, value = "", className = "") {
@@ -6094,9 +6142,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     if (data2.reactions?.[code]?.crying && marketSession(code) === "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5") return data2.quotes[code]?.quote?.changePct <= -5 ? "slump" : "cover";
     return ["cover", "slump"].includes(base) ? "incense" : base;
   }
+  var sparklines = /* @__PURE__ */ new WeakMap();
   function drawSparkline(canvas, samples, color) {
-    const context = canvas.getContext("2d");
+    const previous = sparklines.get(canvas);
     const width = canvas.width, height = canvas.height;
+    if (previous?.color === color && previous.width === width && previous.height === height && previous.samples.length === samples.length && samples.every((sample, index) => sample.at === previous.samples[index].at && sample.price === previous.samples[index].price)) return;
+    sparklines.set(canvas, { color, width, height, samples });
+    const context = canvas.getContext("2d");
     context.clearRect(0, 0, width, height);
     context.strokeStyle = color;
     context.lineWidth = 2.5;
@@ -6700,16 +6752,30 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       controls[key] = control;
       return control;
     }
-    select(form, "mode", "\u884C\u60C5\u6765\u6E90", config.mode, [["public", "\u516C\u5171\u884C\u60C5 \xB7 \u65B0\u6D6A / \u817E\u8BAF"], ["custom", "\u4F7F\u7528\u81EA\u5DF1\u7684 HTTP JSON \u63A5\u53E3"]]);
+    select(form, "mode", "\u884C\u60C5\u6765\u6E90", config.mode, [["public", "\u516C\u5171\u884C\u60C5 \xB7 \u65B0\u6D6A / \u817E\u8BAF"], ["custom", "\u4F7F\u7528\u81EA\u6709\u884C\u60C5\u63A5\u53E3"]]);
     const fields2 = element("fieldset", "", "source-options");
-    input(fields2, "name", "\u6765\u6E90\u540D\u79F0", config.name);
-    const address = input(fields2, "url", "\u62A5\u4EF7\u63A5\u53E3\u5730\u5740", config.url);
+    function group(label) {
+      const section = element("section", "", "source-group");
+      section.append(element("h3", label));
+      fields2.append(section);
+      return section;
+    }
+    const endpoints = group("\u63A5\u53E3\u5730\u5740");
+    input(endpoints, "name", "\u6765\u6E90\u540D\u79F0", config.name);
+    const address = input(endpoints, "url", "HTTP \u5FEB\u7167\u63A5\u53E3\u5730\u5740", config.url);
     address.placeholder = "https://example.com/quote?symbol={symbol}";
-    fields2.append(element("p", "\u5730\u5740\u652F\u6301 {symbol}\u3001{ticker}\u3001{code}\u3001{market}\u3001{exchange}\u3002\u672C\u5730\u8F6C\u63A5\u670D\u52A1\u4E5F\u53EF\u4F7F\u7528 HTTP \u5730\u5740\u3002", "footnote"));
-    input(fields2, "seriesUrl", "\u5206\u65F6\u4E0E K \u7EBF\u63A5\u53E3\u5730\u5740\uFF08\u9009\u586B\uFF09", config.seriesUrl).placeholder = "https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}";
-    fields2.append(element("p", "\u8D70\u52BF\u63A5\u53E3\u4E0E\u62A5\u4EF7\u63A5\u53E3\u5171\u7528\u57DF\u540D\u3001\u7AEF\u53E3\u548C\u9274\u6743\u3002\u81EA\u6709\u8D70\u52BF\u5730\u5740\u7559\u7A7A\u65F6\uFF0C\u5206\u65F6\u548C K \u7EBF\u7EE7\u7EED\u663E\u793A\u516C\u5F00\u884C\u60C5\u3002", "footnote"));
+    endpoints.append(element("p", "\u652F\u6301 {symbol}\u3001{ticker}\u3001{code}\u3001{market}\u3001{exchange}\u3002\u5FEB\u7167\u7528\u4E8E\u542F\u52A8\u3001\u624B\u52A8\u5237\u65B0\u548C\u63A8\u9001\u65AD\u7EBF\u65F6\u7684\u8F6E\u8BE2\u3002", "footnote"));
+    input(endpoints, "streamUrl", "NDJSON \u63A8\u9001\u5730\u5740\uFF08\u9009\u586B\uFF09", config.streamUrl || "").placeholder = "https://example.com/stream?codes={codes}";
+    endpoints.append(element("p", "\u4F7F\u7528\u540C\u6E90 HTTPS \u6216\u672C\u673A HTTP\uFF0C\u6CBF\u7528\u9274\u6743\u3002{codes} \u66FF\u6362\u4E3A\u9017\u53F7\u5206\u9694\u7684\u725B\u6765\u4EE3\u7801\u3002\u6BCF\u884C\u987B\u542B\u6807\u7684\u4EE3\u7801\u548C\u62A5\u4EF7\u65F6\u95F4\u3002", "footnote"));
+    input(endpoints, "seriesUrl", "\u5206\u65F6\u4E0E K \u7EBF\u63A5\u53E3\u5730\u5740\uFF08\u9009\u586B\uFF09", config.seriesUrl).placeholder = "https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}";
+    endpoints.append(element("p", "\u4E0E\u62A5\u4EF7\u63A5\u53E3\u5171\u7528\u57DF\u540D\u3001\u7AEF\u53E3\u548C\u9274\u6743\u3002\u7559\u7A7A\u65F6\u663E\u793A\u516C\u5F00\u7684\u5206\u65F6\u548C K \u7EBF\u3002", "footnote"));
+    const connection = group("\u5E02\u573A\u3001\u5237\u65B0\u4E0E\u9274\u6743");
     const marketGroup = element("div", "", "source-markets");
-    marketGroup.append(element("span", "\u9002\u7528\u5E02\u573A"));
+    const marketLabel = element("span", "\u9002\u7528\u5E02\u573A");
+    marketLabel.id = "source-markets-label";
+    marketGroup.setAttribute("role", "group");
+    marketGroup.setAttribute("aria-labelledby", marketLabel.id);
+    marketGroup.append(marketLabel);
     const markets = [];
     for (const [id, label] of [["cn", "A \u80A1"], ["hk", "\u6E2F\u80A1"], ["us", "\u7F8E\u80A1"]]) {
       const row = element("label"), control = document.createElement("input");
@@ -6720,14 +6786,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       marketGroup.append(row);
       markets.push(control);
     }
-    fields2.append(marketGroup, element("p", "\u6240\u9009\u5E02\u573A\u4F7F\u7528\u81EA\u6709\u63A5\u53E3\uFF0C\u5176\u4F59\u5E02\u573A\u7EE7\u7EED\u4F7F\u7528\u516C\u5171\u884C\u60C5\u3002", "footnote"));
+    connection.append(marketGroup, element("p", "\u6240\u9009\u5E02\u573A\u4F7F\u7528\u81EA\u6709\u63A5\u53E3\uFF0C\u5176\u4F59\u5E02\u573A\u7EE7\u7EED\u4F7F\u7528\u516C\u5171\u884C\u60C5\u3002", "footnote"));
     const connectionGrid = element("div", "", "source-grid");
     select(connectionGrid, "symbolFormat", "\u80A1\u7968\u4EE3\u7801\u683C\u5F0F", config.symbolFormat, [["ticker", "\u539F\u59CB\u4EE3\u7801 \xB7 MP / 00700 / 600519"], ["yahoo", "Yahoo \u683C\u5F0F \xB7 MP / 0700.HK / 600519.SS"], ["niulai", "\u725B\u6765\u4EE3\u7801 \xB7 gb_mp / rt_hk00700"]]);
-    select(connectionGrid, "interval", "\u81EA\u6709\u6E90\u6700\u77ED\u5237\u65B0\u95F4\u9694", String(config.interval), [[0.5, "500 \u6BEB\u79D2"], [1, "1 \u79D2"], [2, "2 \u79D2"], [5, "5 \u79D2"], [10, "10 \u79D2"], [30, "30 \u79D2"], [60, "60 \u79D2"]]);
+    select(connectionGrid, "interval", "\u5FEB\u7167\u6700\u77ED\u8F6E\u8BE2\u95F4\u9694", String(config.interval), [[0.2, "200 \u6BEB\u79D2"], [0.5, "500 \u6BEB\u79D2"], [1, "1 \u79D2"], [2, "2 \u79D2"], [5, "5 \u79D2"], [10, "10 \u79D2"], [30, "30 \u79D2"], [60, "60 \u79D2"]]);
     select(connectionGrid, "authType", "\u9274\u6743\u65B9\u5F0F", config.authType, [["none", "\u65E0\u9700\u9274\u6743"], ["bearer", "Authorization \xB7 Bearer"], ["header", "\u81EA\u5B9A\u4E49\u8BF7\u6C42\u5934"], ["query", "URL \u67E5\u8BE2\u53C2\u6570"]]);
     input(connectionGrid, "authName", "\u8BF7\u6C42\u5934 / \u53C2\u6570\u540D\u79F0", config.authName);
-    fields2.append(connectionGrid);
-    const token = input(fields2, "token", "API \u5BC6\u94A5 / Token", "", "password");
+    connection.append(connectionGrid, element("p", "\u6309\u4F9B\u5E94\u5546\u5141\u8BB8\u7684\u9891\u7387\u8F6E\u8BE2\uFF0C\u9650\u6D41\u65F6\u4F1A\u81EA\u52A8\u51CF\u6162\u3002\u63A8\u9001\u9891\u7387\u7531\u4F9B\u5E94\u5546\u51B3\u5B9A\u3002", "footnote"));
+    const token = input(connection, "token", "API \u5BC6\u94A5 / Token", "", "password");
     token.placeholder = config.hasToken ? "\u5DF2\u4FDD\u5B58\uFF0C\u7559\u7A7A\u4FDD\u7559\u73B0\u6709\u5BC6\u94A5" : "\u4EC5\u4FDD\u5B58\u5728\u8FD9\u53F0\u7535\u8111";
     const mapping = element("details", "", "source-mapping");
     mapping.append(element("summary", "JSON \u5B57\u6BB5\u4E0E\u65F6\u95F4\u8BBE\u7F6E"));
@@ -6766,13 +6832,15 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const example = element("pre", '{\n  "symbol": "MP", "price": 37.88,\n  "previousClose": 36.73,\n  "timestamp": "2026-11-12T13:47:00Z",\n  "session": "pre"\n}', "source-example");
     mapping.append(example);
     fields2.append(mapping);
+    const validation = group("\u56DE\u9000\u4E0E\u6D4B\u8BD5");
     const fallback = element("label", "", "setting-row"), fallbackInput = document.createElement("input");
     fallbackInput.type = "checkbox";
     fallbackInput.id = "source-fallback";
     fallbackInput.checked = config.fallback;
+    fallbackInput.setAttribute("role", "switch");
     fallback.append(element("span", "\u81EA\u6709\u6E90\u5931\u8D25\u6216\u62A5\u4EF7\u8FC7\u671F\u65F6\uFF0C\u5141\u8BB8\u56DE\u9000\u516C\u5171\u884C\u60C5"), fallbackInput);
-    fields2.append(fallback, element("p", "\u56DE\u9000\u65F6\u4F1A\u663E\u793A\u5B9E\u9645\u91C7\u7528\u7684\u6765\u6E90\u3002\u6765\u6E90\u5207\u6362\u540E\u91CD\u65B0\u5EFA\u7ACB\u62A5\u4EF7\u91C7\u6837\u3002", "footnote"));
-    input(fields2, "testCode", "\u6D4B\u8BD5\u80A1\u7968", config.markets.includes("us") ? "MP" : config.markets.includes("hk") ? "00700.HK" : "600519");
+    validation.append(fallback, element("p", "\u56DE\u9000\u65F6\u663E\u793A\u5B9E\u9645\u91C7\u7528\u7684\u6765\u6E90\u3002\u5207\u6362\u6765\u6E90\u4F1A\u91CD\u65B0\u91C7\u6837\u3002", "footnote"));
+    input(validation, "testCode", "\u6D4B\u8BD5\u80A1\u7968", config.markets.includes("us") ? "MP" : config.markets.includes("hk") ? "00700.HK" : "600519");
     form.append(fields2);
     const status = element("p", config.error || "", "source-status footnote");
     status.id = "source-status";
@@ -6840,7 +6908,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const percent2 = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + "%" : "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B";
       const book = result.quote.details?.book;
       const series = result.series ? result.series.bars ? " \xB7 \u65E5 K " + result.series.bars + " \u6839" : " \xB7 \u8D70\u52BF\uFF1A" + result.series.error : "";
-      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent2} \xB7 ${presentation.summary}` + (book ? ` \xB7 \u4E70 ${book.bids.length} \u6863 / \u5356 ${book.asks.length} \u6863` : "") + series;
+      const stream = result.stream?.error ? `\u63A8\u9001\u6D4B\u8BD5\u5931\u8D25 \xB7 ${result.stream.error}` : result.stream ? ["\u63A8\u9001\u5DF2\u6536\u5230", result.stream.symbol, sourceReceiptTiming(result.stream.latencyMs)].filter(Boolean).join(" \xB7 ") : "";
+      status.textContent = `\u8FDE\u63A5\u6210\u529F \xB7 ${result.quote.name} ${fmt(result.quote.price)} \xB7 ${percent2} \xB7 ${presentation.summary}` + (book ? ` \xB7 \u4E70 ${book.bids.length} \u6863 / \u5356 ${book.asks.length} \u6863` : "") + series + (stream ? ` \xB7 ${stream}` : "");
     });
     form.onsubmit = (event) => {
       event.preventDefault();
@@ -7108,7 +7177,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         window.addEventListener("resize", () => this.draw());
       }
       this.theme = new MutationObserver(() => this.draw());
-      this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+      this.theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
     }
     update(code, active = true, source = null) {
       const changed = this.code !== code || this.source !== source;
@@ -7386,21 +7455,32 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   };
   var marketZone = (code) => code.startsWith("gb_") ? "America/New_York" : code.startsWith("rt_hk") ? "Asia/Hong_Kong" : "Asia/Shanghai";
   var marketZoneName = (code) => code.startsWith("gb_") ? "\u7F8E\u4E1C\u65F6\u95F4" : code.startsWith("rt_hk") ? "\u9999\u6E2F\u65F6\u95F4" : "\u5317\u4EAC\u65F6\u95F4";
-  var shortDate = (value, timeZone, detailed = false) => new Intl.DateTimeFormat("zh-CN", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: detailed ? "2-digit" : void 0,
-    hourCycle: "h23"
-  }).format(value);
+  var shortDateFormats = /* @__PURE__ */ new Map();
+  function shortDate(value, timeZone, detailed = false) {
+    const key = timeZone + "/" + detailed;
+    if (!shortDateFormats.has(key)) shortDateFormats.set(key, new Intl.DateTimeFormat("zh-CN", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: detailed ? "2-digit" : void 0,
+      hourCycle: "h23"
+    }));
+    return shortDateFormats.get(key).format(value);
+  }
   var MarketDetails = class {
     constructor(root, request) {
       this.root = root;
       this.request = request;
-      this.metrics = root.querySelector(".market-metrics");
+      const metrics = root.querySelector(".market-metrics");
+      this.metrics = ["\u4ECA\u5F00", "\u6628\u6536", "\u6700\u9AD8", "\u6700\u4F4E", "\u6210\u4EA4\u91CF", "\u6210\u4EA4\u989D"].map((label) => {
+        const cell = element("div"), value = element("dd", "\u2014");
+        cell.append(element("dt", label), value);
+        metrics.append(cell);
+        return value;
+      });
       this.book = root.querySelector(".market-book");
       this.status = root.querySelector(".market-detail-status");
       this.resource = new PanelResource((record) => this.render(record));
@@ -7422,71 +7502,85 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     render({ result, loading = false, error = false }) {
       const code = this.code;
       const unit = code.startsWith("gb_") ? " USD" : code.startsWith("rt_hk") ? " HKD" : " CNY";
-      this.root.setAttribute("aria-busy", String(loading));
+      setAttributeValue(this.root, "aria-busy", String(loading));
       if (result !== this.painted || code !== this.paintedCode) {
         this.painted = result;
         this.paintedCode = code;
-        const rows = [
-          ["\u4ECA\u5F00", marketPrice(result?.open, code)],
-          ["\u6628\u6536", marketPrice(result?.previousClose, code)],
-          ["\u6700\u9AD8", marketPrice(result?.high, code)],
-          ["\u6700\u4F4E", marketPrice(result?.low, code)],
-          ["\u6210\u4EA4\u91CF", Number.isFinite(result?.volume) && result.volumeUnit ? compactVolume(result.volume) + result.volumeUnit : "\u2014"],
-          ["\u6210\u4EA4\u989D", Number.isFinite(result?.amount) ? compactVolume(result.amount) + unit : "\u2014"]
+        const values = [
+          marketPrice(result?.open, code),
+          marketPrice(result?.previousClose, code),
+          marketPrice(result?.high, code),
+          marketPrice(result?.low, code),
+          Number.isFinite(result?.volume) && result.volumeUnit ? compactVolume(result.volume) + result.volumeUnit : "\u2014",
+          Number.isFinite(result?.amount) ? compactVolume(result.amount) + unit : "\u2014"
         ];
-        this.metrics.replaceChildren(...rows.map(([label, value]) => {
-          const cell = element("div");
-          cell.append(element("dt", label), element("dd", value));
-          return cell;
-        }));
+        this.metrics.forEach((cell, index) => setText(cell, values[index]));
         this.renderBook(result);
       }
       const timestamp = result?.quotedAt;
       const at = Number.isFinite(timestamp) ? shortDate(timestamp, marketZone(code), true) + " " + marketZoneName(code) : "";
-      this.status.textContent = [
+      setText(this.status, [
         result?.source,
         at || (result ? "\u672A\u63D0\u4F9B\u65F6\u95F4" : ""),
         result?.source === "\u817E\u8BAF\u516C\u5F00\u884C\u60C5" ? "\u53EF\u80FD\u5EF6\u8FDF" : "",
         error ? result ? "\u66F4\u65B0\u5931\u8D25\uFF0C\u663E\u793A\u4E0A\u6B21\u6570\u636E" : "\u884C\u60C5\u8D44\u6599\u52A0\u8F7D\u5931\u8D25" : loading ? "\u66F4\u65B0\u4E2D\u2026" : ""
-      ].filter(Boolean).join(" \xB7 ");
+      ].filter(Boolean).join(" \xB7 "));
     }
     renderBook(result) {
       const book = result?.book;
-      const heading2 = element("div", "", "market-book-heading");
-      heading2.append(element("h3", book ? result.depthLabel : "\u59D4\u6258\u6863\u4F4D"));
       if (!book) {
-        this.book.replaceChildren(heading2, element("p", result ? "\u5F53\u524D\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u8BE5\u6807\u7684\u7684\u59D4\u6258\u6863\u4F4D\u3002" : "\u7B49\u5F85\u59D4\u6258\u6863\u4F4D\u3002", "muted"));
+        const empty = result ? "\u5F53\u524D\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u8BE5\u6807\u7684\u7684\u59D4\u6258\u6863\u4F4D\u3002" : "\u7B49\u5F85\u59D4\u6258\u6863\u4F4D\u3002";
+        if (this.bookView?.empty !== empty) {
+          const heading2 = element("div", "", "market-book-heading");
+          heading2.append(element("h3", "\u59D4\u6258\u6863\u4F4D"));
+          this.book.replaceChildren(heading2, element("p", empty, "muted"));
+          this.bookView = { empty };
+        }
         return;
       }
       const depth = Math.max(book.bids.length, book.asks.length);
-      const maxSize = Math.max(...[...book.bids, ...book.asks].map((level) => level.size));
+      if (this.bookView?.depth !== depth) this.createBookView(depth);
+      const { title, timestamp, sides } = this.bookView;
+      const maxSize = Math.max(0, ...book.bids.map((level) => level.size), ...book.asks.map((level) => level.size));
       const at = Number.isFinite(book.quotedAt) ? shortDate(book.quotedAt, marketZone(this.code), true) : "\u672A\u63D0\u4F9B\u65F6\u95F4";
-      heading2.append(element("span", at, "muted"));
+      setText(title, result.depthLabel || "\u59D4\u6258\u6863\u4F4D");
+      setText(timestamp, at);
+      for (const [side, levels] of [[sides[0], book.bids], [sides[1], book.asks]]) {
+        setText(side.unit, "\u59D4\u6258\u91CF/" + book.unit);
+        for (const [index, { price, size }] of side.rows.entries()) {
+          const level = levels[index];
+          setText(price, marketPrice(level?.price, this.code));
+          setText(size, compactVolume(level?.size));
+          const share = level && maxSize > 0 ? level.size / maxSize * 100 + "%" : "";
+          if (size.style.getPropertyValue("--depth-share") !== share) size.style.setProperty("--depth-share", share);
+          setAttributeValue(size, "title", level ? level.size.toLocaleString("zh-CN") + book.unit : "");
+        }
+      }
+    }
+    createBookView(depth) {
+      const heading2 = element("div", "", "market-book-heading");
+      const title = element("h3"), timestamp = element("span", "", "muted");
+      heading2.append(title, timestamp);
       const columns = element("div", "", "market-book-columns");
-      const sides = [[book.bids, "\u4E70\u76D8", "\u4E70"], [book.asks, "\u5356\u76D8", "\u5356"]];
-      for (const [levels, label, prefix] of sides) {
-        const table = element("table", "", "market-book-" + (prefix === "\u4E70" ? "bid" : "ask"));
+      const sides = [["bid", "\u4E70\u76D8", "\u4E70"], ["ask", "\u5356\u76D8", "\u5356"]].map(([key, label, prefix]) => {
+        const table = element("table", "", "market-book-" + key);
         table.append(element("caption", label));
         const header = table.createTHead().insertRow();
-        for (const title of ["\u6863\u4F4D", "\u4EF7\u683C", "\u59D4\u6258\u91CF/" + book.unit]) {
-          const col = element("th", title);
+        const unit = element("th");
+        for (const col of [element("th", "\u6863\u4F4D"), element("th", "\u4EF7\u683C"), unit]) {
           col.scope = "col";
           header.append(col);
         }
         const body = table.createTBody();
-        for (let index = 0; index < depth; index++) {
-          const level = levels[index], row = body.insertRow();
+        const rows = Array.from({ length: depth }, (_, index) => {
+          const row = body.insertRow();
           row.insertCell().textContent = prefix + (index + 1);
-          row.insertCell().textContent = marketPrice(level?.price, this.code);
-          const size = row.insertCell();
-          size.textContent = compactVolume(level?.size);
-          if (level) {
-            size.style.setProperty("--depth-share", level.size / maxSize * 100 + "%");
-            size.title = level.size.toLocaleString("zh-CN") + book.unit;
-          }
-        }
+          return { price: row.insertCell(), size: row.insertCell() };
+        });
         columns.append(table);
-      }
+        return { unit, rows };
+      });
+      this.bookView = { depth, title, timestamp, sides };
       this.book.replaceChildren(heading2, columns);
     }
   };
@@ -7519,7 +7613,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       root.querySelector(".market-news-permissions").onclick = (event) => this.updatePreference("permissions", null, event.currentTarget);
       this.test.onclick = () => this.updatePreference("test", null, this.test);
       this.resource = new PanelResource((record) => this.render(record));
-      for (const button of root.querySelectorAll("[data-news-scope]")) {
+      this.scopeButtons = root.querySelectorAll("[data-news-scope]");
+      for (const button of this.scopeButtons) {
         button.onclick = () => this.setScope(button.dataset.newsScope);
       }
       this.more.onclick = () => {
@@ -7550,21 +7645,22 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const { code, name } = this.stock, scope = this.scope;
       const key = scope === "market" ? "market" : code;
       if (key !== this.resource.key) this.visible = 5;
-      this.title.textContent = scope === "market" ? "\u5E02\u573A\u52A8\u6001" : name;
-      this.follow.hidden = scope === "market";
-      for (const button of this.root.querySelectorAll("[data-news-scope]")) {
-        button.setAttribute("aria-pressed", String(button.dataset.newsScope === scope));
+      setText(this.title, scope === "market" ? "\u5E02\u573A\u52A8\u6001" : name);
+      const hideFollow = scope === "market";
+      if (this.follow.hidden !== hideFollow) this.follow.hidden = hideFollow;
+      for (const button of this.scopeButtons) {
+        setAttributeValue(button, "aria-pressed", String(button.dataset.newsScope === scope));
       }
       this.resource.update({ key, active: this.active, request: () => this.request(scope === "market" ? "market" : "stock", code, force), interval: 3e5, force });
     }
     render({ result, loading = false, error = false }) {
-      this.root.setAttribute("aria-busy", String(loading));
-      this.refresh.disabled = loading;
+      setAttributeValue(this.root, "aria-busy", String(loading));
+      if (this.refresh.disabled !== loading) this.refresh.disabled = loading;
       if (this.articles !== result?.articles || this.paintedKey !== this.resource.key || this.paintedScope !== this.scope) this.paintArticles(result?.articles);
-      this.status.textContent = [
+      setText(this.status, [
         result?.source,
         error ? result ? "\u66F4\u65B0\u5931\u8D25\uFF0C\u663E\u793A\u4E0A\u6B21\u65B0\u95FB" : "\u65B0\u95FB\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u91CD\u8BD5" : loading ? "\u6B63\u5728\u83B7\u53D6\u65B0\u95FB\u2026" : result && this.visibleArticles().length === 0 ? "\u6682\u672A\u627E\u5230\u76F8\u5173\u65B0\u95FB" : ""
-      ].filter(Boolean).join(" \xB7 ");
+      ].filter(Boolean).join(" \xB7 "));
     }
     visibleArticles() {
       const all = this.articles || [];
@@ -7638,11 +7734,12 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     paintPreferences() {
       const preferences = this.preferences;
       const following = preferences.followed.includes(this.stock.code);
-      this.follow.setAttribute("aria-pressed", String(following));
-      this.follow.textContent = following ? "\u5DF2\u5173\u6CE8" : "\u5173\u6CE8\u65B0\u95FB";
-      this.autoTranslate.checked = preferences.autoTranslate;
-      this.notify.checked = preferences.notifications;
-      this.test.disabled = !preferences.notifications;
+      setAttributeValue(this.follow, "aria-pressed", String(following));
+      setText(this.follow, following ? "\u5DF2\u5173\u6CE8" : "\u5173\u6CE8\u65B0\u95FB");
+      if (!this.autoTranslate.disabled && this.autoTranslate.checked !== preferences.autoTranslate) this.autoTranslate.checked = preferences.autoTranslate;
+      if (!this.notify.disabled && this.notify.checked !== preferences.notifications) this.notify.checked = preferences.notifications;
+      const disableTest = Boolean(this.testing) || !preferences.notifications;
+      if (this.test.disabled !== disableTest) this.test.disabled = disableTest;
       const stocks = preferences.followed.map((code) => this.stocks.find((stock) => stock.code === code)).filter(Boolean);
       const key = stocks.map((stock) => stock.code + stock.name).join("|");
       if (key === this.followedKey) return;
@@ -7660,6 +7757,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       }
     }
     async updatePreference(operation, value, control) {
+      if (operation === "test") this.testing = true;
       control.disabled = true;
       this.notifyStatus.textContent = "";
       try {
@@ -7669,6 +7767,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         this.notifyStatus.textContent = String(error.message).replace(/^Error invoking remote method '[^']+': Error: /, "");
         this.root.querySelector(".market-news-preferences").open = true;
       } finally {
+        if (operation === "test") this.testing = false;
         control.disabled = operation === "test" && !this.preferences.notifications;
         this.paintPreferences();
       }
@@ -7676,7 +7775,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   };
 
   // renderer.js
-  var import_market_symbols4 = __toESM(require_market_symbols());
+  var import_market_symbols5 = __toESM(require_market_symbols());
 
   // renderer-modules/feedback-form.js
   function createFeedbackForm({ submit, context, open }) {
@@ -7704,8 +7803,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         const bytes = crypto.getRandomValues(new Uint8Array(16));
         bytes[6] = bytes[6] & 15 | 64;
         bytes[8] = bytes[8] & 63 | 128;
-        const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-        clientId = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+        const hex2 = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+        clientId = [hex2.slice(0, 8), hex2.slice(8, 12), hex2.slice(12, 16), hex2.slice(16, 20), hex2.slice(20)].join("-");
       }
       const value = {
         kind: document.getElementById("feedback-kind").value,
@@ -7843,7 +7942,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       enableControls();
       if (!next.trial) return;
       const { trial } = next;
-      const { currency: currency2, stats, history, signal } = trial;
+      const { currency: currency3, stats, history, signal } = trial;
       get("note").textContent = trial.symbol + " \xB7 " + trial.note;
       get("note").classList.toggle("orderbook-warning", trial.paused);
       get("signal").hidden = !signal;
@@ -7858,7 +7957,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         ["\u4FE1\u53F7", number(stats.signals)],
         ["\u6A21\u62DF\u6210\u4EA4 / \u53D6\u6D88\u817F\u6570", number(stats.fills) + " / " + number(stats.cancelled)]
       ];
-      if (trial.strategy === "spread") metrics.push(["\u5DF2\u914D\u5BF9\u51C0\u5DEE\u989D", amount(stats.pairedNet) + " " + currency2], ["\u672A\u914D\u5BF9\u4FE1\u53F7", number(stats.unpaired)]);
+      if (trial.strategy === "spread") metrics.push(["\u5DF2\u914D\u5BF9\u51C0\u5DEE\u989D", amount(stats.pairedNet) + " " + currency3], ["\u672A\u914D\u5BF9\u4FE1\u53F7", number(stats.unpaired)]);
       get("metrics").replaceChildren(...metrics.map(([key, value]) => {
         const item = element("div");
         item.append(element("dt", key), element("dd", value));
@@ -7875,7 +7974,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
             element("p", "\u5931\u8861 " + amount(book.imbalance) + "% \xB7 \u4E70\u5356\u4EF7\u5DEE " + amount(book.spreadBp) + " bp", "muted")
           );
         } else article.append(element("p", "\u7B49\u5F85\u6709\u6548\u76D8\u53E3", "muted"));
-        article.append(element("p", "\u73B0\u91D1 " + amount(account.cash) + " " + currency2 + " \xB7 \u6301\u6709 " + number(account.quantity) + " \u80A1 \xB7 \u53EF\u5356 " + number(account.sellable) + " \u80A1", "muted"));
+        article.append(element("p", "\u73B0\u91D1 " + amount(account.cash) + " " + currency3 + " \xB7 \u6301\u6709 " + number(account.quantity) + " \u80A1 \xB7 \u53EF\u5356 " + number(account.sellable) + " \u80A1", "muted"));
         return article;
       }));
       const historyKey = [next.sequence, history[0]?.id, history.length].join("/");
@@ -7894,7 +7993,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
           element("td", formatTime.format(record.at)),
           element("td", statusLabel[record.status], record.status === "unpaired" ? "orderbook-warning" : ""),
           legs,
-          element("td", record.net === null ? "\u2014" : amount(record.net) + " " + currency2)
+          element("td", record.net === null ? "\u2014" : amount(record.net) + " " + currency3)
         );
         return row;
       }));
@@ -7961,6 +8060,559 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     };
   }
 
+  // renderer-modules/desktop-plugins.js
+  var import_market_symbols4 = __toESM(require_market_symbols());
+  var import_quote_time3 = __toESM(require_quote_time());
+  var { displaySymbol: displaySymbol2, marketForSymbol: marketForSymbol2 } = import_market_symbols4.default;
+  var { marketClock: marketClock2 } = import_quote_time3.default;
+  var marketNames = { cn: "A \u80A1", hk: "\u6E2F\u80A1", us: "\u7F8E\u80A1" };
+  var currency2 = { cn: "CNY", hk: "HKD", us: "USD" };
+  var sessionLabels = { pre: "\u76D8\u524D", regular: "\u5E38\u89C4\u4EA4\u6613", post: "\u76D8\u540E" };
+  var clockPrecision = { minute: {}, second: { second: "2-digit" }, millisecond: { second: "2-digit", fractionalSecondDigits: 3 } };
+  var MAX_SAMPLES = 60;
+  var PLAY_INTERVAL = 600;
+  var clockFormats = /* @__PURE__ */ new Map();
+  function selectField(id, label, options = []) {
+    const wrapper = element("label", "", "dp-field");
+    const input = element("select");
+    input.id = id;
+    wrapper.htmlFor = id;
+    wrapper.append(element("span", label), input);
+    for (const [value, title] of options) input.add(new Option(title, value));
+    return { wrapper, input };
+  }
+  function playbackButton(id, label) {
+    const action = element("button", label, "secondary dp-button");
+    action.id = id;
+    action.type = "button";
+    return action;
+  }
+  function panelHeading(id, title, controls) {
+    const heading2 = element("header", "", "dp-heading");
+    const label = element("h2", title);
+    label.id = id;
+    heading2.append(label, controls);
+    return heading2;
+  }
+  function priceTime(at, zone, precision = "millisecond") {
+    const level = Object.hasOwn(clockPrecision, precision) ? precision : "millisecond";
+    const key = `${zone}/${level}`;
+    if (!clockFormats.has(key)) {
+      clockFormats.set(key, new Intl.DateTimeFormat("zh-CN", {
+        timeZone: zone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+        ...clockPrecision[level]
+      }));
+    }
+    return clockFormats.get(key).format(at);
+  }
+  function priceAxis(samples) {
+    const values = samples.map((sample) => sample.price);
+    const minimum = Math.min(...values), maximum = Math.max(...values);
+    const padding = minimum === maximum ? maximum * 1e-3 : Math.max(0, maximum * 1e-12 - (maximum - minimum));
+    const low = Math.max(0, minimum - padding), high = maximum + padding;
+    const stepTarget = (high - low) / 4;
+    const exponent = Math.floor(Math.log10(stepTarget));
+    const unit = 10 ** exponent;
+    const factor = [1, 2, 2.5, 5, 10].find((candidate) => candidate >= stepTarget / unit) || 10;
+    const step = factor * unit;
+    if (!Number.isFinite(step) || step <= 0 || !Number.isFinite(high + step)) {
+      return { low: minimum, high: maximum, ticks: [.../* @__PURE__ */ new Set([minimum, maximum])], digits: 11 };
+    }
+    const first = Math.floor(low / step), last = Math.ceil(high / step);
+    const ticks = Array.from({ length: last - first + 1 }, (_, index) => (first + index) * step);
+    const digits = Math.max(0, -exponent + (factor === 2.5 ? 1 : factor === 10 ? -1 : 0));
+    return { low: ticks[0], high: ticks.at(-1), ticks, digits };
+  }
+  function chartPrice(value, code, digits, axis = false) {
+    const precision = Math.max(code.startsWith("rt_hk") ? 3 : 2, digits);
+    if (precision > 10 && value) {
+      const magnitude = Math.floor(Math.log10(Math.abs(value)));
+      return value.toExponential(Math.min(14, Math.max(2, precision + magnitude)));
+    }
+    return !axis && precision <= 4 ? marketPrice(value, code) : fmt(value, precision);
+  }
+  function recordedSession(sample, clock) {
+    const boundary = sample.at % 6e4 === 0 && clock.phase !== "weekend";
+    if (clock.market === "us") {
+      if (Object.hasOwn(sessionLabels, clock.phase)) {
+        return Object.hasOwn(sessionLabels, sample.session) ? sample.session : clock.phase;
+      }
+      return boundary && clock.minuteOfDay === 1200 && sample.session === "post" ? "post" : "";
+    }
+    const regularCloses = clock.market === "hk" ? [720, 960] : [690, 900];
+    return clock.phase === "regular" || boundary && regularCloses.includes(clock.minuteOfDay) ? "regular" : "";
+  }
+  function latestSession(code, raw) {
+    let session2;
+    const samples = [];
+    for (const sample of raw.slice(-MAX_SAMPLES).reverse()) {
+      if (!Number.isSafeInteger(sample?.at) || sample.at <= 0 || sample.at > 864e13 || !Number.isFinite(sample?.price) || sample.price <= 0) continue;
+      const clock = marketClock2(code, sample.at);
+      const phase = recordedSession(sample, clock);
+      if (!phase) continue;
+      const key = [clock.dateKey, phase, clock.market !== "us" && clock.minuteOfDay >= 780].join("/");
+      if (session2 && session2.key !== key) break;
+      const previous = samples.at(-1);
+      if (sample.at === previous?.at && sample.price === previous.price) continue;
+      session2 ||= { key, date: clock.dateKey, phase, zone: clock.zone };
+      samples.push(sample);
+    }
+    return { session: session2, samples: samples.reverse(), axis: samples.length ? priceAxis(samples) : null };
+  }
+  function drawTimeTicks(context, points, bounds, zone, millisecondLabels) {
+    const times = Array.from(new Map(points.map((point) => [point.at, point])).values());
+    const candidates = [times[0], times.at(-1)];
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const x = bounds.left + (bounds.right - bounds.left) * fraction;
+      candidates.push(times.reduce((best, point) => Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best));
+    }
+    const placed = [];
+    for (const point of new Set(candidates)) {
+      const precision = point.timePrecision || "millisecond";
+      const label = priceTime(point.at, zone, !millisecondLabels && precision === "millisecond" ? "second" : precision);
+      const width = context.measureText(label).width;
+      const start = Math.max(bounds.left, Math.min(bounds.right - width, point.x - width / 2));
+      if (width > bounds.right - bounds.left || placed.some((mark) => start < mark.end + 10 && start + width > mark.start - 10)) continue;
+      placed.push({ start, end: start + width });
+      context.fillText(label, start, bounds.bottom + 17);
+      context.beginPath();
+      context.moveTo(point.x, bounds.bottom);
+      context.lineTo(point.x, bounds.bottom + 5);
+      context.stroke();
+    }
+  }
+  function drawReplay(canvas, frame, cursor, code) {
+    const { samples, session: session2, axis } = frame;
+    const context = canvas.getContext("2d");
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    if (!context || width <= 0 || height <= 0) return null;
+    const step = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(width * step)) canvas.width = Math.round(width * step);
+    if (canvas.height !== Math.round(height * step)) canvas.height = Math.round(height * step);
+    context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const style = getComputedStyle(canvas);
+    const color = (name) => style.getPropertyValue(name).trim();
+    context.font = `11px ${style.fontFamily}`;
+    const prices = axis.ticks.map((tick) => chartPrice(tick, code, axis.digits, true));
+    const bounds = {
+      left: Math.ceil(Math.max(...prices.map((label) => context.measureText(label).width))) + 18,
+      right: width - 13,
+      top: 13,
+      bottom: height - 26
+    };
+    if (bounds.right <= bounds.left) return null;
+    const yAt = (price) => axis.low === axis.high ? (bounds.top + bounds.bottom) / 2 : bounds.bottom - (price - axis.low) / (axis.high - axis.low) * (bounds.bottom - bounds.top);
+    const firstAt = samples[0].at;
+    const span = samples.at(-1).at - firstAt;
+    const points = samples.map((sample) => ({
+      ...sample,
+      x: span ? bounds.left + (sample.at - firstAt) / span * (bounds.right - bounds.left) : (bounds.left + bounds.right) / 2,
+      y: yAt(sample.price)
+    }));
+    context.strokeStyle = color("--line");
+    context.fillStyle = color("--muted");
+    context.lineWidth = 1;
+    context.textAlign = "right";
+    context.textBaseline = "middle";
+    context.beginPath();
+    axis.ticks.forEach((price, index) => {
+      const y = yAt(price);
+      context.moveTo(bounds.left, y);
+      context.lineTo(bounds.right, y);
+      context.fillText(prices[index], bounds.left - 8, y);
+    });
+    context.stroke();
+    context.textAlign = "left";
+    drawTimeTicks(context, points, bounds, session2.zone, span < 2e4);
+    context.strokeStyle = color("--blue");
+    context.lineWidth = 2;
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    for (const next of points.slice(1)) context.lineTo(next.x, next.y);
+    context.stroke();
+    const point = points[cursor];
+    context.strokeStyle = color("--muted");
+    context.lineWidth = 1;
+    context.setLineDash([3, 4]);
+    context.beginPath();
+    context.moveTo(point.x, bounds.top);
+    context.lineTo(point.x, bounds.bottom);
+    context.stroke();
+    context.setLineDash([]);
+    context.fillStyle = color("--blue");
+    context.beginPath();
+    context.arc(point.x, point.y, 4.5, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = color("--surface");
+    context.lineWidth = 2;
+    context.stroke();
+    return { points, bounds };
+  }
+  function mountDesktopPlugins(root, { select }) {
+    const heatmap = element("section", "", "card dp-panel");
+    heatmap.dataset.pluginPanel = "heatmap";
+    heatmap.setAttribute("aria-labelledby", "dp-heatmap-title");
+    const market = selectField("dp-heatmap-market", "\u5E02\u573A", [["all", "\u5168\u90E8\u5E02\u573A"], ...Object.entries(marketNames)]);
+    const sorting = selectField("dp-heatmap-sort", "\u6392\u5E8F", [
+      ["descending", "\u6DA8\u5E45\u4F18\u5148"],
+      ["ascending", "\u8DCC\u5E45\u4F18\u5148"],
+      ["magnitude", "\u6309\u6CE2\u52A8\u5E45\u5EA6"],
+      ["watchlist", "\u81EA\u9009\u987A\u5E8F"]
+    ]);
+    const heatControls = element("div", "", "dp-controls");
+    heatControls.append(market.wrapper, sorting.wrapper);
+    const heatSummary = element("p", "", "dp-context muted");
+    const heatHeader = element("div", "", "dp-heat-header dp-heat-grid");
+    const heatScale = element("span");
+    heatHeader.append(element("span", "\u6807\u7684"), heatScale, element("span", "\u6DA8\u8DCC\u5E45"));
+    const heatRows = element("ul", "", "dp-heat-rows");
+    const heatEmpty = element("p", "\u5F53\u524D\u5E02\u573A\u6682\u65E0\u81EA\u9009\u6807\u7684\u3002", "dp-empty muted");
+    heatmap.append(panelHeading("dp-heatmap-title", "\u81EA\u9009\u70ED\u56FE", heatControls), heatSummary, heatHeader, heatRows, heatEmpty);
+    const replay = element("section", "", "card dp-panel");
+    replay.dataset.pluginPanel = "replay";
+    replay.setAttribute("aria-labelledby", "dp-replay-title");
+    const symbol = selectField("dp-replay-symbol", "\u6807\u7684");
+    const replayControls = element("div", "", "dp-controls");
+    replayControls.append(symbol.wrapper);
+    const replayBody = element("div", "", "dp-replay-body");
+    const reading = element("div", "", "dp-replay-reading");
+    const readingPrice = element("strong", "", "dp-reading-price");
+    readingPrice.id = "dp-replay-price";
+    const readingTime = element("time", "", "dp-reading-time muted");
+    const readingContext = element("p", "", "dp-context muted");
+    reading.append(readingPrice, readingTime, readingContext);
+    const chart = element("div", "", "dp-replay-chart");
+    const canvas = element("canvas", "", "dp-replay-canvas");
+    canvas.id = "dp-replay-chart";
+    canvas.title = "\u70B9\u51FB\u5B9A\u4F4D\u62A5\u4EF7\u6837\u672C";
+    canvas.setAttribute("aria-hidden", "true");
+    const tooltip = element("div", "", "dp-chart-tooltip");
+    tooltip.hidden = true;
+    tooltip.setAttribute("aria-hidden", "true");
+    const tooltipPrice = element("strong"), tooltipTime = element("span", "", "muted");
+    tooltip.append(tooltipPrice, tooltipTime);
+    chart.append(canvas, tooltip);
+    const timeline = element("div", "", "dp-replay-timeline");
+    const play = playbackButton("dp-replay-play", "\u64AD\u653E");
+    const latest = playbackButton("dp-replay-latest", "\u6700\u65B0\u6837\u672C");
+    const slider = element("input", "", "dp-slider");
+    slider.id = "dp-replay-progress";
+    slider.type = "range";
+    slider.min = "0";
+    slider.step = "1";
+    slider.setAttribute("aria-label", "\u56DE\u653E\u8FDB\u5EA6");
+    const sampleCount = element("span", "", "dp-sample-count muted");
+    timeline.append(play, slider, sampleCount, latest);
+    replayBody.append(reading, chart, timeline);
+    const replayEmpty = element("p", "", "dp-empty muted");
+    replay.append(panelHeading("dp-replay-title", "\u62A5\u4EF7\u56DE\u653E", replayControls), replayBody, replayEmpty);
+    root.replaceChildren(heatmap, replay);
+    let data2, active = null;
+    let rowsByCode = /* @__PURE__ */ new Map(), heatOrder = "";
+    let code = "", symbolOptions = "";
+    let sourceSamples = [], frame = { session: null, samples: [] };
+    let frozen = false, cursor = 0, timer = null;
+    let chartFrame, chartCursor, chartKey, plot, pointer;
+    const stocks = () => data2?.state?.stocks || [];
+    function makeHeatRow(stockCode) {
+      const row = element("li");
+      const button = element("button", "", "dp-heat-grid dp-heat-row");
+      button.type = "button";
+      button.dataset.heatStock = stockCode;
+      button.onclick = () => select(stockCode);
+      const heading2 = element("span", "", "dp-stock");
+      const name = element("strong");
+      const metadata = element("span", "", "dp-stock-meta");
+      const symbolLabel = element("small", displaySymbol2(stockCode), "muted");
+      const delayed = element("small", "\u884C\u60C5\u5EF6\u8FDF", "dp-stock-delayed");
+      metadata.append(symbolLabel, delayed);
+      heading2.append(name, metadata);
+      const track = element("span", "", "dp-change-track");
+      track.setAttribute("aria-hidden", "true");
+      const bar = element("span", "", "dp-change-bar");
+      track.append(bar);
+      const change = element("span", "", "dp-change-value");
+      button.append(heading2, track, change);
+      row.append(button);
+      return { row, button, name, delayed, bar, change };
+    }
+    function renderHeatmap() {
+      const watched = stocks();
+      const now = Date.now();
+      const interval = data2?.state?.settings?.interval;
+      const rows = watched.filter((stock) => market.input.value === "all" || marketForSymbol2(stock.code) === market.input.value).map((stock) => {
+        const entry = data2?.quotes?.[stock.code];
+        const health = entry?.quote ? quoteHealth(entry, interval, now) : null;
+        return { stock, change: entry?.quote?.changePct, delay: health?.warning ? health.message : "" };
+      });
+      if (sorting.input.value !== "watchlist") {
+        const order2 = sorting.input.value;
+        const key = (value) => order2 === "magnitude" ? -Math.abs(value) : order2 === "ascending" ? value : -value;
+        rows.sort((a, b) => (Number.isFinite(a.change) ? key(a.change) : Infinity) - (Number.isFinite(b.change) ? key(b.change) : Infinity));
+      }
+      const available = rows.filter((row) => Number.isFinite(row.change));
+      const scale = Math.max(1, ...available.map((row) => Math.ceil(Math.abs(row.change) * 10) / 10));
+      const delayed = rows.filter((row) => row.delay).length;
+      setText(heatSummary, `${rows.length} \u53EA\u81EA\u9009 \xB7 ${available.length} \u53EA\u6709\u6DA8\u8DCC\u5E45` + (delayed ? ` \xB7 ${delayed} \u53EA\u884C\u60C5\u5EF6\u8FDF` : ""));
+      setText(heatScale, `\u8DCC / \u6DA8 \xB7 \xB1${fmt(scale, 1)}%`);
+      heatEmpty.hidden = rows.length > 0;
+      heatHeader.hidden = rows.length === 0;
+      const next = /* @__PURE__ */ new Map();
+      for (const { stock, change, delay } of rows) {
+        const row = rowsByCode.get(stock.code) || makeHeatRow(stock.code);
+        const movement = tone(change);
+        row.bar.className = `dp-change-bar ${movement}`;
+        row.bar.style.setProperty("--dp-change-width", `${Number.isFinite(change) ? Math.abs(change) / scale * 50 : 0}%`);
+        setText(row.name, stock.name || displaySymbol2(stock.code));
+        row.delayed.hidden = !delay;
+        row.delayed.title = delay;
+        row.button.classList.toggle("dp-stale", Boolean(delay));
+        setText(row.change, Number.isFinite(change) ? signed(change) + "%" : "\u2014");
+        row.change.className = `dp-change-value ${movement}`;
+        if (stock.code === data2?.state?.selected) row.button.setAttribute("aria-current", "true");
+        else row.button.removeAttribute("aria-current");
+        next.set(stock.code, row);
+      }
+      rowsByCode = next;
+      const order = [...next.keys()].join(",");
+      if (order !== heatOrder) {
+        const focused = heatRows.contains(document.activeElement) ? document.activeElement : null;
+        heatRows.replaceChildren(...Array.from(next.values(), (row) => row.row));
+        if (heatRows.contains(focused)) focused.focus({ preventScroll: true });
+        heatOrder = order;
+      }
+    }
+    function pause() {
+      clearTimeout(timer);
+      timer = null;
+      setText(play, "\u64AD\u653E");
+    }
+    function setSymbol(next) {
+      pause();
+      hideTooltip();
+      code = next;
+      sourceSamples = [];
+      frame = { session: null, samples: [] };
+      frozen = false;
+      cursor = 0;
+    }
+    function hideTooltip() {
+      pointer = null;
+      tooltip.hidden = true;
+    }
+    function nearestPoint(position2) {
+      if (!plot || position2.x < plot.bounds.left - 4 || position2.x > plot.bounds.right + 4 || position2.y < plot.bounds.top - 4 || position2.y > plot.bounds.bottom + 4) return -1;
+      let selected = -1, bestX = Infinity, bestY = Infinity;
+      plot.points.forEach((point, index) => {
+        const x = Math.abs(point.x - position2.x), y = Math.abs(point.y - position2.y);
+        if (x < bestX || x === bestX && y < bestY) {
+          selected = index;
+          bestX = x;
+          bestY = y;
+        }
+      });
+      return selected;
+    }
+    function renderTooltip() {
+      const index = pointer ? nearestPoint(pointer) : -1;
+      if (index < 0) {
+        tooltip.hidden = true;
+        return;
+      }
+      const point = plot.points[index];
+      setText(tooltipPrice, chartPrice(point.price, code, frame.axis.digits));
+      const time2 = priceTime(point.at, frame.session.zone, point.timePrecision);
+      setText(tooltipTime, (point.receivedTime ? "\u672C\u673A\u63A5\u6536 " : "") + time2);
+      tooltip.hidden = false;
+      const x = Math.max(5, Math.min(canvas.clientWidth - tooltip.offsetWidth - 5, point.x + 10));
+      const above = point.y - tooltip.offsetHeight - 9;
+      tooltip.style.left = x + "px";
+      tooltip.style.top = (above > 4 ? above : point.y + 9) + "px";
+    }
+    function renderChart() {
+      if (active !== "replay" || !frame.samples.length) return;
+      const key = [
+        data2?.state?.settings?.theme,
+        data2?.dark,
+        data2?.accent,
+        canvas.clientWidth,
+        canvas.clientHeight,
+        window.devicePixelRatio
+      ].join("/");
+      if (chartFrame === frame && chartCursor === cursor && chartKey === key) return;
+      plot = drawReplay(canvas, frame, cursor, code);
+      chartFrame = frame;
+      chartCursor = cursor;
+      chartKey = key;
+      renderTooltip();
+    }
+    const chartSize = new ResizeObserver(renderChart);
+    function renderReplay() {
+      const watched = stocks();
+      const choices = JSON.stringify(watched.map((stock) => [stock.code, stock.name]));
+      if (choices !== symbolOptions) {
+        symbol.input.replaceChildren(...watched.map((stock) => new Option(`${stock.name || displaySymbol2(stock.code)} \xB7 ${displaySymbol2(stock.code)}`, stock.code)));
+        symbolOptions = choices;
+      }
+      if (!watched.some((stock) => stock.code === code)) {
+        setSymbol(watched.find((stock) => stock.code === data2?.state?.selected)?.code || watched[0]?.code || "");
+      }
+      symbol.input.disabled = !code;
+      symbol.input.value = code;
+      const latestSamples = data2?.histories?.[code] || [];
+      if (!frozen && (sourceSamples.length !== latestSamples.length || !sourceSamples.every((sample2, index) => {
+        const item = latestSamples[index];
+        return sample2?.at === item?.at && sample2?.price === item?.price && sample2?.timePrecision === item?.timePrecision && sample2?.receivedTime === item?.receivedTime && sample2?.session === item?.session;
+      }))) {
+        sourceSamples = latestSamples;
+        frame = latestSession(code, latestSamples);
+        cursor = Math.max(0, frame.samples.length - 1);
+      }
+      const { session: session2, samples } = frame;
+      const sample = samples[cursor];
+      const available = samples.length >= 2;
+      replayBody.hidden = !sample;
+      replayEmpty.hidden = available;
+      setText(replayEmpty, !code ? "\u6DFB\u52A0\u81EA\u9009\u6807\u7684\u540E\u53EF\u56DE\u653E\u62A5\u4EF7\u3002" : sample ? "\u540C\u4E00\u4EA4\u6613\u65F6\u6BB5\u79EF\u7D2F\u81F3\u5C11\u4E24\u6761\u62A5\u4EF7\u540E\u53EF\u64AD\u653E\u3002" : "\u672C\u6B21\u8FD0\u884C\u8FD8\u6CA1\u6709\u91C7\u96C6\u5230\u4EA4\u6613\u65F6\u6BB5\u62A5\u4EF7\u3002");
+      play.disabled = !available;
+      latest.disabled = !frozen;
+      slider.disabled = !available;
+      if (!sample) return;
+      slider.max = String(samples.length - 1);
+      slider.value = String(cursor);
+      const clock = priceTime(sample.at, session2.zone, sample.timePrecision);
+      const position2 = `${cursor + 1} / ${samples.length}`;
+      slider.setAttribute("aria-valuetext", position2 + " \xB7 " + clock);
+      setText(sampleCount, position2);
+      setText(readingPrice, `${chartPrice(sample.price, code, frame.axis.digits)} ${currency2[marketForSymbol2(code)]}`);
+      setText(readingTime, (sample.receivedTime ? "\u672C\u673A\u63A5\u6536 " : "") + clock + (session2.zone === "America/New_York" ? " \u7F8E\u4E1C" : " UTC+8"));
+      readingTime.dateTime = new Date(sample.at).toISOString();
+      setText(readingContext, `${session2.date} \xB7 ${sessionLabels[session2.phase]} \xB7 \u672C\u6B21\u8FD0\u884C\u91C7\u96C6`);
+      renderChart();
+    }
+    function advance() {
+      cursor++;
+      if (cursor >= frame.samples.length - 1) pause();
+      else timer = setTimeout(advance, PLAY_INTERVAL);
+      renderReplay();
+    }
+    market.input.onchange = renderHeatmap;
+    sorting.input.onchange = renderHeatmap;
+    symbol.input.onchange = () => {
+      setSymbol(symbol.input.value);
+      renderReplay();
+    };
+    function seek(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= frame.samples.length) return;
+      pause();
+      frozen = true;
+      cursor = index;
+      renderReplay();
+    }
+    const canvasPoint = (event) => {
+      const rectangle = canvas.getBoundingClientRect();
+      return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
+    };
+    canvas.onpointermove = (event) => {
+      pointer = canvasPoint(event);
+      renderTooltip();
+    };
+    canvas.onpointerleave = hideTooltip;
+    canvas.onclick = (event) => seek(nearestPoint(canvasPoint(event)));
+    slider.oninput = () => seek(slider.valueAsNumber);
+    latest.onclick = () => {
+      pause();
+      frozen = false;
+      cursor = frame.samples.length - 1;
+      renderReplay();
+    };
+    play.title = "\u4F9D\u6B21\u64AD\u653E\u6837\u672C";
+    play.onclick = () => {
+      if (timer !== null) {
+        pause();
+      } else if (frame.samples.length >= 2) {
+        frozen = true;
+        if (cursor === frame.samples.length - 1) cursor = 0;
+        timer = setTimeout(advance, PLAY_INTERVAL);
+        setText(play, "\u6682\u505C");
+      }
+      renderReplay();
+    };
+    function render2() {
+      if (active === "heatmap") renderHeatmap();
+      else if (active === "replay") renderReplay();
+    }
+    heatmap.hidden = replay.hidden = root.hidden = true;
+    return {
+      update(snapshot) {
+        data2 = snapshot;
+        if (snapshot?.suspended && timer !== null) pause();
+        render2();
+      },
+      setActive(panel) {
+        if (panel === active) return;
+        pause();
+        hideTooltip();
+        chartSize.disconnect();
+        active = panel;
+        heatmap.hidden = panel !== "heatmap";
+        replay.hidden = panel !== "replay";
+        root.hidden = heatmap.hidden && replay.hidden;
+        if (panel === "replay") chartSize.observe(canvas);
+        render2();
+      }
+    };
+  }
+
+  // renderer-modules/system-appearance.js
+  var applied = /* @__PURE__ */ new WeakMap();
+  var accentPattern = /^#[0-9a-f]{6}$/i;
+  var parse = (value) => [1, 3, 5].map((start) => Number.parseInt(value.slice(start, start + 2), 16));
+  var hex = (color) => "#" + color.map((value) => value.toString(16).padStart(2, "0")).join("");
+  var mix = (a, b, amount2) => a.map((value, index) => Math.round(value + (b[index] - value) * amount2));
+  var linear = (value) => value <= 10 ? value / (255 * 12.92) : ((value / 255 + 0.055) / 1.055) ** 2.4;
+  var luminance = ([red, green, blue]) => 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+  function contrast(a, b) {
+    const first = luminance(a), second = luminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  }
+  function readableSystemAccent(value, dark) {
+    if (!accentPattern.test(value || "")) return "";
+    const color = parse(value);
+    const backdrop = parse(dark ? "#1c1f26" : "#ffffff");
+    const soft = parse(dark ? "#252a34" : "#edf0f3");
+    const ink = parse(dark ? "#ffffff" : "#000000");
+    for (let step = 0; step <= 20; step++) {
+      const candidate = mix(color, ink, step / 20);
+      const selected = mix(backdrop, candidate, 0.12);
+      if ([backdrop, soft, selected].every((background) => contrast(candidate, background) >= 4.5)) return hex(candidate);
+    }
+    return hex(ink);
+  }
+  function applyAppearance(data2, mode, root = document.documentElement) {
+    const dark = mode === "dark" || mode === "system" && Boolean(data2.dark);
+    const source = mode === "system" ? data2.accent : null;
+    const previous = applied.get(root);
+    if (previous?.dark === dark && previous.source === source) return dark;
+    applied.set(root, { dark, source });
+    const accent = readableSystemAccent(source, dark);
+    root.classList.toggle("dark", dark);
+    root.classList.toggle("system-accent", Boolean(accent));
+    if (accent) {
+      root.style.setProperty("--system-accent", accent);
+      root.style.setProperty("--minute-shade", accent + "33");
+      root.style.setProperty("--minute-shade-end", accent + "05");
+    } else {
+      for (const variable of ["--system-accent", "--minute-shade", "--minute-shade-end"]) root.style.removeProperty(variable);
+    }
+    return dark;
+  }
+
   // renderer.js
   var data;
   var tab = "home";
@@ -7985,6 +8637,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var refreshRequested = false;
   var stockRows = { "home-stocks": /* @__PURE__ */ new Map(), "watch-stocks": /* @__PURE__ */ new Map() };
   var portfolioCards = /* @__PURE__ */ new Map();
+  var positionDisplays = /* @__PURE__ */ new WeakMap();
   var tabScroll = /* @__PURE__ */ new Map();
   var updateStatus = { available: false, checking: false };
   var openFeedback = createFeedbackForm({
@@ -8033,14 +8686,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var voice = new TapVoice("assets/audio/niulai-tap.wav");
   var mamaVoice = new MamaVoice();
   var sounds = { rise: new Audio("assets/audio/niulai.mp3"), fall: new Audio("assets/audio/mama.mp3") };
-  var titles = {
-    home: ["\u76EF\u76D8", ""],
-    watchlist: ["\u81EA\u9009", "\u9009\u62E9\u4E00\u53EA\u80A1\u7968\uFF0C\u5F00\u59CB\u76EF\u76D8\u3002"],
-    portfolio: ["\u6301\u4ED3", "\u67E5\u770B\u548C\u7BA1\u7406\u672C\u673A\u4FDD\u5B58\u7684\u6301\u4ED3\u3002"],
-    orderbook: ["\u91CF\u5316\u63D2\u4EF6", "\u7528\u65B0\u76D8\u53E3\u9A8C\u8BC1\u64AE\u5408\u5EF6\u8FDF\u3001\u6210\u672C\u4E0E\u53CC\u817F\u6210\u4EA4\u3002"],
-    muyu: ["\u6728\u9C7C", "\u6572\u4E00\u6572\uFF0C\u6B47\u4E00\u4F1A\u513F\u3002"],
-    settings: ["\u8BBE\u7F6E", "\u8C03\u6574\u684C\u9762\u663E\u793A\u4E0E\u4F7F\u7528\u4E60\u60EF\u3002"]
-  };
+  var titles = { home: "\u76EF\u76D8", watchlist: "\u81EA\u9009", portfolio: "\u6301\u4ED3", orderbook: "\u63D2\u4EF6", muyu: "\u6728\u9C7C", settings: "\u8BBE\u7F6E" };
   var selectedStock = () => data.state.stocks.find((stock) => stock.code === data.state.selected);
   var settings = () => data.state.settings;
   var quiet = () => isQuietOfficeActive(settings().quietOffice);
@@ -8055,13 +8701,32 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => status.hidden = true, 3500);
   }
-  var changeOrderbookVisibility = mountOrderbookPanel($("view-orderbook"), {
+  var changeOrderbookVisibility = mountOrderbookPanel($("orderbook-pane"), {
     api,
     toast,
     selected: () => data?.state?.selected
   });
-  function syncOrderbookVisibility() {
-    changeOrderbookVisibility(tab === "orderbook" && !document.hidden);
+  var activePlugin = "orderbook";
+  var pluginButtons = document.querySelectorAll("[data-plugin]");
+  var desktopPlugins = mountDesktopPlugins($("desktop-plugins"), {
+    select: (code) => selectStock(code, true)
+  });
+  for (const button of pluginButtons) {
+    button.onclick = () => {
+      if (activePlugin === button.dataset.plugin) return;
+      activePlugin = button.dataset.plugin;
+      tabRevision++;
+      syncPluginVisibility();
+      render();
+    };
+  }
+  function syncPluginVisibility() {
+    const shown = tab === "orderbook" && !document.hidden;
+    const orderbook = activePlugin === "orderbook";
+    $("orderbook-pane").hidden = !orderbook;
+    for (const button of pluginButtons) button.setAttribute("aria-pressed", String(button.dataset.plugin === activePlugin));
+    changeOrderbookVisibility(shown && orderbook);
+    desktopPlugins.setActive(shown && !orderbook ? activePlugin : null);
   }
   async function perform(task, done) {
     try {
@@ -8130,7 +8795,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     liveMood = settings().autoActions ? moods.update(entry?.quote ? { ...entry.quote, received: entry.received } : null, entry?.error || (entry?.quote && health.warning ? health.message : null), Date.now(), settings().interval, data.state.selected) : "idle";
     liveMood = desktopMood(liveMood, data, data.state.selected);
     const spec = catalog.find((item) => item.id === liveMood);
-    $("pet-state").textContent = spec.label;
+    setText($("pet-state"), spec.label);
     if (Date.now() > previewUntil) bull.state(liveMood);
     if (settings().muted || quiet() || data.suspended) stopAudio();
     if (!settings().mamaSound) mamaVoice.stop();
@@ -8138,92 +8803,143 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     syncMotion();
   }
   function renderPosition(container, stock, entry) {
-    container.replaceChildren();
-    if (!stock.cost || !stock.shares) {
-      container.append(element("p", "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3", "position-empty"));
-      return;
-    }
-    const result = position(stock, entry?.quote);
-    if (!result) {
-      container.append(element("p", "\u6301\u4ED3\u5DF2\u4FDD\u5B58\uFF0C\u7B49\u5F85\u884C\u60C5", "position-empty"));
-      return;
-    }
-    const grid = element("div", "", "pnl-grid");
-    for (const [label, value] of [["\u4ECA\u65E5\u76C8\u4E8F", result.today], ["\u7D2F\u8BA1\u76C8\u4E8F", result.total]]) {
-      const cell = element("div");
-      cell.append(element("small", label + " \xB7 " + currency(stock.code)), element("strong", money(value), settings().private ? "" : tone(value)));
-      grid.append(cell);
-    }
-    container.append(grid);
-  }
-  function renderStocks() {
-    for (const [id, full] of [["home-stocks", false], ["watch-stocks", true]]) {
-      const container = $(id);
-      const rows = stockRows[id];
-      for (const [code, item] of rows) {
-        if (!data.state.stocks.some((stock) => stock.code === code)) {
-          item.row.remove();
-          rows.delete(code);
-        }
+    const result = position(stock, entry?.quote), privateMode = settings().private;
+    const empty = result ? "" : stock.cost && stock.shares ? "\u6301\u4ED3\u5DF2\u4FDD\u5B58\uFF0C\u7B49\u5F85\u884C\u60C5" : "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3";
+    let display = positionDisplays.get(container);
+    if (display?.empty !== empty) {
+      display = { empty, cells: [] };
+      if (empty) container.replaceChildren(element("p", empty, "position-empty"));
+      else {
+        const grid = element("div", "", "pnl-grid");
+        display.cells = ["\u4ECA\u65E5\u76C8\u4E8F", "\u7D2F\u8BA1\u76C8\u4E8F"].map((label) => {
+          const cell = element("div"), title = element("small"), amount2 = element("strong");
+          cell.append(title, amount2);
+          grid.append(cell);
+          return { label, title, amount: amount2 };
+        });
+        container.replaceChildren(grid);
       }
-      for (const [index, stock] of data.state.stocks.entries()) {
-        const entry = data.quotes[stock.code], quote = entry?.quote;
-        const presentation = quotePresentation(entry, settings().interval);
-        let item = rows.get(stock.code);
-        if (!item) {
-          const row = element("div", "", "stock-row");
-          const button = element("button", "", "stock-main");
-          const name = element("div"), price = element("div");
-          item = {
-            row,
-            button,
-            price,
-            name: element("strong"),
-            code: element("small"),
-            value: element("strong"),
-            change: element("small", "", "stock-change"),
-            warning: element("small", "", "stock-warning"),
-            percent: element("span")
-          };
+      positionDisplays.set(container, display);
+    }
+    if (result) {
+      const values = [result.today, result.total], unit = currency(stock.code);
+      for (const [index, { label, title, amount: amount2 }] of display.cells.entries()) {
+        setText(title, label + " \xB7 " + unit);
+        setText(amount2, money(values[index]));
+        setAttributeValue(amount2, "class", privateMode ? "" : tone(values[index]));
+      }
+    }
+    return result;
+  }
+  function renderStocks(id) {
+    const full = id === "watch-stocks";
+    const container = $(id);
+    const rows = stockRows[id];
+    const { stocks, selected } = data.state;
+    const codes = new Set(stocks.map((stock) => stock.code));
+    const now = Date.now(), second = Math.floor(now / 1e3), interval = settings().interval;
+    for (const [code, item] of rows) {
+      if (!codes.has(code)) {
+        item.row.remove();
+        rows.delete(code);
+      }
+    }
+    for (const [index, stock] of stocks.entries()) {
+      const entry = data.quotes[stock.code], quote = entry?.quote;
+      let item = rows.get(stock.code);
+      if (!item) {
+        const row = element("div", "", "stock-row");
+        const button = element("button", "", "stock-main");
+        const name = element("div"), price = element("div");
+        item = {
+          row,
+          button,
+          price,
+          name: element("strong"),
+          code: element("small"),
+          value: element("strong"),
+          change: element("small", "", "stock-change"),
+          warning: element("small", "", "stock-warning"),
+          percent: element("span")
+        };
+        if (full) {
           name.append(item.name, item.code);
           price.append(item.value, item.change, item.warning);
-          button.append(name, price);
-          if (full) button.append(item.percent);
-          button.onclick = () => selectStock(stock.code);
-          row.append(button);
-          if (full) {
-            const actions = element("div", "", "row-actions");
-            const edit = element("button", "\u6301\u4ED3");
-            edit.onclick = () => openPosition(stock.code);
-            item.remove = element("button", "\u79FB\u51FA");
-            item.remove.onclick = () => confirmRemove(data.state.stocks.find((current) => current.code === stock.code));
-            actions.append(edit, item.remove);
-            row.append(actions);
-          }
-          rows.set(stock.code, item);
+        } else {
+          const metadata = element("div", "", "stock-meta");
+          metadata.append(item.code, item.warning);
+          name.append(item.name, metadata);
+          price.append(item.value, item.change);
         }
-        item.row.classList.toggle("selected", stock.code === data.state.selected);
-        item.row.title = stock.name + "\n" + presentation.detail;
-        item.button.setAttribute("aria-label", "\u76EF\u76D8 " + stock.name);
-        item.button.setAttribute("aria-current", stock.code === data.state.selected ? "true" : "false");
-        item.name.textContent = stock.name;
-        item.code.textContent = displaySymbol(stock.code) + (presentation.label ? " \xB7 " + presentation.label : "");
-        item.price.className = "stock-price " + tone(quote?.changePct);
-        item.value.textContent = marketPrice(quote?.price, stock.code);
-        item.change.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : quote ? "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B" : "\u7B49\u5F85\u884C\u60C5";
-        item.warning.textContent = presentation.message;
-        item.warning.hidden = !quote || !presentation.warning;
-        item.percent.textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
-        item.percent.className = "stock-pct " + tone(quote?.changePct);
-        if (item.remove) {
-          item.remove.setAttribute("aria-label", "\u79FB\u51FA " + stock.name);
-          item.remove.disabled = data.state.stocks.length === 1;
-          item.remove.title = item.remove.disabled ? "\u8BF7\u4FDD\u7559\u81F3\u5C11\u4E00\u53EA\u81EA\u9009" : "";
+        button.append(name, price);
+        if (full) button.append(item.percent);
+        button.onclick = () => selectStock(stock.code);
+        row.append(button);
+        if (full) {
+          const actions = element("div", "", "row-actions");
+          const edit = element("button", "\u6301\u4ED3");
+          edit.onclick = () => openPosition(stock.code);
+          item.remove = element("button", "\u79FB\u51FA");
+          item.remove.onclick = () => confirmRemove(data.state.stocks.find((current) => current.code === stock.code));
+          actions.append(edit, item.remove);
+          row.append(actions);
         }
-        if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
+        rows.set(stock.code, item);
+      }
+      const active = stock.code === selected;
+      if (item.active !== active) {
+        item.active = active;
+        item.row.classList.toggle("selected", active);
+        item.button.setAttribute("aria-current", String(active));
+      }
+      if (item.remove && item.remove.disabled !== (stocks.length === 1)) {
+        item.remove.disabled = stocks.length === 1;
+        item.remove.title = item.remove.disabled ? "\u8BF7\u4FDD\u7559\u81F3\u5C11\u4E00\u53EA\u81EA\u9009" : "";
+      }
+      if (container.children[index] !== item.row) container.insertBefore(item.row, container.children[index] || null);
+      const fields2 = [
+        stock.name,
+        entry?.received,
+        entry?.error,
+        entry?.transport,
+        quote?.price,
+        quote?.changePct,
+        quote?.code,
+        quote?.market,
+        quote?.source,
+        quote?.sourceName,
+        quote?.fallbackFrom,
+        quote?.session,
+        quote?.quotedAt,
+        quote?.time,
+        quote?.timePrecision,
+        quote?.regular?.price,
+        interval,
+        quote ? second : 0
+      ];
+      if (item.fields && fields2.every((value, field) => Object.is(value, item.fields[field]))) continue;
+      item.fields = fields2;
+      const presentation = quotePresentation(entry, interval, now);
+      const warning = quote && presentation.warning ? presentation.message : "";
+      setAttributeValue(item.row, "title", [stock.name, warning, presentation.detail].filter(Boolean).join("\n"));
+      setAttributeValue(item.button, "aria-label", "\u76EF\u76D8 " + stock.name + (warning ? "\uFF0C" + warning : ""));
+      setText(item.name, stock.name);
+      setText(item.code, displaySymbol(stock.code) + (presentation.label ? " \xB7 " + presentation.label : ""));
+      const color = tone(quote?.changePct);
+      const percent2 = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "";
+      setAttributeValue(item.price, "class", "stock-price " + color);
+      setText(item.value, marketPrice(quote?.price, stock.code));
+      setText(item.change, percent2 || (quote ? "\u6DA8\u8DCC\u5E45\u672A\u63D0\u4F9B" : "\u7B49\u5F85\u884C\u60C5"));
+      setText(item.warning, full ? warning : warning ? "\u5F85\u66F4\u65B0" : "");
+      const hideWarning = !warning;
+      if (item.warning.hidden !== hideWarning) item.warning.hidden = hideWarning;
+      if (full) {
+        setText(item.percent, percent2 || "\u2014");
+        setAttributeValue(item.percent, "class", "stock-pct " + color);
+        setAttributeValue(item.remove, "aria-label", "\u79FB\u51FA " + stock.name);
       }
     }
-    $("stock-count").textContent = data.state.stocks.length;
+    if (!full) setText($("stock-count"), stocks.length);
   }
   function renderPortfolio() {
     const container = $("portfolio-list");
@@ -8246,72 +8962,90 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
           card,
           name: element("h2"),
           content: element("div"),
-          details: element("div", "", "holding-details"),
+          holding: element("span"),
+          percent: element("span"),
           status: element("p", "", "footnote")
         };
+        const details = element("div", "", "holding-details");
+        details.append(item.holding, item.percent);
         title.append(item.name, element("p", displaySymbol(stock.code) + " \xB7 " + currency(stock.code)));
         const edit = element("button", "\u7F16\u8F91", "link-button");
         edit.onclick = () => openPosition(stock.code);
         header.append(title, edit);
-        card.append(header, item.content, item.details, item.status);
+        card.append(header, item.content, details, item.status);
         portfolioCards.set(stock.code, item);
       }
       const entry = data.quotes[stock.code];
-      item.name.textContent = stock.name;
-      renderPosition(item.content, stock, entry);
-      const result = position(stock, entry?.quote);
-      item.details.replaceChildren(element("span", settings().private ? "\u6210\u672C\u4E0E\u80A1\u6570\u5DF2\u9690\u85CF" : `\u6210\u672C ${fmt(stock.cost, 3)} \xB7 ${stock.shares} \u80A1`), element("span", settings().private || !result ? "" : signed(result.percent) + "%", tone(result?.percent)));
+      setText(item.name, stock.name);
+      const result = renderPosition(item.content, stock, entry);
+      setText(item.holding, settings().private ? "\u6210\u672C\u4E0E\u80A1\u6570\u5DF2\u9690\u85CF" : `\u6210\u672C ${fmt(stock.cost, 3)} \xB7 ${stock.shares} \u80A1`);
+      setText(item.percent, settings().private || !result ? "" : signed(result.percent) + "%");
+      setAttributeValue(item.percent, "class", settings().private ? "" : tone(result?.percent));
       const presentation = quotePresentation(entry, settings().interval);
-      item.card.title = presentation.detail;
-      item.status.textContent = presentation.summary;
+      setAttributeValue(item.card, "title", presentation.detail);
+      setText(item.status, presentation.summary);
       if (container.children[index] !== item.card) container.insertBefore(item.card, container.children[index] || null);
     }
   }
   function renderCounts() {
     if (!data) return;
-    for (const [id, key] of [["wood-count", "session"], ["wood-today", "today"], ["wood-total", "total"]]) $(id).textContent = data.counts[key].toLocaleString("zh-CN");
+    for (const [id, key] of [["wood-count", "session"], ["wood-today", "today"], ["wood-total", "total"]]) setText($(id), data.counts[key].toLocaleString("zh-CN"));
   }
   function syncControls() {
     for (const control of document.querySelectorAll("[data-setting]")) {
       if (document.activeElement === control) continue;
       const value = settings()[control.dataset.setting];
-      if (control.type === "checkbox") control.checked = value;
-      else control.value = value;
+      if (control.type === "checkbox") {
+        if (control.checked !== value) control.checked = value;
+      } else if (control.value !== String(value)) control.value = value;
       if (control.type === "range") updateSliderValue(control);
     }
     for (const control of document.querySelectorAll("[data-quiet]")) {
-      if (control.type === "checkbox") control.checked = settings().quietOffice[control.dataset.quiet];
-      else if (document.activeElement !== control) control.value = settings().quietOffice[control.dataset.quiet];
+      const value = settings().quietOffice[control.dataset.quiet];
+      if (control.type === "checkbox") {
+        if (control.checked !== value) control.checked = value;
+      } else if (document.activeElement !== control && control.value !== value) control.value = value;
     }
-    $("privacy-toggle").setAttribute("aria-pressed", String(settings().private));
-    $("privacy-toggle").title = settings().private ? "\u663E\u793A\u6301\u4ED3\u91D1\u989D" : "\u9690\u85CF\u6301\u4ED3\u91D1\u989D";
   }
   function renderSettingsPreview() {
     const preview = $("island-preview");
     if (!preview) return;
+    applyAppearance(data, settings().islandTheme, preview);
     const code = settings().islandSymbol || data.state.selected;
     const stock = data.state.stocks.find((item) => item.code === code);
-    const quote = data.quotes[code]?.quote;
+    const entry = data.quotes[code];
+    const quote = entry?.quote;
     const woodMode = settings().islandContent === "muyu";
-    $("preview-name").textContent = woodMode ? "\u725B\u6765\u6728\u9C7C" : quote?.name || stock?.name || displaySymbol(code);
-    $("preview-price").textContent = woodMode ? settings().islandCount ? "\u672C\u8F6E " + data.counts.session.toLocaleString("zh-CN") : "\u8F7B\u89E6\u6572\u51FB" : marketPrice(quote?.price, code);
-    $("preview-price").hidden = !woodMode && !settings().islandPrice;
-    $("preview-pct").textContent = woodMode ? "+1" : Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
-    $("preview-pct").hidden = !woodMode && !settings().islandPercent;
-    $("preview-pct").className = tone(quote?.changePct);
+    const name = quote?.name || stock?.name || displaySymbol(code);
+    const label = quotePresentation(entry, settings().islandInterval).label;
+    setText($("preview-name"), woodMode ? "\u725B\u6765\u6728\u9C7C" : [name, label].filter(Boolean).join(" \xB7 "));
+    setText($("preview-meta"), woodMode ? settings().islandCount ? "\u672C\u8F6E\u6572\u51FB" : "\u70B9\u51FB\u6572\u51FB" : displaySymbol(code));
+    setText($("preview-price"), woodMode ? data.counts.session.toLocaleString("zh-CN") : marketPrice(quote?.price, code));
+    $("preview-price").hidden = woodMode ? !settings().islandCount : !settings().islandPrice;
+    setText($("preview-pct"), Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014");
+    $("preview-pct").hidden = woodMode || !settings().islandPercent;
+    setAttributeValue($("preview-pct"), "class", tone(quote?.changePct));
     $("preview-canvas").hidden = !settings().islandBull;
     mini?.state(woodMode ? "muyu" : liveMood);
   }
   function renderQuoteStatus() {
-    if (!data?.state) return;
+    if (!data?.state || document.hidden) return;
     const entry = currentEntry(), quote = entry?.quote;
     const presentation = quotePresentation(entry, settings().interval);
-    $("session").textContent = presentation.session || marketSession(data.state.selected);
-    $("connection").className = "connection " + (presentation.warning ? "error" : quote ? "ok" : "");
-    $("connection").textContent = presentation.summary;
-    $("connection").title = presentation.detail;
-    $("footer-status").textContent = data.suspended ? "\u7CFB\u7EDF\u4F11\u7720\uFF0C\u5DF2\u6682\u505C" : quiet() ? "\u5B89\u9759\u529E\u516C\u4E2D" : quote ? quote.market === "us" ? presentation.basis : quote.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u6210\u4EA4\u65F6\u95F4" : "\u7B49\u5F85\u884C\u60C5";
-    $("footer-status").title = presentation.detail;
+    if (tab === "home") {
+      setText($("session"), presentation.session || marketSession(data.state.selected));
+      setAttributeValue($("connection"), "class", "connection " + (presentation.warning ? "error" : quote ? "ok" : ""));
+      setText($("connection"), presentation.summary);
+      setAttributeValue($("connection"), "title", presentation.detail);
+    }
+    let footer = "\u7B49\u5F85\u884C\u60C5";
+    if (data.suspended) footer = "\u7CFB\u7EDF\u4F11\u7720\uFF0C\u5DF2\u6682\u505C";
+    else if (quiet()) footer = "\u5B89\u9759\u529E\u516C\u4E2D";
+    else if (entry?.transport === "ndjson" && presentation.receipt) footer = ["\u672C\u673A\u63A5\u6536 " + presentation.receipt, presentation.timing].filter(Boolean).join(" \xB7 ");
+    else if (quote?.market === "us") footer = presentation.basis;
+    else if (quote) footer = quote.time ? "\u6E90\u65F6\u95F4 " + quote.time : "\u884C\u60C5\u6E90\u672A\u63D0\u4F9B\u6210\u4EA4\u65F6\u95F4";
+    setText($("footer-status"), footer);
+    setAttributeValue($("footer-status"), "title", presentation.detail);
   }
   function renderManualRefresh() {
     $("refresh").disabled = refreshRequested;
@@ -8323,49 +9057,71 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const stock = selectedStock();
     const active = tab === "home" && !document.hidden && !data.suspended;
     const { markets, name, seriesConfigured, seriesRevision } = data.quoteSource;
-    const custom = settings().quoteSourceMode === "custom" && (!markets || markets.includes(import_market_symbols4.default.marketForSymbol(stock.code)));
+    const custom = settings().quoteSourceMode === "custom" && (!markets || markets.includes(import_market_symbols5.default.marketForSymbol(stock.code)));
     marketChart.update(stock.code, active, custom && seriesConfigured ? seriesRevision : null);
     marketDetails.update(stock.code, active, { entry: currentEntry(), custom, source: name, interval: settings().interval, force });
     marketNews.update(stock, active, data.state.news, data.state.stocks);
   }
+  function renderPrimaryQuote(stock, quote) {
+    setText($("quote-name"), stock.name);
+    setText($("quote-code"), displaySymbol(stock.code) + " \xB7 " + currency(stock.code));
+    setText($("price"), marketPrice(quote?.price, stock.code));
+    setText($("change"), signed(quote?.change));
+    setText($("percent"), Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014");
+    const className = "quote-number " + tone(quote?.changePct);
+    if ($("quote-number").className !== className) $("quote-number").className = className;
+  }
+  function renderHome(stock, entry) {
+    renderPosition($("home-position"), stock, entry);
+    renderStocks("home-stocks");
+    const samples = data.histories[stock.code] || [];
+    setText($("sample-count"), samples.length < 2 ? "\u7B49\u5F85\u91C7\u6837" : samples.length + " \u4E2A\u6837\u672C");
+    setText($("sample-start"), time(samples[0]?.at));
+    setText($("sample-end"), time(samples.at(-1)?.at));
+    drawSparkline($("sparkline"), samples, getComputedStyle($("sparkline")).getPropertyValue(entry?.quote?.changePct < 0 ? "--fall" : "--rise"));
+  }
+  function renderSourceStatus() {
+    const status = $("source-runtime-status");
+    if (!status) return;
+    const text = settings().quoteSourceMode === "custom" ? streamStatusText(data.quoteSource) : "";
+    if (status.hidden !== !text) status.hidden = !text;
+    setText(status, text);
+  }
   function render() {
     if (!data?.state) return;
-    const stock = selectedStock(), entry = currentEntry(), quote = entry?.quote;
-    document.documentElement.classList.toggle("dark", settings().theme === "dark" || settings().theme === "system" && data.dark);
-    $("app-version").textContent = data.version;
-    $("quote-name").textContent = stock.name;
-    $("quote-code").textContent = displaySymbol(stock.code) + " \xB7 " + currency(stock.code);
-    $("price").textContent = marketPrice(quote?.price, stock.code);
-    $("change").textContent = signed(quote?.change);
-    $("percent").textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
-    $("quote-number").className = "quote-number " + tone(quote?.changePct);
-    renderQuoteStatus();
-    renderPosition($("home-position"), stock, entry);
-    renderStocks();
-    renderPortfolio();
-    renderCounts();
-    syncControls();
-    const samples = data.histories[stock.code] || [];
-    $("sample-count").textContent = samples.length < 2 ? "\u7B49\u5F85\u91C7\u6837" : samples.length + " \u4E2A\u6837\u672C";
-    $("sample-start").textContent = time(samples[0]?.at);
-    $("sample-end").textContent = time(samples.at(-1)?.at);
-    drawSparkline($("sparkline"), samples, getComputedStyle($("sparkline")).getPropertyValue(quote?.changePct < 0 ? "--fall" : "--rise"));
+    if (!document.hidden) {
+      applyAppearance(data, settings().theme);
+      setText($("app-version"), data.version);
+      setAttributeValue($("privacy-toggle"), "aria-pressed", String(settings().private));
+      setAttributeValue($("privacy-toggle"), "title", settings().private ? "\u663E\u793A\u6301\u4ED3\u91D1\u989D" : "\u9690\u85CF\u6301\u4ED3\u91D1\u989D");
+      const stock = selectedStock(), entry = currentEntry();
+      renderPrimaryQuote(stock, entry?.quote);
+      if (tab === "home") renderHome(stock, entry);
+      else if (tab === "watchlist") renderStocks("watch-stocks");
+      else if (tab === "portfolio") renderPortfolio();
+      else if (tab === "muyu") renderCounts();
+      else if (tab === "settings") {
+        syncControls();
+        renderSourceStatus();
+      } else if (tab === "orderbook" && activePlugin !== "orderbook") desktopPlugins.update(data);
+      renderQuoteStatus();
+    }
     updateMarketPanels();
     updateMood();
-    renderSettingsPreview();
+    if (tab === "settings" && !document.hidden) renderSettingsPreview();
     processFeatures();
   }
   function applySnapshot(next) {
     if (!next?.state) return;
     const changedStock = data?.state.selected !== next.state.selected;
-    const changedStocks = JSON.stringify(data?.state.stocks.map((stock) => stock.code)) !== JSON.stringify(next.state.stocks.map((stock) => stock.code));
+    const changedStocks = tab === "settings" && settingsPanel === "island" && JSON.stringify(data?.state.stocks.map((stock) => stock.code)) !== JSON.stringify(next.state.stocks.map((stock) => stock.code));
     data = next;
     if (changedStock) {
       moods.reset();
       featureCode = "";
       stopAudio();
     }
-    if (changedStocks && tab === "settings" && (settingsPanel === "island" || !$("settings-content").hasChildNodes())) buildSettings();
+    if (tab === "settings" && (changedStocks || !$("settings-content").hasChildNodes())) buildSettings();
     render();
   }
   function changeTab(next) {
@@ -8378,19 +9134,16 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       button.setAttribute("aria-current", button.dataset.tab === tab ? "page" : "false");
     }
     for (const view of document.querySelectorAll(".view")) view.hidden = view.id !== "view-" + tab;
-    $("page-title").textContent = titles[tab][0];
-    $("page-subtitle").textContent = titles[tab][1];
-    $("page-subtitle").hidden = !titles[tab][1];
-    syncOrderbookVisibility();
+    $("page-title").textContent = titles[tab];
+    syncPluginVisibility();
     if (tab === "settings" && data) buildSettings();
+    render();
     window.scrollTo(0, tabScroll.get(next) || 0);
-    updateMarketPanels();
-    syncMotion();
   }
-  function selectStock(code) {
-    const watchlistRevision = tab === "watchlist" ? tabRevision : null;
+  function selectStock(code, returnHome = tab === "watchlist") {
+    const revision = tabRevision;
     perform(api.stock("select", { code }), () => {
-      if (watchlistRevision !== tabRevision || data.state.selected !== code) return;
+      if (!returnHome || revision !== tabRevision || data.state.selected !== code) return;
       changeTab("home");
       $("select-stock").focus();
     });
@@ -8493,7 +9246,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       if (epoch === searchEpoch) $("search-message").textContent = direct ? "\u540D\u79F0\u641C\u7D22\u6682\u4E0D\u53EF\u7528\uFF0C\u53EF\u6309\u4EE3\u7801\u9A8C\u8BC1\u6DFB\u52A0" : "\u641C\u7D22\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
     }
   }
-  var settingsSections = [["island", "\u60AC\u6D6E\u7A97"], ["pet", "\u684C\u5BA0"], ["muyu", "\u6728\u9C7C"], ["widget", "\u5361\u7247"], ["source", "\u884C\u60C5\u6765\u6E90"], ["general", "\u901A\u7528"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
+  var settingsSections = [["general", "\u901A\u7528"], ["source", "\u884C\u60C5\u6765\u6E90"], ["island", "\u7075\u52A8\u5C9B"], ["pet", "\u684C\u5BA0"], ["widget", "\u684C\u9762\u5361\u7247"], ["muyu", "\u6728\u9C7C"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
   for (const [key, label] of settingsSections) {
     const button = element("button", label);
     button.dataset.settingsPanel = key;
@@ -8511,8 +9264,15 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     const key = input.dataset.setting;
     const value = input.valueAsNumber;
     const label = key === "volume" ? Math.round(value * 100) + "%" : value + (key === "islandWidth" ? " px" : "%");
-    input.setAttribute("aria-valuetext", label);
-    input.nextElementSibling.value = label;
+    setAttributeValue(input, "aria-valuetext", label);
+    if (input.nextElementSibling.value !== label) input.nextElementSibling.value = label;
+    if (key === "islandWidth") {
+      const preview = $("island-preview");
+      const width = value - 12 + "px";
+      if (preview && preview.style.getPropertyValue("--island-preview-width") !== width) {
+        preview.style.setProperty("--island-preview-width", width);
+      }
+    }
   }
   function settingRow(label, key, type = "checkbox", options = [], note = "") {
     const row = element("label", "", "setting-row");
@@ -8548,6 +9308,28 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     button.onclick = action;
     $("settings-content").append(button);
   }
+  function groupSettingsContent(container) {
+    let body = container, actions = null;
+    for (const node of [...container.children].slice(1)) {
+      if (node.tagName === "H3") {
+        const group = element("section", "", "settings-group");
+        body = element("div", "", "settings-group-body");
+        node.before(group);
+        group.append(node, body);
+        actions = null;
+      } else if (node.matches("button.button")) {
+        if (!actions) {
+          actions = element("div", "", "settings-actions");
+          if (body === container) node.before(actions);
+          else body.append(actions);
+        }
+        actions.append(node);
+      } else {
+        actions = null;
+        if (body !== container) body.append(node);
+      }
+    }
+  }
   function buildSettings() {
     const sourceEpoch = ++sourceFormEpoch;
     mini?.close();
@@ -8559,9 +9341,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       button.classList.toggle("active", active);
       button.setAttribute("aria-current", active ? "page" : "false");
     }
-    container.append(element("h2", settingsSections.find(([key]) => key === settingsPanel)[1]));
+    const header = element("header", "", "settings-panel-header");
+    header.append(element("h2", settingsSections.find(([key]) => key === settingsPanel)[1]));
+    container.append(header);
     const themes = [["system", "\u8DDF\u968F\u7CFB\u7EDF"], ["light", "\u6D45\u8272"], ["dark", "\u6DF1\u8272"]];
-    const intervals = [[0.5, "\u6700\u5FEB\uFF08500 \u6BEB\u79D2\uFF09"], [1, "\u6BCF 1 \u79D2"], [2, "\u6BCF 2 \u79D2"], [5, "\u6BCF 5 \u79D2"], [10, "\u6BCF 10 \u79D2"], [30, "\u6BCF 30 \u79D2"]];
+    const intervals = [[0.2, "\u6BCF 200 \u6BEB\u79D2\uFF08\u81EA\u6709\u6E90\uFF09"], [0.5, "\u6BCF 500 \u6BEB\u79D2\uFF08\u81EA\u6709\u6E90\uFF09"], [1, "\u6BCF 1 \u79D2"], [2, "\u6BCF 2 \u79D2"], [5, "\u6BCF 5 \u79D2"], [10, "\u6BCF 10 \u79D2"], [30, "\u6BCF 30 \u79D2"]];
     const modes = [["market", "\u80A1\u7968\u884C\u60C5"], ["muyu", "\u6728\u9C7C\u8BA1\u6570"]];
     if (settingsPanel === "island") {
       const preview = element("div", "", "settings-preview");
@@ -8569,45 +9353,52 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       const canvas = document.createElement("canvas");
       canvas.id = "preview-canvas";
       canvas.width = canvas.height = 100;
-      const name = element("small");
+      const name = element("strong");
       name.id = "preview-name";
+      const meta = element("small");
+      meta.id = "preview-meta";
+      const identity = element("div", "", "settings-preview-name");
+      identity.append(name, meta);
       const price = element("b");
       price.id = "preview-price";
-      const values = element("div");
-      values.append(name, price);
       const pct = element("span");
       pct.id = "preview-pct";
-      preview.append(canvas, values, pct);
+      const values = element("div", "", "settings-preview-values");
+      values.append(price, pct);
+      preview.append(canvas, identity, values);
       container.append(preview);
       mini = makeMotion(canvas, true);
-      container.append(element("p", "\u70B9\u51FB\u5C55\u5F00\uFF0C\u6EDA\u8F6E\u5207\u6362\u81EA\u9009\u3002\u62D6\u52A8\u5DE6\u4FA7\u624B\u67C4\u79FB\u52A8\u3002", "muted"));
+      heading("\u7A97\u53E3");
       settingRow("\u5F00\u542F\u60AC\u6D6E\u7A97", "islandEnabled");
       settingRow("\u663E\u793A\u5185\u5BB9", "islandContent", "select", modes);
-      settingRow("\u663E\u793A\u80A1\u7968", "islandSymbol", "select", [["", "\u8DDF\u968F\u5F53\u524D\u81EA\u9009"], ...data.state.stocks.map((stock) => [stock.code, stock.name])]);
+      settingRow("\u5916\u89C2", "islandTheme", "select", themes);
+      settingRow("\u5BBD\u5EA6", "islandWidth", "range", [260, 420, 1]);
+      settingRow("\u5C55\u5F00\u540E 10 \u79D2\u81EA\u52A8\u6536\u8D77", "islandAutoCollapse");
+      settingRow("\u4F7F\u7528\u4E3B\u9762\u677F\u65F6\u9690\u85CF", "islandHideInApp");
+      heading("\u884C\u60C5");
+      settingRow("\u663E\u793A\u80A1\u7968", "islandSymbol", "select", [["", "\u8DDF\u968F\u4E3B\u9762\u677F"], ...data.state.stocks.map((stock) => [stock.code, stock.name])]);
       settingRow("\u663E\u793A\u4EF7\u683C", "islandPrice");
       settingRow("\u663E\u793A\u6DA8\u8DCC\u5E45", "islandPercent");
       settingRow("\u5C55\u5F00\u663E\u793A\u6301\u4ED3", "islandHoldings", "checkbox", [], "\u5F00\u542F\u9690\u79C1\u6A21\u5F0F\u540E\u9690\u85CF\u91D1\u989D");
+      settingRow("\u884C\u60C5\u5237\u65B0", "islandInterval", "select", intervals);
+      heading("\u684C\u5BA0\u4E0E\u6728\u9C7C");
       settingRow("\u663E\u793A\u725B\u6765", "islandBull");
       settingRow("\u5C9B\u5185\u52A8\u753B", "islandMotion");
       settingRow("\u663E\u793A\u6728\u9C7C\u8BA1\u6570", "islandCount");
-      settingRow("\u5916\u89C2", "islandTheme", "select", themes);
-      settingRow("\u5BBD\u5EA6", "islandWidth", "range", [260, 420, 1]);
-      settingRow("\u884C\u60C5\u5237\u65B0", "islandInterval", "select", intervals);
-      settingRow("\u5C55\u5F00\u540E 10 \u79D2\u81EA\u52A8\u6536\u8D77", "islandAutoCollapse");
-      settingRow("\u4F7F\u7528\u4E3B\u9762\u677F\u65F6\u9690\u85CF", "islandHideInApp");
     } else if (settingsPanel === "pet") {
+      heading("\u663E\u793A");
       settingRow("\u5F00\u542F\u684C\u5BA0", "petEnabled");
       settingRow("\u684C\u5BA0\u6A21\u5F0F", "petMode", "select", [["market", "\u76EF\u76D8\u684C\u5BA0"], ["muyu", "\u725B\u6765\u6728\u9C7C"]]);
       settingRow("\u663E\u793A\u884C\u60C5\u5361", "petQuote");
+      settingRow("\u684C\u5BA0\u5927\u5C0F", "petScale", "range", [75, 125, 5]);
+      settingRow("\u4F7F\u7528\u4E3B\u9762\u677F\u65F6\u9690\u85CF", "petHideInApp");
+      heading("\u52A8\u4F5C\u4E0E\u58F0\u97F3");
       settingRow("\u6309\u884C\u60C5\u5207\u6362\u52A8\u4F5C", "autoActions");
       settingRow("\u64AD\u653E\u52A8\u753B", "motion");
       settingRow("\u70B9\u51FB\u97F3\u6548", "sound");
       settingRow("\u4E0B\u8DCC\u65F6\u64AD\u653E\u5988\u5988\u97F3\u6548", "mamaSound");
       settingRow("\u97F3\u91CF", "volume", "range", [0, 1, 0.05]);
-      settingRow("\u684C\u5BA0\u5927\u5C0F", "petScale", "range", [75, 125, 5]);
-      settingRow("\u4F7F\u7528\u4E3B\u9762\u677F\u65F6\u9690\u85CF", "petHideInApp");
       settingsButton("\u67E5\u770B\u52A8\u4F5C\u4E0E\u59FF\u52BF", openMotions);
-      container.append(element("p", "\u62D6\u52A8\u725B\u8EAB\u79FB\u52A8\uFF0C\u5355\u51FB\u4E92\u52A8\uFF0C\u4E09\u8FDE\u51FB\u89E6\u53D1\u4E0D\u8010\u70E6\u3002\u9876\u90E8\u6309\u94AE\u6253\u5F00\u4E3B\u9762\u677F\u3001\u6536\u8D77\u6216\u5173\u95ED\u684C\u5BA0\u3002", "footnote"));
     } else if (settingsPanel === "muyu") {
       settingRow("\u6572\u51FB\u97F3\u6548", "muyuSound");
       settingRow("\u725B\u6C14\uFF0B1 \u52A8\u6548", "muyuEffects");
@@ -8615,19 +9406,29 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       settingsButton("\u6253\u5F00\u6728\u9C7C", () => changeTab("muyu"));
       container.append(element("p", "\u5404\u7A97\u53E3\u5171\u7528\u8BA1\u6570\uFF0C\u6BCF\u6B21\u6572\u51FB\u90FD\u4F1A\u8BB0\u5F55\u3002", "footnote"));
     } else if (settingsPanel === "widget") {
-      container.append(element("p", "\u684C\u5BA0\u3001\u884C\u60C5\u3001\u6301\u4ED3\u3001\u4F11\u606F\uFF0C\u56DB\u4E2A\u573A\u666F\u53EF\u4EE5\u5207\u6362\u3002", "muted"));
+      heading("\u663E\u793A");
       settingRow("\u5F00\u542F\u684C\u9762\u5361\u7247", "widgetEnabled");
       settingRow("\u5361\u7247\u5916\u89C2", "widgetTheme", "select", themes);
       settingRow("\u663E\u793A\u6700\u8FD1\u62A5\u4EF7\u66F2\u7EBF", "widgetSparkline");
       settingRow("\u663E\u793A\u725B\u6765", "widgetBull");
       settingRow("\u9690\u85CF\u6301\u4ED3\u91D1\u989D", "private");
       settingRow("\u8DDF\u968F\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5\u5207\u6362\u573A\u666F", "smartScene");
-      container.append(element("p", "\u884C\u60C5\u6765\u81EA\u5E94\u7528\u5185\u540C\u4E00\u4EFD\u6570\u636E\u3002\u5361\u7247\u6807\u8BB0\u83B7\u53D6\u65F6\u95F4\uFF0C\u5173\u95ED\u7A0B\u5E8F\u540E\u505C\u6B62\u5237\u65B0\u3002", "footnote"));
     } else if (settingsPanel === "source") {
+      const status = element("p", "", "muted");
+      status.id = "source-runtime-status";
+      status.setAttribute("role", "status");
       const content = element("div");
-      container.append(content);
+      container.append(status, content);
+      renderSourceStatus();
       buildQuoteSourceSettings(content, { api, toast, onSaved: buildSettings, isCurrent: () => sourceEpoch === sourceFormEpoch && tab === "settings" });
     } else if (settingsPanel === "general") {
+      heading("\u5916\u89C2");
+      settingRow("\u5E94\u7528\u5916\u89C2", "theme", "select", themes, "\u8DDF\u968F\u7CFB\u7EDF\u65F6\u540C\u6B65\u6D45\u8272\u3001\u6DF1\u8272\u548C\u7CFB\u7EDF\u5F3A\u8C03\u8272\u3002");
+      settingRow("\u64AD\u653E\u52A8\u753B", "motion");
+      heading("\u884C\u60C5\u4E0E\u58F0\u97F3");
+      settingRow("\u884C\u60C5\u81EA\u52A8\u5237\u65B0", "interval", "select", intervals, "\u516C\u5F00\u884C\u60C5\u6700\u5FEB\u6BCF\u79D2\u5237\u65B0\u4E00\u6B21\u3002\u63A8\u9001\u6309\u6E90\u7684\u53D1\u9001\u9891\u7387\u66F4\u65B0\u3002");
+      settingRow("\u9690\u85CF\u6301\u4ED3\u91D1\u989D", "private");
+      settingRow("\u9759\u97F3", "muted");
       heading("\u7248\u672C\u66F4\u65B0");
       settingRow("\u7CFB\u7EDF\u66F4\u65B0\u63D0\u9192", "updateNotifications", "checkbox", [], "\u6709\u65B0\u7248\u672C\u65F6\u63D0\u9192\u4E00\u6B21");
       const updateLabel = element("p", "", "muted");
@@ -8640,12 +9441,6 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       settingsButton("\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55", () => perform(api.updates("history")));
       paintUpdate();
       settingsButton("\u7CFB\u7EDF\u901A\u77E5\u8BBE\u7F6E", () => perform(api.updates("permissions")));
-      heading("\u5916\u89C2\u4E0E\u4F7F\u7528");
-      settingRow("\u5E94\u7528\u5916\u89C2", "theme", "select", themes);
-      settingRow("\u9759\u97F3", "muted");
-      settingRow("\u884C\u60C5\u81EA\u52A8\u5237\u65B0", "interval", "select", intervals, "\u516C\u5F00\u6E90\u4EA4\u6613\u65F6\u6BB5\u6700\u5FEB\u6BCF 1 \u79D2\u3002500 \u6BEB\u79D2\u9002\u7528\u4E8E\u652F\u6301\u8BE5\u9891\u7387\u7684\u81EA\u6709\u6E90\u3002");
-      settingRow("\u64AD\u653E\u52A8\u753B", "motion");
-      settingRow("\u9690\u85CF\u6301\u4ED3\u91D1\u989D", "private");
       heading("\u4F7F\u7528\u6A21\u5F0F");
       const presets = element("div", "", "preset-buttons");
       for (const [name, values] of [
@@ -8679,6 +9474,7 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
         "Ctrl + K \u641C\u7D22\uFF0CCtrl + 1\u20134 \u5207\u6362\u9875\u9762\uFF0CEsc \u5173\u95ED\u5F39\u7A97\u3002\u6728\u9C7C\u9875\u6309\u7A7A\u683C\u6572\u51FB\u3002"
       ]) container.append(element("p", paragraph, "footnote"));
     }
+    if (settingsPanel !== "source") groupSettingsContent(container);
     syncControls();
     renderSettingsPreview();
     syncMotion();
@@ -8761,7 +9557,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   function processFeatures() {
     const code = data.state.selected, entry = currentEntry();
+    const petMessage = $("pet-message");
+    if (!settings().emotionMemory) petMessage.hidden = true;
     if (featureCode !== code) {
+      petMessage.hidden = true;
       featureCode = code;
       lastFeatureQuote = 0;
       wasOpen = false;
@@ -8796,7 +9595,10 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
           });
         }
       }
-      if (settings().emotionMemory && Date.now() > previewUntil) $("pet-message").textContent = emotion.quips(marketOpen ? "flat" : "closed")[0];
+      if (settings().emotionMemory && Date.now() > previewUntil) {
+        setText(petMessage, emotion.quips(marketOpen ? "flat" : "closed")[0]);
+        petMessage.hidden = false;
+      }
     }
     if (wasOpen && !marketOpen && settings().closeSummary && !session.snapshot().shown) {
       const summary = session.summary(emotion.snapshot().label);
@@ -9011,9 +9813,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAudio();
-    if (data) updateMarketPanels();
-    syncOrderbookVisibility();
-    syncMotion();
+    syncPluginVisibility();
+    render();
   });
   window.addEventListener("online", () => perform(api.refresh()));
   paintIcons();
@@ -9029,6 +9830,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     api.updates("status").then(paintUpdate).catch(() => {
     });
     setInterval(() => {
+      if (!document.hidden && tab === "home") renderStocks("home-stocks");
+      if (!document.hidden && tab === "watchlist") renderStocks("watch-stocks");
       renderQuoteStatus();
       updateMood();
       processFeatures();

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, powerMonitor, shell, Tray, Menu, nativeTheme, Notification, safeStorage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, powerMonitor, shell, Tray, Menu, nativeTheme, systemPreferences, Notification, safeStorage, dialog } = require('electron');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
@@ -8,7 +8,9 @@ const { parseSinaQuote, parseTencentQuote } = require('./main-modules/quote-pars
 const { marketClock, quoteHealth, newestQuote } = require('./main-modules/quote-time');
 const { normalizeState, normalizeSettings, normalizeCounts, tapCounts, MAX_NEWS_FOLLOWS } = require('./main-modules/desktop-state.cjs');
 const { CryingReaction } = require('./main-modules/crying-reaction.cjs');
-const { defaultSourceConfig, normalizeSourceConfig, fetchCustomQuote, fetchCustomQuotes, fetchCustomSeries } = require('./main-modules/custom-quotes.cjs');
+const { defaultSourceConfig, normalizeSourceConfig, fetchCustomQuote, fetchCustomSeries } = require('./main-modules/custom-quotes.cjs');
+const { followQuoteStream } = require('./main-modules/quote-stream.cjs');
+const { QuotePoller } = require('./main-modules/quote-poller.cjs');
 const { createUpdateChecker } = require('./main-modules/update-checker.cjs');
 const { OFFICIAL } = require('./main-modules/update-policy.cjs');
 const { submitFeedback } = require('./main-modules/feedback.cjs');
@@ -16,6 +18,7 @@ const { parseMarketDetails, parseTencentMinutes, parseYahooMinutes } = require('
 const { parseNews, newsRequest, stockNewsTerms, newsMatchesStock, globalNewsRequests, mergeNews, translateTitle, newsNotificationBatch } = require('./main-modules/market-news.cjs');
 const { OrderbookPlugin } = require('./main-modules/orderbook-plugin.cjs');
 let updater, updateTimer, orderbook;
+let systemAccent = null;
 
 const argument = prefix => (process.argv.find(value => value.startsWith(prefix)) || '').slice(prefix.length);
 const qaProfile = argument('--qa-user-data-dir=');
@@ -24,8 +27,20 @@ if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.ni
 const locked = app.requestSingleInstanceLock();
 if (!locked) app.quit();
 let dashboard, tray, state, counts, persisted = null, suspended = false, quitting = false;
-let pollTimer, reactionTimer, polling = false, refreshPending = false, quoteEpoch = 0;
-let failedPolls = 0, manualRefresh;
+let reactionTimer, quoteEpoch = 0, manualRefresh;
+const publicPoll = { timer: null, running: false, rerun: false, failures: 0 };
+const customRecords = new Map();
+const customPoller = new QuotePoller({
+  interval: customQuoteInterval,
+  shouldPoll: code => !hasRecentStreamQuote(code),
+  async fetchQuote(code, { signal }) {
+    const snapshotRun = orderbook.snapshotCode === code ? orderbook.runId : null;
+    const quote = await fetchCustomQuote(code, activeQuoteConfig(), { signal });
+    return { quote, received: Date.now(), snapshotRun };
+  },
+  onResult(code, result) { applyCustomQuote(code, result, result.snapshotRun); }
+});
+let quoteStream, quoteBroadcastTimer, lastQuoteBroadcastAt = -Infinity, quoteNamesChanged = false;
 let writeQueue = Promise.resolve();
 let customQuoteConfig = null, sealedQuoteSource = null, quoteSourceError = '', seriesRevision = 0;
 const overlays = new Map();
@@ -57,9 +72,11 @@ function snapshot() {
   const quoteSource = {
     configured: Boolean(customQuoteConfig), name: customQuoteConfig?.name || '', markets: customQuoteConfig?.markets || null,
     seriesConfigured: Boolean(customQuoteConfig?.seriesUrl), seriesRevision,
-    storage: sealedQuoteSource ? 'encrypted' : 'session', error: quoteSourceError
+    storage: sealedQuoteSource ? 'encrypted' : 'session', error: quoteSourceError,
+    streamConfigured: Boolean(customQuoteConfig?.streamUrl), streamStatus: quoteStream?.status || ''
   };
-  return { state, counts, quotes: Object.fromEntries(quotes), histories: Object.fromEntries(histories), reactions: crying.snapshot(), quoteSource, suspended, refreshing: polling || refreshPending, dark: nativeTheme.shouldUseDarkColors, version: app.getVersion() };
+  const refreshing = publicPoll.running || publicPoll.rerun || customPoller.isRefreshing;
+  return { state, counts, quotes: Object.fromEntries(quotes), histories: Object.fromEntries(histories), reactions: crying.snapshot(), quoteSource, suspended, refreshing, dark: nativeTheme.shouldUseDarkColors, accent: systemAccent, version: app.getVersion() };
 }
 function windows() {
   return [dashboard, ...overlays.values()].filter(window => window && !window.isDestroyed());
@@ -67,12 +84,31 @@ function windows() {
 function broadcast(channel = 'desktop:snapshot', value = snapshot()) {
   for (const window of windows()) window.webContents.send(channel, value);
 }
+function updateSystemAccent(value) {
+  const color = /^#?([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(value || '');
+  const next = color ? '#' + color[1].toLowerCase() : null;
+  if (systemAccent === next) return false;
+  systemAccent = next;
+  return true;
+}
+function readSystemAccent() {
+  try { return ['win32', 'darwin'].includes(process.platform) ? systemPreferences.getAccentColor() : null; }
+  catch { return null; }
+}
 function persist() {
   const payload = JSON.stringify({ state, counts, positions, quoteSource: sealedQuoteSource, newsCursors: Object.fromEntries(newsCursors), reactionAudioAt: Number.isFinite(crying.lastAudioAt) ? crying.lastAudioAt : 0 });
   writeQueue = writeQueue.catch(() => {}).then(async () => {
     const temporary = stateFile() + '.tmp';
     await fsp.writeFile(temporary, payload, 'utf8');
-    await fsp.rename(temporary, stateFile());
+    for (let retries = 0; ; retries++) {
+      try {
+        await fsp.rename(temporary, stateFile());
+        break;
+      } catch (error) {
+        if (process.platform !== 'win32' || retries === 3 || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 25 * (retries + 1)));
+      }
+    }
   });
   return writeQueue;
 }
@@ -213,125 +249,346 @@ async function requestText(url, referer, encoding = 'gbk') {
 function quoteCodes() {
   return [...new Set([...state.stocks.map(stock => stock.code), state.settings.islandSymbol].filter(Boolean))];
 }
-function quotePollInterval() {
-  const settings = state.settings;
-  const requested = settings.islandEnabled ? Math.min(settings.interval, settings.islandInterval) : settings.interval;
-  const custom = settings.quoteSourceMode === 'custom' ? customQuoteConfig : null;
-  const publicCodes = quoteCodes().filter(code => !custom || settings.quoteSourceFallback || !custom.markets.includes(marketForSymbol(code)));
+function activeQuoteConfig() {
+  return state.settings.quoteSourceMode === 'custom' ? customQuoteConfig : null;
+}
+function usesCustomQuote(code) {
+  return state.settings.quoteSourceMode === 'custom' &&
+    (!customQuoteConfig || customQuoteConfig.markets.includes(marketForSymbol(code)));
+}
+function requestedQuoteInterval() {
+  const { interval, islandEnabled, islandInterval } = state.settings;
+  return (islandEnabled ? Math.min(interval, islandInterval) : interval) * 1000;
+}
+function customQuoteInterval() {
+  return Math.max(requestedQuoteInterval(), (activeQuoteConfig()?.interval || 0) * 1000);
+}
+function publicQuoteInterval(codes) {
   const now = Date.now();
-  const marketOpen = publicCodes.some(code => ['pre', 'regular', 'post'].includes(marketClock(code, now).phase));
-  const publicFloor = marketOpen ? 1 : publicCodes.length ? 10 : 0;
-  return Math.max(requested, custom?.interval || 0, publicFloor) * 1000;
+  const open = codes.some(code => ['pre', 'regular', 'post'].includes(marketClock(code, now).phase));
+  return Math.max(requestedQuoteInterval(), open ? 1000 : 10000);
 }
-function quotePollDelay() {
-  const interval = quotePollInterval();
-  if (!failedPolls) return interval;
-  return Math.min(60000, Math.max(interval, 2000) * 2 ** (failedPolls - 1));
-}
-function schedulePoll(delay) {
-  clearTimeout(pollTimer);
+function armPublicPoll(delay) {
+  clearTimeout(publicPoll.timer);
   if (!state || suspended || quitting) return;
-  pollTimer = setTimeout(poll, delay ?? quotePollDelay());
+  if (publicPoll.running) { publicPoll.rerun = true; return; }
+  publicPoll.timer = setTimeout(() => void pollPublicQuotes(), Math.max(0, Math.ceil(delay)));
 }
-async function resolveQuotes(codes) {
-  const resolved = new Map(), errors = new Map();
-  let limited = false;
-  const usingCustom = state.settings.quoteSourceMode === 'custom';
-  const config = customQuoteConfig;
-  const customCodes = usingCustom ? codes.filter(code => !config || config.markets.includes(marketForSymbol(code))) : [];
-  if (config && customCodes.length) {
-    const results = await fetchCustomQuotes(customCodes, config);
-    for (const [code, result] of results) {
-      if (result.quote) resolved.set(code, result.quote);
-      else {
-        errors.set(code, result.error);
-        limited ||= result.limited === true;
-      }
-    }
-  } else for (const code of customCodes) errors.set(code, '自有行情源需重新配置');
-
-  const publicCodes = codes.filter(code => !customCodes.includes(code) || state.settings.quoteSourceFallback && quoteHealth({ quote: resolved.get(code), received: Date.now() }, state.settings.interval).warning);
-  if (!publicCodes.length) return { resolved, errors, limited };
-  let primary = '';
-  try { primary = await requestText('https://hq.sinajs.cn/list=' + publicCodes.join(','), 'https://finance.sina.com.cn/'); }
-  catch (error) { limited ||= error.status === 429; log('WARN', '新浪 ' + error.message); }
-  const publicQuotes = new Map();
-  for (const code of publicCodes) {
-    const quote = parseSinaQuote(primary, code);
-    if (quote?.price > 0) publicQuotes.set(code, quote);
+function syncCustomPoller() {
+  const codes = quoteCodes().filter(usesCustomQuote);
+  const config = activeQuoteConfig();
+  customPoller.setCodes(config ? codes : []);
+  if (!config) {
+    for (const code of codes) applyCustomQuote(code, { error: '自有行情源需重新配置' });
   }
-  const missing = publicCodes.filter(code => !publicQuotes.has(code) || code.startsWith('gb_') && quoteHealth({ quote: publicQuotes.get(code), received: Date.now() }, state.settings.interval).warning);
+}
+function schedulePoll(delay = 0) {
+  if (!state || suspended || quitting) return;
+  syncQuoteStream();
+  syncCustomPoller();
+  armPublicPoll(delay);
+  routeManualRefresh();
+}
+function stopQuotePolling() {
+  clearTimeout(publicPoll.timer);
+  publicPoll.rerun = false;
+  customPoller.stop();
+  stopQuoteStream();
+  clearTimeout(quoteBroadcastTimer);
+  quoteBroadcastTimer = null;
+}
+function queueQuoteUpdate() {
+  if (quoteBroadcastTimer) return;
+  const remaining = 35 - (performance.now() - lastQuoteBroadcastAt);
+  quoteBroadcastTimer = setTimeout(flushQuoteUpdates, Math.max(0, Math.ceil(remaining)));
+}
+function flushQuoteUpdates() {
+  clearTimeout(quoteBroadcastTimer);
+  quoteBroadcastTimer = null;
+  lastQuoteBroadcastAt = performance.now();
+  broadcast();
+  if (quoteNamesChanged) {
+    quoteNamesChanged = false;
+    persist().catch(error => log('ERROR', error.message));
+  }
+}
+function storeQuote(code, entry) {
+  const previous = quotes.get(code);
+  if (entry.error) {
+    if (previous?.error !== entry.error) {
+      quotes.set(code, { ...previous, error: entry.error });
+      crying.update(code, quotes.get(code), state.settings.interval);
+      queueQuoteUpdate();
+    }
+    return;
+  }
+  const { quote, received } = entry;
+  quotes.set(code, entry);
+  const before = previous?.quote;
+  const us = code.startsWith('gb_');
+  const sessionChanged = us && before && (before.session !== quote.session ||
+    before.quotedAt && quote.quotedAt && marketClock(code, before.quotedAt).dateKey !== marketClock(code, quote.quotedAt).dateKey);
+  const samples = sessionChanged ? [] : histories.get(code) || [];
+  const receivedTime = !Number.isFinite(quote.quotedAt);
+  const at = receivedTime ? received : quote.quotedAt;
+  const last = samples.at(-1);
+  if ((!us || !receivedTime) &&
+      (!last || at > last.at || at === last.at && quote.price !== last.price)) {
+    samples.push({
+      price: quote.price, at, session: quote.session, receivedTime,
+      timePrecision: receivedTime ? 'millisecond' : quote.timePrecision || 'second'
+    });
+    histories.set(code, samples.slice(-60));
+  } else if (sessionChanged) histories.set(code, []);
+  const stock = state.stocks.find(item => item.code === code);
+  if (stock && stock.name !== quote.name) {
+    stock.name = quote.name;
+    quoteNamesChanged = true;
+  }
+  crying.update(code, entry, state.settings.interval);
+  queueQuoteUpdate();
+}
+function hasRecentStreamQuote(code, now = Date.now()) {
+  const record = customRecords.get(code);
+  return quoteStream?.status === 'live' && record?.transport === 'ndjson' &&
+    now - record.received < 3000 && !quoteHealth(record, state.settings.interval, now).warning;
+}
+function applyCustomQuote(code, result, snapshotRun, transport = 'http') {
+  const previous = customRecords.get(code);
+  if (!result.quote) {
+    if (hasRecentStreamQuote(code)) return;
+    const record = { ...previous, error: result.error };
+    customRecords.set(code, record);
+    if (!quotes.get(code)?.quote?.fallbackFrom) storeQuote(code, record);
+    return;
+  }
+  const { quote, received } = result;
+  if (orderbook.snapshotCode === code && orderbook.runId === snapshotRun) {
+    orderbook.ingestSnapshot(quote, received);
+  }
+  const previousAt = previous?.quote?.quotedAt;
+  if (Number.isFinite(quote.quotedAt) && previousAt > quote.quotedAt ||
+      previous?.transport === 'ndjson' && !previous.error && hasRecentStreamQuote(code, received) &&
+      transport !== 'ndjson' && (quote.quotedAt === null || previousAt === quote.quotedAt)) return;
+  const record = { quote, received, transport };
+  customRecords.set(code, record);
+  if (!state.settings.quoteSourceFallback || !quotes.get(code)?.quote?.fallbackFrom ||
+      !quoteHealth(record, state.settings.interval, received).warning) storeQuote(code, record);
+}
+function shouldUsePublicQuote(code, interval, now = Date.now()) {
+  return !usesCustomQuote(code) || state.settings.quoteSourceFallback &&
+    quoteHealth(customRecords.get(code), interval, now).warning;
+}
+function applyPublicQuote(code, quote, received) {
+  if (!shouldUsePublicQuote(code, state.settings.interval)) return;
+  const previous = quotes.get(code);
+  if (!quote) {
+    if (!usesCustomQuote(code)) storeQuote(code, { error: '更新失败，保留上次报价' });
+    return;
+  }
+  if (code.startsWith('gb_') && newestQuote([quote, previous?.quote], received) !== quote) return;
+  if (usesCustomQuote(code)) quote = { ...quote, fallbackFrom: activeQuoteConfig()?.name || '自有行情源' };
+  storeQuote(code, { quote, received });
+}
+async function resolvePublicQuotes(codes, onQuote = () => {}) {
+  const resolved = new Map();
+  let limited = false, primary = '';
+  try { primary = await requestText('https://hq.sinajs.cn/list=' + codes.join(','), 'https://finance.sina.com.cn/'); }
+  catch (error) { limited ||= error.status === 429; log('WARN', '新浪 ' + error.message); }
+  const received = Date.now();
+  const missing = [];
+  for (const code of codes) {
+    const quote = parseSinaQuote(primary, code, received);
+    if (quote?.price > 0) resolved.set(code, { quote, received });
+    if (!resolved.has(code) || code.startsWith('gb_') &&
+        quoteHealth(resolved.get(code), state.settings.interval, received).warning) missing.push(code);
+    else onQuote(code, resolved.get(code));
+  }
   if (missing.length) {
     try {
-      const fallback = await requestText('https://qt.gtimg.cn/q=' + missing.map(code => quoteProviderSymbol(code, 'tencent')).join(','), 'https://gu.qq.com/');
+      const body = await requestText('https://qt.gtimg.cn/q=' + missing.map(code => quoteProviderSymbol(code, 'tencent')).join(','), 'https://gu.qq.com/');
+      const fallbackAt = Date.now();
       for (const code of missing) {
-        const quote = parseTencentQuote(fallback, code);
-        if (quote?.price > 0) publicQuotes.set(code, newestQuote([publicQuotes.get(code), quote]));
+        const quote = parseTencentQuote(body, code, fallbackAt);
+        if (quote?.price > 0 && newestQuote([resolved.get(code)?.quote, quote], fallbackAt) === quote) {
+          resolved.set(code, { quote, received: fallbackAt });
+        }
       }
     } catch (error) { limited ||= error.status === 429; log('WARN', '腾讯 ' + error.message); }
   }
-  for (const [code, quote] of publicQuotes) {
-    const chosen = newestQuote([resolved.get(code), quote]);
-    if (chosen === quote && customCodes.includes(code)) chosen.fallbackFrom = config?.name || '自有行情源';
-    resolved.set(code, chosen);
+  for (const code of missing) onQuote(code, resolved.get(code) || { received: Date.now() });
+  return { resolved, limited };
+}
+async function resolveStockQuote(code) {
+  let quote;
+  let error;
+  const config = activeQuoteConfig();
+  const useCustom = usesCustomQuote(code);
+  if (useCustom) {
+    if (!config) error = '自有行情源需重新配置';
+    else {
+      try { quote = await fetchCustomQuote(code, config); }
+      catch (failure) { error = failure.message; }
+    }
+    if (!state.settings.quoteSourceFallback || !quoteHealth({ quote, received: Date.now() }, state.settings.interval).warning) {
+      return { quote, error };
+    }
   }
-  return { resolved, errors, limited };
+  const { resolved } = await resolvePublicQuotes([code]);
+  const fallback = resolved.get(code)?.quote;
+  if (fallback && newestQuote([quote, fallback]) === fallback) {
+    quote = useCustom ? { ...fallback, fallbackFrom: config?.name || '自有行情源' } : fallback;
+  }
+  return { quote, error };
+}
+
+function stopQuoteStream() {
+  const stream = quoteStream;
+  quoteStream = null;
+  clearTimeout(stream?.retryTimer);
+  stream?.controller.abort();
+}
+function syncQuoteStream() {
+  const config = activeQuoteConfig();
+  const codes = config?.streamUrl ? quoteCodes().filter(usesCustomQuote).sort() : [];
+  const key = codes.join(',');
+  if (codes.length && quoteStream?.config === config && quoteStream.key === key) return;
+  const wasConnected = Boolean(quoteStream);
+  stopQuoteStream();
+  if (!codes.length) {
+    if (wasConnected) queueQuoteUpdate();
+    return;
+  }
+  quoteStream = { config, codes, key, controller: new AbortController(), failures: 0, status: 'connecting' };
+  queueQuoteUpdate();
+  void connectQuoteStream(quoteStream);
+}
+async function connectQuoteStream(stream) {
+  let limited = false, requestedDelay = 0;
+  try {
+    await followQuoteStream(stream.codes, stream.config, {
+      signal: stream.controller.signal,
+      onQuote(quote, received) {
+        if (quoteStream !== stream || suspended || quitting) return;
+        if (stream.status !== 'live') queueQuoteUpdate();
+        stream.failures = 0;
+        stream.status = 'live';
+        applyCustomQuote(quote.code, { quote, received }, orderbook.runId, 'ndjson');
+      }
+    });
+  } catch (error) {
+    limited = error.status === 429;
+    requestedDelay = error.retryAfterMs || 0;
+  }
+  if (quoteStream !== stream || suspended || quitting) return;
+  stream.status = 'reconnecting';
+  stream.failures = Math.min(6, stream.failures + 1);
+  const backoff = Math.min(60000, (limited ? 2000 : 1000) * 2 ** (stream.failures - 1));
+  const delay = Math.min(2 ** 31 - 1, Math.max(backoff, requestedDelay));
+  stream.retryTimer = setTimeout(() => void connectQuoteStream(stream), delay);
+  queueQuoteUpdate();
+}
+async function testQuoteStream(config, code) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  let sample;
+  try {
+    await followQuoteStream([code], config, {
+      signal: controller.signal,
+      onQuote(quote, received) {
+        sample = { quote, received, quotedAt: quote.quotedAt,
+          latencyMs: received >= quote.quotedAt ? received - quote.quotedAt : null, symbol: quote.code };
+        controller.abort();
+      }
+    });
+  } catch (error) { return { error: error.message }; }
+  finally { clearTimeout(timer); }
+  return sample || { error: '5 秒内未收到该标的的有效推送报价' };
 }
 
 function finishManualRefresh(error) {
-  if (!manualRefresh) return;
-  const { resolve, reject } = manualRefresh;
+  const request = manualRefresh;
+  if (!request) return;
   manualRefresh = null;
-  if (error) reject(error);
-  else resolve(quotes.get(state.selected) || null);
+  if (error) request.reject(error);
+  else {
+    flushQuoteUpdates();
+    request.resolve(quotes.get(request.code) || null);
+  }
 }
-async function poll() {
-  clearTimeout(pollTimer);
-  if (!state || suspended || quitting) return;
-  if (polling) { refreshPending = true; return; }
-  polling = true;
-  refreshPending = false;
-  const epoch = quoteEpoch;
-  const codes = quoteCodes();
-  const snapshotRun = orderbook.snapshotCode ? orderbook.runId : null;
+function routeManualRefresh() {
+  const request = manualRefresh;
+  if (!request) return;
+  const code = quoteCodes().includes(request.code) ? request.code : state.selected;
+  if (request.code !== code) {
+    request.code = code;
+    request.fallbackConfig = null;
+  }
+  const config = usesCustomQuote(code) ? activeQuoteConfig() : null;
+  if (!config) {
+    request.job = null;
+    if (usesCustomQuote(code) && !state.settings.quoteSourceFallback) finishManualRefresh();
+    else {
+      request.lane = 'public';
+      if (!publicPoll.running) armPublicPoll(0);
+    }
+    return;
+  }
+  if (request.job?.config === config && request.job.code === code) return;
+  if (request.lane === 'public' && request.fallbackConfig === config) return;
+
+  const job = { config, code };
+  request.job = job;
+  request.lane = 'custom';
+  void customPoller.refresh(code).then(() => {
+    if (manualRefresh !== request || request.job !== job) return;
+    request.job = null;
+    if (state.settings.quoteSourceFallback && shouldUsePublicQuote(code, state.settings.interval)) {
+      request.lane = 'public';
+      request.fallbackConfig = config;
+      armPublicPoll(0);
+    } else finishManualRefresh();
+  }, error => {
+    if (manualRefresh !== request || request.job !== job) return;
+    // Configuration and subscription changes route the pending refresh to the replacement request.
+    request.job = null;
+    if (error.name !== 'AbortError') finishManualRefresh(new Error('行情更新失败，请重试'));
+  });
+}
+async function pollPublicQuotes() {
+  if (suspended || quitting) return;
+  publicPoll.running = true;
+  publicPoll.rerun = false;
+  const epoch = quoteEpoch, started = performance.now();
+  const isCurrent = () => epoch === quoteEpoch && !suspended && !quitting;
+  const scope = quoteCodes().filter(code => !usesCustomQuote(code) || state.settings.quoteSourceFallback);
+  const codes = scope.filter(code => shouldUsePublicQuote(code, state.settings.interval));
   try {
-    const { resolved, errors, limited } = await resolveQuotes(codes);
-    if (epoch !== quoteEpoch || suspended || quitting) return;
-    failedPolls = limited || !resolved.size ? Math.min(7, failedPolls + 1) : 0;
-    let namesChanged = false;
-    const received = Date.now();
-    if (orderbook.snapshotCode && orderbook.runId === snapshotRun) {
-      orderbook.ingestSnapshot(resolved.get(orderbook.snapshotCode), received);
+    if (codes.length) {
+      const { resolved, limited } = await resolvePublicQuotes(codes, (code, { quote, received }) => {
+        if (isCurrent()) applyPublicQuote(code, quote, received);
+      });
+      if (isCurrent()) publicPoll.failures = limited || !resolved.size ? Math.min(7, publicPoll.failures + 1) : 0;
     }
-    for (const code of codes) {
-      let quote = resolved.get(code);
-      if (quote) {
-        const previous = quotes.get(code)?.quote;
-        if (code.startsWith('gb_')) quote = newestQuote([quote, previous]);
-        quotes.set(code, { quote, received });
-        const sessionChanged = code.startsWith('gb_') && previous && (previous.session !== quote.session || previous.quotedAt && quote.quotedAt && marketClock(code, previous.quotedAt).dateKey !== marketClock(code, quote.quotedAt).dateKey);
-        const samples = sessionChanged ? [] : histories.get(code) || [];
-        const at = quote.quotedAt ?? received;
-        if ((!code.startsWith('gb_') || Number.isFinite(quote.quotedAt)) && (samples.at(-1)?.at !== at || samples.at(-1)?.price !== quote.price)) samples.push({ price: quote.price, at });
-        histories.set(code, samples.slice(-60));
-        const stock = state.stocks.find(item => item.code === code);
-        if (stock && stock.name !== quote.name) { stock.name = quote.name; namesChanged = true; }
-      } else quotes.set(code, { ...quotes.get(code), error: errors.get(code) || '更新失败，保留上次报价' });
-      crying.update(code, quotes.get(code), state.settings.interval);
-    }
-    broadcast();
-    finishManualRefresh();
-    if (namesChanged) persist().catch(error => log('ERROR', error.message));
   } catch (error) {
-    if (epoch === quoteEpoch && !suspended && !quitting) {
-      failedPolls = Math.min(7, failedPolls + 1);
-      finishManualRefresh(new Error('行情更新失败，请重试'));
+    if (isCurrent()) {
+      publicPoll.failures = Math.min(7, publicPoll.failures + 1);
+      if (manualRefresh?.lane === 'public') finishManualRefresh(new Error('行情更新失败，请重试'));
     }
     log('WARN', '行情更新 ' + error.message);
   } finally {
-    polling = false;
-    refreshPending = !suspended && !quitting && (refreshPending || epoch !== quoteEpoch);
-    schedulePoll(refreshPending ? 0 : undefined);
+    publicPoll.running = false;
+    if (suspended || quitting) return;
+    const rerun = publicPoll.rerun || epoch !== quoteEpoch;
+    publicPoll.rerun = rerun;
+    if (rerun) armPublicPoll(0);
+    else if (scope.length) {
+      const interval = publicQuoteInterval(scope);
+      const delay = publicPoll.failures ? Math.min(60000, Math.max(interval, 2000) * 2 ** (publicPoll.failures - 1)) :
+        interval - (performance.now() - started);
+      armPublicPoll(delay);
+    }
+    if (!rerun && manualRefresh?.lane === 'public') finishManualRefresh();
   }
 }
 
@@ -359,9 +616,15 @@ handle('desktop:orderbook', (event, operation, input) => {
 handle('desktop:settings', async (_event, patch) => {
   const sourceMode = state.settings.quoteSourceMode;
   state.settings = normalizeSettings({ ...state.settings, ...patch });
-  if (orderbook.snapshotCode && sourceMode !== state.settings.quoteSourceMode) orderbook.stop('行情来源已变化，本轮已停止');
+  if (sourceMode !== state.settings.quoteSourceMode) {
+    stopQuoteStream();
+    customPoller.stop();
+    customRecords.clear();
+    if (manualRefresh) manualRefresh.fallbackConfig = null;
+    if (orderbook.snapshotCode) orderbook.stop('行情来源已变化，本轮已停止');
+  }
   syncOverlays(); broadcast();
-  if (['interval', 'islandInterval', 'islandEnabled', 'islandSymbol'].some(key => Object.hasOwn(patch, key))) {
+  if (['interval', 'islandInterval', 'islandEnabled', 'islandSymbol', 'quoteSourceMode', 'quoteSourceFallback'].some(key => Object.hasOwn(patch, key))) {
     quoteEpoch++;
     schedulePoll(0);
   }
@@ -372,6 +635,7 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
   const code = normalizeMarketSymbol(payload.code);
   if (!code) throw new Error('股票代码无效');
   const stock = state.stocks.find(item => item.code === code);
+  let watchlistChanged = false;
   if (operation === 'select') {
     if (!stock) throw new Error('请先添加到自选');
     if (state.selected !== code) crying.reset(code);
@@ -380,13 +644,13 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
     if (!stock) {
       if (state.stocks.length >= 50) throw new Error('自选已满 50 只');
       const epoch = quoteEpoch;
-      const { resolved, errors } = await resolveQuotes([code]);
+      const { quote, error } = await resolveStockQuote(code);
       if (epoch !== quoteEpoch) throw new Error('行情配置已更改，请重新添加股票');
-      const quote = resolved.get(code);
-      if (!quote?.price) throw new Error(errors.get(code) || '暂未获取有效行情，请检查代码或稍后重试');
+      if (!quote?.price) throw new Error(error || '暂未获取有效行情，请检查代码或稍后重试');
       if (!state.stocks.some(item => item.code === code)) {
         if (state.stocks.length >= 50) throw new Error('自选已满 50 只');
         state.stocks.push({ code, name: quote.name, cost: 0, shares: 0 });
+        watchlistChanged = true;
       }
       quotes.set(code, { quote, received: Date.now() });
     }
@@ -397,7 +661,8 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
     state.stocks = state.stocks.filter(item => item.code !== code);
     if (state.selected === code) state.selected = state.stocks[0].code;
     if (state.settings.islandSymbol === code) state.settings.islandSymbol = '';
-    quotes.delete(code); histories.delete(code);
+    quotes.delete(code); histories.delete(code); customRecords.delete(code);
+    watchlistChanged = Boolean(stock);
     if (orderbook.snapshotCode === code) orderbook.stop('监控标的已移出自选');
     state.news.followed = state.news.followed.filter(followed => followed !== code);
     newsCursors.delete(code);
@@ -408,8 +673,11 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
     if (!Number.isFinite(cost * shares) || cost < 0 || shares < 0 || cost > 1e9 || shares > 1e12 || Boolean(cost) !== Boolean(shares)) throw new Error('请输入有效成本和股数');
     stock.cost = cost; stock.shares = shares;
   } else throw new Error('无效操作');
-  quoteEpoch++;
-  broadcast(); schedulePoll(0);
+  broadcast();
+  if (watchlistChanged) {
+    quoteEpoch++;
+    schedulePoll(0);
+  }
   await persist();
   return snapshot();
 });
@@ -549,8 +817,7 @@ function showNewsNotification(title, body, code) {
       if (code && state.stocks.some(stock => stock.code === code)) {
         if (state.selected !== code) crying.reset(code);
         state.selected = code;
-        quoteEpoch++;
-        broadcast(); schedulePoll(0);
+        broadcast();
         persist().catch(error => log('ERROR', error.message));
       }
       showDashboard();
@@ -650,12 +917,21 @@ handle('desktop:news-preferences', async (event, operation, value) => {
   return snapshot();
 });
 handle('desktop:refresh', (event, manual) => {
-  if (manual !== true) { schedulePoll(0); return true; }
+  if (manual !== true) {
+    schedulePoll(0);
+    if (state && !suspended && !quitting && activeQuoteConfig() && usesCustomQuote(state.selected)) {
+      void customPoller.refresh(state.selected).catch(() => {});
+    }
+    return true;
+  }
   if (event.sender !== dashboard?.webContents || !state || suspended || quitting) throw new Error('当前无法刷新行情');
   if (!manualRefresh) {
-    manualRefresh = {};
+    manualRefresh = { code: state.selected };
     manualRefresh.promise = new Promise((resolve, reject) => Object.assign(manualRefresh, { resolve, reject }));
-    if (!polling) schedulePoll(0);
+    const pending = manualRefresh.promise;
+    syncCustomPoller();
+    routeManualRefresh();
+    return pending;
   }
   return manualRefresh.promise;
 });
@@ -678,12 +954,16 @@ handle('desktop:quote-source', async (event, operation, payload = {}) => {
     if (operation === 'test') {
       const code = normalizeMarketSymbol(payload.testCode || state.selected);
       if (!code || !config.markets.includes(marketForSymbol(code))) throw new Error('测试股票须属于所选市场');
-      const quote = await fetchCustomQuote(code, config);
-      const received = Date.now();
-      const series = config.seriesUrl
-        ? await fetchCustomSeries(code, 'day', 'raw', config).then(result => ({ bars: result.bars.length }), error => ({ error: error.message }))
-        : null;
-      return { quote, received, series };
+      const [snapshotResult, streamSample, series] = await Promise.all([
+        fetchCustomQuote(code, config).then(quote => ({ quote, received: Date.now() }), error => ({ error })),
+        config.streamUrl ? testQuoteStream(config, code) : null,
+        config.seriesUrl ? fetchCustomSeries(code, 'day', 'raw', config).then(result => ({ bars: result.bars.length }), error => ({ error: error.message })) : null
+      ]);
+      const result = snapshotResult.quote ? snapshotResult : streamSample;
+      if (!result?.quote) throw snapshotResult.error;
+      const { quote: _, ...stream } = streamSample || {};
+      return { quote: result.quote, received: result.received, transport: snapshotResult.quote ? 'http' : 'ndjson',
+        series, stream: streamSample ? stream : null };
     }
     if (operation !== 'save') throw new Error('无效操作');
     let sealed = null;
@@ -693,10 +973,13 @@ handle('desktop:quote-source', async (event, operation, payload = {}) => {
     state.settings.quoteSourceFallback = payload.fallback === true;
   }
   if (orderbook.snapshotCode) orderbook.stop('行情来源已变化，本轮已停止');
+  stopQuoteStream();
+  customPoller.stop();
   quoteEpoch++;
   seriesRevision++;
-  failedPolls = 0;
-  quotes.clear(); histories.clear();
+  if (manualRefresh) manualRefresh.fallbackConfig = null;
+  publicPoll.failures = 0;
+  quotes.clear(); histories.clear(); customRecords.clear();
   for (const code of crying.entries.keys()) crying.reset(code);
   await persist();
   broadcast(); schedulePoll(0);
@@ -838,7 +1121,7 @@ app.whenReady().then(async () => {
       if (state.settings.quoteSourceMode !== 'custom' || !customQuoteConfig?.markets.includes(marketForSymbol(code))) {
         throw new Error('请先在设置中启用该市场的自有行情源');
       }
-      const interval = quotePollInterval();
+      const interval = hasRecentStreamQuote(code) ? 0 : customQuoteInterval();
       const window = latencyMs + maxAgeMs;
       if (interval >= window) {
         throw new Error('行情轮询间隔 ' + interval + ' ms 达到或超过 ' + window + ' ms 的模拟等待窗口。请缩短行情轮询间隔或改用深度推送。');
@@ -861,6 +1144,7 @@ app.whenReady().then(async () => {
     })
   });
   if (!qaProfile) { setTimeout(() => updater.check(), 15000).unref(); updateTimer = setInterval(() => updater.check(), updater.interval); updateTimer.unref(); }
+  updateSystemAccent(readSystemAccent());
   createDashboard();
   tray = new Tray(path.join(__dirname, 'build/icon.png'));
   tray.setToolTip('牛来盯盘');
@@ -871,7 +1155,7 @@ app.whenReady().then(async () => {
   ]));
   tray.on('double-click', showDashboard);
   const suspend = () => {
-    suspended = true; quoteEpoch++; newsGeneration++; clearTimeout(pollTimer); clearTimeout(newsTimer);
+    suspended = true; quoteEpoch++; newsGeneration++; stopQuotePolling(); clearTimeout(newsTimer);
     orderbook.stop('系统休眠或锁屏，本轮已停止');
     finishManualRefresh(new Error('系统休眠，刷新已暂停'));
     for (const code of crying.entries.keys()) crying.invalidate(code);
@@ -886,7 +1170,22 @@ app.whenReady().then(async () => {
   powerMonitor.on('lock-screen', suspend);
   powerMonitor.on('resume', resume);
   powerMonitor.on('unlock-screen', resume);
-  nativeTheme.on('updated', () => broadcast());
+  nativeTheme.on('updated', () => {
+    updateSystemAccent(readSystemAccent());
+    broadcast();
+  });
+  if (process.platform === 'win32') {
+    systemPreferences.on('accent-color-changed', (_event, value) => {
+      if (updateSystemAccent(value)) broadcast();
+    });
+  } else if (process.platform === 'darwin') {
+    const refreshAccent = () => { if (updateSystemAccent(readSystemAccent())) broadcast(); };
+    app.on('browser-window-focus', refreshAccent);
+    try {
+      const subscription = systemPreferences.subscribeLocalNotification('NSSystemColorsDidChangeNotification', refreshAccent);
+      app.once('will-quit', () => systemPreferences.unsubscribeLocalNotification(subscription));
+    } catch (error) { log('WARN', '无法监听系统强调色：' + error.message); }
+  }
   reactionTimer = setInterval(playMarketReaction, 250);
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, () => {
     for (const window of windows()) window.setBounds(constrain(window.getBounds()));
@@ -901,7 +1200,7 @@ app.on('before-quit', event => {
   quitting = true;
   orderbook?.stop('牛来已退出');
   finishManualRefresh(new Error('程序正在退出'));
-  clearTimeout(pollTimer);
+  stopQuotePolling();
   clearTimeout(newsTimer);
   clearInterval(reactionTimer);
   for (const window of windows()) stopDrag(window);

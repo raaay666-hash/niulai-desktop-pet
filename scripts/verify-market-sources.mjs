@@ -69,6 +69,189 @@ async function overlay(kind) {
   await surface.waitForFunction(() => window.__NIULAI_RENDERER_READY__);
   return surface;
 }
+
+async function waitFor(read, ready, message, timeout = 8000) {
+  const deadline = performance.now() + timeout;
+  while (performance.now() < deadline) {
+    const value = await read();
+    if (ready(value)) return value;
+    await new Promise(resolve => setTimeout(resolve, 35));
+  }
+  assert.fail(message);
+}
+
+async function verifyMixedSourcesAndPush() {
+  const now = Date.parse('2026-11-20T15:00:00Z');
+  const fastStarts = [], heldPeers = [], heldSelected = [], pulls = new Map(), feeds = [];
+  let holdPeer = false, holdSelected = false, limitNextQuote = false;
+  let mixedPrice = 44, limitedAt;
+  let snapshotPrice = 43;
+  const quote = (symbol, price, timestamp = now - 2000) => ({
+    symbol, name: '实时测试 ' + symbol, price, previousClose: 37.5, timestamp, session: 'regular'
+  });
+  const send = (reply, body) => {
+    if (!reply || reply.destroyed || reply.writableEnded) return;
+    reply.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
+  };
+  const fixture = http.createServer((request, reply) => {
+    const url = new URL(request.url, 'http://localhost');
+    const symbol = url.searchParams.get('symbol');
+    if (url.pathname === '/stream') {
+      const feed = { reply, closed: false, codes: url.searchParams.get('codes'), accept: request.headers.accept };
+      feeds.push(feed);
+      reply.on('close', () => { feed.closed = true; });
+      reply.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+      reply.flushHeaders();
+    } else if (url.pathname === '/mixed') {
+      if (symbol === 'MP') {
+        const start = performance.now();
+        fastStarts.push(start);
+        if (limitNextQuote) {
+          limitNextQuote = false;
+          limitedAt = start;
+          reply.writeHead(429, { 'Retry-After': '3' }).end('{}');
+        } else if (holdSelected) heldSelected.push(reply);
+        else send(reply, quote(symbol, mixedPrice, now - 2000 + mixedPrice));
+      } else if (holdPeer && symbol === 'AAPL') {
+        const peer = { closed: false };
+        heldPeers.push(peer);
+        reply.on('close', () => { peer.closed = true; });
+      } else send(reply, quote(symbol, 44));
+    } else {
+      pulls.set(symbol, (pulls.get(symbol) || 0) + 1);
+      send(reply, quote(symbol, symbol === 'MP' ? snapshotPrice : 46, snapshotPrice > 43 ? now - 200 : now - 2000));
+    }
+  });
+  await new Promise(resolve => fixture.listen(0, '127.0.0.1', resolve));
+  const origin = 'http://127.0.0.1:' + fixture.address().port;
+  const mixed = { mode: 'custom', name: '混合测试源', url: origin + '/mixed?symbol={symbol}', markets: ['us'], interval: .2, fallback: false };
+  const pushed = { ...mixed, name: '实时报价源', url: origin + '/snapshot?symbol={symbol}', streamUrl: origin + '/stream?codes={codes}' };
+  const source = (operation, input) => page.evaluate(({ operation, input }) => window.desktopPet.quoteSource(operation, input), { operation, input });
+  const line = body => JSON.stringify(body) + '\n';
+  try {
+    await clocks(now);
+    await app.evaluate(() => {
+      const baseFetch = globalThis.fetch;
+      globalThis.fetch = (url, options) => {
+        if (!String(url).startsWith('https://hq.sinajs.cn/')) return baseFetch(url, options);
+        const codes = String(url).split('list=')[1].split(',');
+        return Promise.resolve(new Response(codes.map(code => 'var hq_str_' + code + '="QA Index,3000,0,0,100,100";').join('\n')));
+      };
+    });
+    await page.evaluate(() => window.desktopPet.settings({ interval: .2, islandInterval: .2 }));
+    await source('save', mixed);
+    await page.evaluate(async () => {
+      const api = window.desktopPet;
+      await api.stock('add', { code: 'gb_aapl' });
+      await api.stock('add', { code: 's_sh600519' });
+      await api.stock('select', { code: 'gb_mp' });
+    });
+    const start = fastStarts.length;
+    await waitFor(() => fastStarts.length, count => count >= start + 6, 'Mixed watchlist did not receive sub-second quotes');
+    const timings = fastStarts.slice(start + 1, start + 6);
+    const delays = timings.slice(1).map((at, i) => at - timings[i]).sort((a, b) => a - b);
+    assert.ok(delays.every(delay => delay >= 180), 'Polling faster than the configured 200ms floor: ' + delays.join(', '));
+    assert.ok(delays[2] < 440, 'Mixed coverage did not allow 200ms polling: ' + delays.join(', '));
+    assert.equal((await state()).state.settings.interval, .2);
+    assert.ok((await state()).quotes.s_sh600519?.quote.price > 0);
+    pass('a 200ms private source updates a mixed list without inheriting the public polling interval');
+
+    limitNextQuote = true;
+    await waitFor(() => limitedAt, Number.isFinite, 'The fast source did not receive the controlled HTTP 429');
+    const retryAt = await waitFor(() => fastStarts.find(at => at > limitedAt), Number.isFinite, 'The fast source did not retry after HTTP 429');
+    assert.ok(retryAt - limitedAt >= 2950, 'HTTP 429 Retry-After was ignored at the 200ms polling setting');
+    pass('HTTP 429 honors Retry-After even with a 200ms private source and a mixed watchlist');
+
+    holdPeer = true;
+    const slowPeer = await waitFor(() => heldPeers[0], Boolean, 'The slow AAPL request did not start');
+    mixedPrice = 45;
+    await waitFor(state, value => value.quotes.gb_mp?.quote.price === 45, 'Fast quote waited for the slower symbol');
+    mixedPrice = 46;
+    await waitFor(state, value => value.quotes.gb_mp?.quote.price === 46, 'A second fast quote waited for the same slower request');
+    assert.equal(slowPeer.closed, false);
+    assert.equal(heldPeers.length, 1, 'A duplicate AAPL request started while the first was held');
+    pass('two successive MP quotes arrive during the same held AAPL request without duplicating it');
+
+    holdSelected = true;
+    await waitFor(() => heldSelected[0], Boolean, 'The selected MP request did not start');
+    await page.evaluate(() => {
+      window.__marketQaManualResult = null;
+      void window.desktopPet.refresh(true).then(entry => {
+        window.__marketQaManualResult = { price: entry?.quote?.price };
+      }, error => {
+        window.__marketQaManualResult = { error: error.message };
+      });
+    });
+    mixedPrice = 47;
+    holdSelected = false;
+    for (const pending of heldSelected) send(pending, quote('MP', mixedPrice, now - 2000 + mixedPrice));
+    const manual = await waitFor(() => page.evaluate(() => window.__marketQaManualResult), Boolean,
+      'Selected manual refresh was blocked by AAPL', 4000);
+    assert.deepEqual(manual, { price: 47 });
+    assert.equal(slowPeer.closed, false);
+    assert.equal(heldPeers.length, 1, 'Manual refresh duplicated the slow AAPL request');
+    pass('manual refresh completes on the selected MP quote while the same AAPL request stays pending');
+
+    const probePromise = source('test', { ...pushed, testCode: 'gb_mp' });
+    probePromise.catch(() => {});
+    const probe = await waitFor(() => feeds[0], Boolean, 'The connection test did not open the NDJSON feed');
+    assert.equal(probe.codes, 'gb_mp');
+    assert.equal(probe.accept, 'application/x-ndjson');
+    probe.reply.write(line(quote('MP', 52, now - 1700)));
+    const tested = await probePromise;
+    assert.equal(tested.quote.price, 43);
+    assert.equal(tested.stream?.symbol, 'gb_mp', tested.stream?.error);
+    assert.equal(tested.stream.latencyMs, tested.stream.received - tested.stream.quotedAt);
+    await waitFor(() => probe.closed, Boolean, 'The connection test left its stream open');
+
+    assert.equal(slowPeer.closed, false);
+    assert.equal(heldPeers.length, 1);
+    await source('save', pushed);
+    await waitFor(() => slowPeer.closed, Boolean, 'Saving a replacement source did not abort the held AAPL connection', 3500);
+    const feed = await waitFor(() => feeds[1], Boolean, 'The active configuration did not open the NDJSON feed');
+    assert.deepEqual(feed.codes?.split(',').sort(), ['gb_aapl', 'gb_mp']);
+    await waitFor(state, value => value.quotes.gb_mp?.quote.price === 43 && value.quotes.gb_aapl?.quote.price === 46, 'Startup HTTP snapshots were not applied');
+    pass('switching quote sources cancels an unattended old HTTP request and starts replacement snapshots');
+    const bytes = Buffer.from(line(quote('MP', 52, now - 1200)));
+    const split = bytes.indexOf(Buffer.from('实')) + 1;
+    assert.ok(split > 0);
+    feed.reply.write(bytes.subarray(0, split));
+    assert.equal((await state()).quotes.gb_mp.quote.price, 43);
+    feed.reply.write(bytes.subarray(split));
+    const pushedValue = await waitFor(state, value => value.quotes.gb_mp?.transport === 'ndjson', 'The streamed quote did not reach the desktop');
+    assert.equal(pushedValue.quotes.gb_mp.quote.price, 52);
+    assert.equal(pushedValue.quotes.gb_mp.quote.name, '实时测试 MP');
+    assert.equal(pushedValue.quotes.gb_aapl.quote.price, 46);
+    assert.equal(typeof pushedValue.quoteSource.streamStatus, 'string');
+    await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('推送'));
+    pass('NDJSON connection test and active feed accept partial UTF-8 frames');
+
+    const peerCalls = pulls.get('AAPL');
+    await waitFor(() => pulls.get('AAPL'), count => count > peerCalls, 'An uncovered peer stopped polling');
+    const fastCalls = pulls.get('MP');
+    await waitFor(() => pulls.get('AAPL'), count => count >= peerCalls + 3, 'Polling stalled with an open quote stream');
+    assert.equal(pulls.get('MP'), fastCalls, 'A freshly streamed symbol is still polled automatically');
+    await page.evaluate(() => window.desktopPet.refresh(true));
+    assert.ok(pulls.get('MP') > fastCalls, 'Manual refresh did not request the HTTP snapshot');
+    assert.equal((await state()).quotes.gb_mp.quote.price, 52);
+    pass('live stream suppresses only its covered symbol and preserves manual refresh without accepting older snapshots');
+
+    feed.reply.write(line(quote('MP', 99, now - 1500)) + line(quote('UNTRACKED', 98, now - 900)) + line(quote('AAPL', 54, now - 800)));
+    const ordered = await waitFor(state, value => value.quotes.gb_aapl?.quote.price === 54, 'The second symbol did not arrive through the stream');
+    assert.equal(ordered.quotes.gb_mp.quote.price, 52);
+    assert.equal(Object.hasOwn(ordered.quotes, 'gb_untracked'), false);
+    snapshotPrice = 55;
+    feed.reply.end();
+    await waitFor(state, value => value.quotes.gb_mp?.quote.price === 55 && value.quotes.gb_mp.transport !== 'ndjson', 'HTTP fallback did not recover after stream disconnect', 14000);
+    const reconnect = await waitFor(() => feeds[2], Boolean, 'The stream did not reconnect', 14000);
+    await source('save', { ...pushed, streamUrl: '' });
+    await waitFor(() => reconnect.closed, Boolean, 'Disabling quote push left a connection open');
+    pass('late and untracked frames are ignored; disconnect recovers to snapshots and disabling push closes the connection');
+  } finally {
+    await new Promise(resolve => { fixture.close(resolve); fixture.closeAllConnections(); });
+  }
+}
+
 try {
   await fs.mkdir(output, { recursive: true });
   await launch();
@@ -244,6 +427,7 @@ try {
   const retryDelay = receivedAt[limited + 1] - receivedAt[limited];
   assert.ok(retryDelay >= 1950, `HTTP 429 must slow the next poll (observed ${retryDelay}ms)`);
   pass('a fully configured own source polls at 500ms and backs off when rate limited');
+  await verifyMixedSourcesAndPush();
   assert.deepEqual(errors, []);
   passed = true;
 } finally {

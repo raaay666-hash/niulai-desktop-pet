@@ -5,7 +5,7 @@ const DEFAULTS = Object.freeze({
   private: true, scene: 0, smartScene: true, autoActions: true, updateNotifications: true,
   petEnabled: true, petMode: 'market', petQuote: true, petHideInApp: false,
   petScale: 100, muyuSound: false, muyuEffects: true, muyuCount: true,
-  islandEnabled: false, islandContent: 'market', islandTheme: 'dark',
+  islandEnabled: false, islandContent: 'market', islandTheme: 'system',
   islandPrice: true, islandPercent: true, islandBull: true, islandCount: true,
   islandHoldings: false, islandMotion: true, islandAutoCollapse: true,
   islandHideInApp: false, islandSymbol: '', islandWidth: 320, islandInterval: .5,
@@ -34,7 +34,7 @@ function normalizeSettings(raw = {}) {
     if (['system', 'light', 'dark'].includes(raw[key])) result[key] = raw[key];
   }
   for (const key of ['petMode', 'islandContent']) result[key] = raw[key] === 'muyu' ? 'muyu' : 'market';
-  for (const key of ['interval', 'islandInterval']) result[key] = [.5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
+  for (const key of ['interval', 'islandInterval']) result[key] = [.2, .5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
   result.volume = clamp(raw.volume, 0, 1, DEFAULTS.volume);
   result.petScale = clamp(raw.petScale, 75, 125, DEFAULTS.petScale);
   result.islandWidth = Math.round(clamp(raw.islandWidth, 260, 420, DEFAULTS.islandWidth));

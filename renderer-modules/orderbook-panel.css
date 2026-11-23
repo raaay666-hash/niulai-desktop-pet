@@ -1,4 +1,9 @@
 #view-orderbook { display: grid; gap: 16px; }
+.plugin-nav { display: flex; flex-wrap: wrap; gap: 5px 19px; border-bottom: 1px solid var(--line); }
+.plugin-nav button { min-height: 35px; padding: 3px 1px; border-bottom: 2px solid transparent; color: var(--muted); font-size: 13px; }
+.plugin-nav button:hover { color: var(--text); }
+.plugin-nav button[aria-pressed=true] { border-color: var(--blue); color: var(--blue); font-weight: 600; }
+.orderbook-pane { display: grid; gap: 12px; }
 .orderbook-card { padding: 20px; min-width: 0; }
 .orderbook-heading { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
 .orderbook-heading p { margin-top: 6px; font-size: 12px; }

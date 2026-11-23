@@ -92,7 +92,7 @@
         return String(symbol);
       }
       function decodeJavascriptString(value) {
-        return String(value || "").replace(/\\u([0-9a-f]{4})/gi, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16))).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        return String(value || "").replace(/\\u([0-9a-f]{4})/gi, (_match, hex2) => String.fromCharCode(Number.parseInt(hex2, 16))).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
       }
       function parseTencentSuggestions2(text, markets) {
         const allowed = normalizeMarketList(markets);
@@ -5869,14 +5869,58 @@
   var catalog = motion_catalog_default.map((spec) => ["cover", "slump"].includes(spec.id) ? { ...spec, action: "\u6342\u773C\u54ED\u6CE3" } : spec);
   var $ = (id) => document.getElementById(id);
   var api = window.desktopPet;
-  var fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "\u2014";
-  var marketPrice = (value, code2 = "") => Number.isFinite(value) ? value.toLocaleString("en-US", {
-    minimumFractionDigits: code2.startsWith("rt_hk") ? 3 : 2,
-    maximumFractionDigits: 4
-  }) : "\u2014";
+  var numberFormats = /* @__PURE__ */ new Map();
+  var priceFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  var hkPriceFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 4 });
+  var localClock = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  var receiptClock = new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+    hourCycle: "h23"
+  });
+  var sourceClocks = /* @__PURE__ */ new Map();
+  function fmt(value, digits = 2) {
+    if (!Number.isFinite(value)) return "\u2014";
+    if (!numberFormats.has(digits)) numberFormats.set(digits, new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
+    return numberFormats.get(digits).format(value);
+  }
+  var marketPrice = (value, code2 = "") => Number.isFinite(value) ? (code2.startsWith("rt_hk") ? hkPriceFormat : priceFormat).format(value) : "\u2014";
   var signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? "+" : value < 0 ? "\u2212" : ""}${fmt(Math.abs(value), digits)}` : "\u2014";
   var tone = (value) => value > 0 ? "rise" : value < 0 ? "fall" : "neutral";
-  var time = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false }) : "\u2014";
+  var time = (value) => Number.isFinite(value) ? localClock.format(value) : "\u2014";
+  function setText(node, value) {
+    const text = String(value);
+    if (node.textContent !== text) node.textContent = text;
+  }
+  function setAttributeValue(node, name, value) {
+    if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+  }
+  function sourceReceiptTiming(delay) {
+    if (!Number.isFinite(delay)) return "";
+    if (delay < 0) return "\u6E90\u65F6\u95F4\u665A\u4E8E\u672C\u673A\u63A5\u6536\u65F6\u95F4";
+    return `\u6E90\u65F6\u95F4\u81F3\u63A5\u6536 ${delay < 1e4 ? Math.round(delay) + " \u6BEB\u79D2" : fmt(delay / 1e3, 1) + " \u79D2"}`;
+  }
+  function sourceTimestamp(quote, us, isPush) {
+    if (!Number.isFinite(quote.quotedAt)) return quote.time || "\u65F6\u95F4\u672A\u63D0\u4F9B";
+    const zone = us ? "America/New_York" : "Asia/Shanghai";
+    const precision = quote.timePrecision === "minute" ? "minute" : isPush && quote.timePrecision === "millisecond" ? "millisecond" : "second";
+    const key = `${zone}/${precision}`;
+    if (!sourceClocks.has(key)) sourceClocks.set(key, new Intl.DateTimeFormat("zh-CN", {
+      timeZone: zone,
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      second: precision === "minute" ? void 0 : "2-digit",
+      fractionalSecondDigits: precision === "millisecond" ? 3 : void 0
+    }));
+    return sourceClocks.get(key).format(quote.quotedAt) + (us ? " \u7F8E\u4E1C" : "");
+  }
   function quotePresentation(record, interval = 10, now = Date.now()) {
     const quote = record?.quote;
     const health = quoteHealth(record, interval, now);
@@ -5884,33 +5928,33 @@
     const us = quote.market === "us" || quote.code.startsWith("gb_");
     const clock = import_quote_time2.default.marketClock(quote.code, now);
     const label = us ? { pre: "\u76D8\u524D", regular: "\u5E38\u89C4", post: "\u76D8\u540E" }[quote.session] || "\u5E38\u89C4" : "";
-    const provider = quote.source === "custom" ? quote.sourceName || "\u81EA\u6709\u6E90" : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
-    const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString("zh-CN", {
-      timeZone: us ? "America/New_York" : "Asia/Shanghai",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: quote.timePrecision === "minute" ? void 0 : "2-digit",
-      hour12: false
-    }) + (us ? " \u7F8E\u4E1C" : "") : quote.time || "\u65F6\u95F4\u672A\u63D0\u4F9B";
+    const custom = quote.source === "custom", isPush = custom && record.transport === "ndjson";
+    const provider = custom ? (quote.sourceName || "\u81EA\u6709\u6E90") + " \xB7 " + (isPush ? "\u63A8\u9001" : "HTTP \u5FEB\u7167") : (quote.source === "tencent" ? "\u817E\u8BAF" : "\u65B0\u6D6A") + (quote.fallbackFrom ? "\uFF08\u81EA\u6709\u6E90\u56DE\u9000\uFF09" : "");
+    const stamp = sourceTimestamp(quote, us, isPush);
     const prefix = health.message ? health.message + " \xB7 " : "";
-    const quoteText = us || quote.source === "custom" ? `${label ? label + " \xB7 " : ""}\u62A5\u4EF7 ${stamp}` : `\u83B7\u53D6\u4E8E ${time(record.received)}`;
+    const quoteText = us || custom ? `${label ? label + " \xB7 " : ""}\u62A5\u4EF7 ${stamp}` : `\u83B7\u53D6\u4E8E ${time(record.received)}`;
     const currentSession = { pre: "\u76D8\u524D", regular: "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5", post: "\u76D8\u540E", closed: "\u5E38\u89C4\u65F6\u6BB5\u5916", weekend: "\u5468\u672B\u4F11\u5E02", lunch: "\u5348\u95F4\u4F11\u5E02" }[clock.phase];
     const basis = quote.session === "pre" ? "\u76D8\u524D\u6DA8\u8DCC\u8F83\u4E0A\u4E00\u5E38\u89C4\u6536\u76D8" : quote.session === "post" ? "\u76D8\u540E\u6DA8\u8DCC\u8F83\u5F53\u65E5\u5E38\u89C4\u6536\u76D8" : "\u6DA8\u8DCC\u8F83\u524D\u6536\u76D8";
     const reference = quote.regular && quote.session !== "regular" ? ` \xB7 \u5E38\u89C4\u6536\u76D8 ${fmt(quote.regular.price)}` : "";
+    const timing = custom && quote.timePrecision !== "minute" && Number.isFinite(quote.quotedAt) && Number.isFinite(record.received) ? sourceReceiptTiming(record.received - quote.quotedAt) : "";
+    const receipt = Number.isFinite(record.received) ? receiptClock.format(record.received) : "\u2014";
     return {
       ...health,
       label,
       session: us ? currentSession + (label && quote.session !== clock.phase ? ` \xB7 \u6700\u8FD1${label}\u62A5\u4EF7` : "") : marketSession(quote.code),
-      summary: `${prefix}${provider} \xB7 ${quoteText}`,
-      compact: `${prefix}${quote.source === "custom" || quote.fallbackFrom ? provider + " \xB7 " : ""}${quoteText}`,
-      detail: `${provider} \xB7 ${label || "\u5E38\u89C4"}\u62A5\u4EF7
-\u62A5\u4EF7\u65F6\u95F4 ${stamp}
-\u83B7\u53D6\u65F6\u95F4 ${new Date(record.received).toLocaleString("zh-CN", { hour12: false })}
-${basis}${reference}
-${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\u56F4\u4E0E\u65F6\u6548\u4EE5\u81EA\u6709\u63A5\u53E3\u4E3A\u51C6" : "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\uFF0C\u4E0D\u540C\u6765\u6E90\u7684\u6210\u4EA4\u8303\u56F4\u53EF\u80FD\u4E0D\u540C"}`,
-      basis: basis + reference
+      summary: isPush ? `${prefix}${provider}${label ? " \xB7 " + label : ""}` : `${prefix}${provider} \xB7 ${quoteText}`,
+      compact: `${prefix}${custom || quote.fallbackFrom ? provider + " \xB7 " : ""}${quoteText}`,
+      detail: [
+        `${provider} \xB7 ${label || "\u5E38\u89C4"}\u62A5\u4EF7`,
+        `\u62A5\u4EF7\u65F6\u95F4 ${stamp}`,
+        `\u672C\u673A\u63A5\u6536 ${receipt}`,
+        timing,
+        basis + reference,
+        custom ? "\u65F6\u95F4\u5DEE\u53D6\u51B3\u4E8E\u6E90\u65F6\u95F4\u6233\u4E0E\u4E24\u7AEF\u65F6\u949F\u3002\u4EA4\u6613\u8303\u56F4\u4EE5\u81EA\u6709\u63A5\u53E3\u4E3A\u51C6\u3002" : "\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\uFF0C\u4E0D\u540C\u6765\u6E90\u7684\u6210\u4EA4\u8303\u56F4\u53EF\u80FD\u4E0D\u540C"
+      ].filter(Boolean).join("\n"),
+      basis: basis + reference,
+      timing,
+      receipt
     };
   }
   function element(tag, value = "", className = "") {
@@ -5929,9 +5973,13 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     if (data2.reactions?.[code2]?.crying && marketSession(code2) === "\u5E38\u89C4\u4EA4\u6613\u65F6\u6BB5") return data2.quotes[code2]?.quote?.changePct <= -5 ? "slump" : "cover";
     return ["cover", "slump"].includes(base) ? "incense" : base;
   }
+  var sparklines = /* @__PURE__ */ new WeakMap();
   function drawSparkline(canvas, samples, color) {
-    const context = canvas.getContext("2d");
+    const previous = sparklines.get(canvas);
     const width = canvas.width, height = canvas.height;
+    if (previous?.color === color && previous.width === width && previous.height === height && previous.samples.length === samples.length && samples.every((sample, index) => sample.at === previous.samples[index].at && sample.price === previous.samples[index].price)) return;
+    sparklines.set(canvas, { color, width, height, samples });
+    const context = canvas.getContext("2d");
     context.clearRect(0, 0, width, height);
     context.strokeStyle = color;
     context.lineWidth = 2.5;
@@ -6129,6 +6177,50 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     return start < end ? nowMinutes >= start && nowMinutes < end : nowMinutes >= start || nowMinutes < end;
   }
 
+  // renderer-modules/system-appearance.js
+  var applied = /* @__PURE__ */ new WeakMap();
+  var accentPattern = /^#[0-9a-f]{6}$/i;
+  var parse = (value) => [1, 3, 5].map((start) => Number.parseInt(value.slice(start, start + 2), 16));
+  var hex = (color) => "#" + color.map((value) => value.toString(16).padStart(2, "0")).join("");
+  var mix = (a, b, amount) => a.map((value, index) => Math.round(value + (b[index] - value) * amount));
+  var linear = (value) => value <= 10 ? value / (255 * 12.92) : ((value / 255 + 0.055) / 1.055) ** 2.4;
+  var luminance = ([red, green, blue]) => 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+  function contrast(a, b) {
+    const first = luminance(a), second = luminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  }
+  function readableSystemAccent(value, dark) {
+    if (!accentPattern.test(value || "")) return "";
+    const color = parse(value);
+    const backdrop = parse(dark ? "#1c1f26" : "#ffffff");
+    const soft = parse(dark ? "#252a34" : "#edf0f3");
+    const ink = parse(dark ? "#ffffff" : "#000000");
+    for (let step = 0; step <= 20; step++) {
+      const candidate = mix(color, ink, step / 20);
+      const selected = mix(backdrop, candidate, 0.12);
+      if ([backdrop, soft, selected].every((background) => contrast(candidate, background) >= 4.5)) return hex(candidate);
+    }
+    return hex(ink);
+  }
+  function applyAppearance(data2, mode, root = document.documentElement) {
+    const dark = mode === "dark" || mode === "system" && Boolean(data2.dark);
+    const source = mode === "system" ? data2.accent : null;
+    const previous = applied.get(root);
+    if (previous?.dark === dark && previous.source === source) return dark;
+    applied.set(root, { dark, source });
+    const accent = readableSystemAccent(source, dark);
+    root.classList.toggle("dark", dark);
+    root.classList.toggle("system-accent", Boolean(accent));
+    if (accent) {
+      root.style.setProperty("--system-accent", accent);
+      root.style.setProperty("--minute-shade", accent + "33");
+      root.style.setProperty("--minute-shade-end", accent + "05");
+    } else {
+      for (const variable of ["--system-accent", "--minute-shade", "--minute-shade-end"]) root.style.removeProperty(variable);
+    }
+    return dark;
+  }
+
   // overlay.js
   var kind = new URLSearchParams(location.search).get("kind");
   var shell = $("overlay");
@@ -6152,6 +6244,8 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   var pointerStart;
   var dragged = false;
   var lastMarketScene;
+  var changingStock = false;
+  var changingCollapse = false;
   function code() {
     return kind === "island" && data.state.settings.islandSymbol || data.state.selected;
   }
@@ -6161,8 +6255,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   function entry() {
     return data.quotes[code()];
   }
+  function quoteInterval() {
+    return kind === "island" ? settings().islandInterval : settings().interval;
+  }
   function isWood() {
     return (kind === "island" ? settings().islandContent : settings().petMode) === "muyu" && kind !== "widget";
+  }
+  function setHidden(node, hidden) {
+    if (node.hidden !== hidden) node.hidden = hidden;
   }
   function stopAudio() {
     voice.stop();
@@ -6188,82 +6288,149 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     if (!settings().mamaSound) mamaVoice.stop();
   }
   function renderCounts() {
-    $("overlay-count-value").textContent = data.counts.session.toLocaleString("zh-CN");
-    $("overlay-total").textContent = `\u4ECA\u65E5 ${data.counts.today.toLocaleString("zh-CN")} \xB7 \u7D2F\u8BA1 ${data.counts.total.toLocaleString("zh-CN")}`;
-    if (isWood()) {
-      $("compact-name").textContent = "\u725B\u6765\u6728\u9C7C";
-      $("compact-price").textContent = settings().islandCount ? "\u672C\u8F6E " + data.counts.session.toLocaleString("zh-CN") : "\u8F7B\u89E6\u6572\u51FB";
-      $("compact-percent").textContent = "+1";
+    const session = data.counts.session.toLocaleString("zh-CN");
+    const totals = `\u4ECA\u65E5 ${data.counts.today.toLocaleString("zh-CN")} \xB7 \u7D2F\u8BA1 ${data.counts.total.toLocaleString("zh-CN")}`;
+    setText($("overlay-count-value"), session);
+    setText($("overlay-total"), totals);
+    if (kind === "island" && isWood()) {
+      setText($("compact-price"), session);
+      setText($("island-position"), settings().islandCount ? totals : "");
+      setAttributeValue($("island-position"), "title", settings().islandCount ? totals : "");
+      setAttributeValue($("compact-island"), "aria-label", settings().islandCount ? "\u6572\u6728\u9C7C \xB7 \u672C\u8F6E " + session : "\u6572\u6728\u9C7C");
     }
+  }
+  function renderQuoteStatus(record, presentation) {
+    const wood = kind === "island" && isWood();
+    const stale = !wood && (record?.error || record?.quote && presentation.warning);
+    setText($("overlay-status"), wood ? "\u70B9\u51FB\u6728\u9C7C\u6572\u51FB" : presentation.compact);
+    setAttributeValue($("overlay-status"), "title", wood ? "\u70B9\u51FB\u6216\u6309\u7A7A\u683C\u6572\u51FB\u6728\u9C7C" : presentation.detail);
+    shell.classList.toggle("quote-warning", Boolean(stale));
+    if (kind !== "island") return;
+    if (wood) {
+      setText($("compact-meta"), settings().islandCount ? "\u672C\u8F6E\u6572\u51FB" : "\u70B9\u51FB\u6572\u51FB");
+      return;
+    }
+    const status = record?.error ? "\u66F4\u65B0\u5931\u8D25" : !record?.quote ? "\u7B49\u5F85\u884C\u60C5" : presentation.warning ? "\u62A5\u4EF7\u5F85\u66F4\u65B0" : record.quote.fallbackFrom ? "\u516C\u5171\u884C\u60C5\u56DE\u9000" : "";
+    setText($("compact-meta"), [status, displaySymbol(code())].filter(Boolean).join(" \xB7 "));
+  }
+  function renderIsland(stock, quote, presentation, name, price, percent) {
+    const wood = isWood(), pinned = Boolean(settings().islandSymbol);
+    const compact = $("compact-island");
+    setHidden($("expand-island"), !collapsed);
+    const collapse = $("collapse-overlay");
+    const collapseLabel = collapsed ? "\u5C55\u5F00\u60AC\u6D6E\u7A97" : "\u6536\u8D77\u60AC\u6D6E\u7A97";
+    setAttributeValue(collapse, "aria-label", collapseLabel);
+    setAttributeValue(collapse, "title", collapseLabel);
+    setAttributeValue(collapse, "aria-expanded", String(!collapsed));
+    setAttributeValue(collapse, "aria-controls", "overlay-content");
+    setText($("compact-name"), wood ? "\u725B\u6765\u6728\u9C7C" : name + (presentation.label ? " \xB7 " + presentation.label : ""));
+    setHidden($("compact-price"), wood ? !settings().islandCount : !settings().islandPrice);
+    setHidden($("compact-percent"), wood || !settings().islandPercent);
+    if (wood) {
+      compact.removeAttribute("aria-expanded");
+      compact.removeAttribute("aria-controls");
+      setAttributeValue(compact, "title", "\u6572\u6728\u9C7C");
+    } else {
+      setText($("compact-price"), price);
+      setText($("compact-percent"), percent);
+      setAttributeValue(compact, "aria-expanded", String(!collapsed));
+      setAttributeValue(compact, "aria-controls", "overlay-content");
+      setAttributeValue(compact, "title", presentation.detail);
+      setAttributeValue(compact, "aria-label", [
+        collapseLabel,
+        name,
+        settings().islandPrice ? price : "",
+        settings().islandPercent ? percent : "",
+        $("compact-meta").textContent,
+        pinned ? "\u5DF2\u56FA\u5B9A\u6807\u7684" : "\u8DDF\u968F\u4E3B\u9762\u677F"
+      ].filter(Boolean).join(" \xB7 "));
+    }
+    setHidden($("island-expanded").querySelector(".island-navigation"), wood);
+    if (collapsed || wood) return;
+    const stocks = data.state.stocks;
+    const index = stocks.findIndex((item) => item.code === code());
+    const disableNavigation = stocks.length < 2 && index >= 0;
+    for (const id of ["previous-stock", "next-stock"]) if ($(id).disabled !== disableNavigation) $(id).disabled = disableNavigation;
+    setText($("island-stock-index"), index < 0 ? "\u2014" : `${index + 1} / ${stocks.length}`);
+    const pin = $("pin-island");
+    setText(pin, pinned ? "\u53D6\u6D88\u56FA\u5B9A" : "\u56FA\u5B9A\u6807\u7684");
+    setAttributeValue(pin, "aria-pressed", String(pinned));
+    setAttributeValue(pin, "title", pinned ? "\u53D6\u6D88\u56FA\u5B9A\uFF0C\u8DDF\u968F\u4E3B\u9762\u677F" : "\u56FA\u5B9A\u5F53\u524D\u6807\u7684");
+    let positionText = presentation.session || marketSession(code());
+    if (settings().islandHoldings) {
+      const held = stock && position(stock, quote);
+      if (!stock?.cost || !stock.shares) positionText = "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3";
+      else if (settings().private) positionText = "\u6301\u4ED3\u91D1\u989D\u5DF2\u9690\u85CF";
+      else positionText = held ? `\u4ECA\u65E5 ${signed(held.today)} \xB7 \u7D2F\u8BA1 ${signed(held.total)} ${currency(code())}` : "\u6301\u4ED3\u5DF2\u4FDD\u5B58\uFF0C\u7B49\u5F85\u884C\u60C5";
+    }
+    setText($("island-position"), positionText);
+    setAttributeValue($("island-position"), "title", positionText);
   }
   function render() {
     if (!data?.state) return;
-    const quote = entry()?.quote, stock = data.state.stocks.find((item) => item.code === code());
-    const presentation = quotePresentation(entry(), settings().interval);
+    if (document.hidden) {
+      syncMotion();
+      return;
+    }
+    const record = entry(), quote = record?.quote, stock = data.state.stocks.find((item) => item.code === code());
+    const presentation = quotePresentation(record, quoteInterval());
     const theme = kind === "widget" ? settings().widgetTheme : kind === "island" ? settings().islandTheme : settings().theme;
-    const dark = theme === "dark" || theme === "system" && data.dark;
-    document.documentElement.classList.toggle("dark", dark);
-    shell.classList.toggle("light-island", !dark);
+    applyAppearance(data, theme);
     shell.classList.toggle("collapsed", collapsed);
     shell.classList.toggle("wood-mode", isWood());
-    $("overlay-title").textContent = isWood() ? "\u725B\u6765\u6728\u9C7C" : { pet: "\u725B\u6765\u684C\u5BA0", widget: "\u725B\u6765\u5361\u7247", island: "\u725B\u6765\u60AC\u6D6E\u7A97" }[kind];
+    setText($("overlay-title"), isWood() ? "\u725B\u6765\u6728\u9C7C" : { pet: "\u725B\u6765\u684C\u5BA0", widget: "\u725B\u6765\u5361\u7247", island: "\u60AC\u6D6E\u7A97" }[kind]);
     const name = quote?.name || stock?.name || displaySymbol(code());
-    $("overlay-name").textContent = name;
-    $("compact-name").textContent = name + (presentation.label ? " \xB7 " + presentation.label : "") + (quote && presentation.warning ? " \xB7 \u5F85\u66F4\u65B0" : "");
-    $("overlay-code").textContent = displaySymbol(code()) + " \xB7 " + currency(code()) + (presentation.label ? " \xB7 " + presentation.label : "");
-    $("overlay-price").textContent = $("compact-price").textContent = marketPrice(quote?.price, code());
-    $("overlay-percent").textContent = $("compact-percent").textContent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
-    $("overlay-numbers").className = $("compact-percent").className = tone(quote?.changePct);
-    if (kind === "island" && !isWood()) {
-      $("compact-price").hidden = !settings().islandPrice;
-      $("compact-percent").hidden = !settings().islandPercent;
-    } else {
-      $("compact-price").hidden = $("compact-percent").hidden = false;
-    }
-    $("overlay-status").textContent = presentation.compact;
-    $("overlay-status").title = presentation.detail;
-    shell.classList.toggle("quote-warning", Boolean(quote && presentation.warning && !isWood()));
-    shell.title = presentation.detail;
-    $("compact-island").setAttribute("aria-label", name + " \xB7 " + presentation.compact);
-    $("compact-island").hidden = kind !== "island";
-    $("overlay-content").hidden = kind === "island" && collapsed;
-    $("mini-canvas").hidden = !settings().islandBull;
-    $("scene-tabs").hidden = kind !== "widget";
-    $("overlay-quote").hidden = isWood() || kind === "pet" && !settings().petQuote;
-    $("overlay-count").hidden = !isWood() || !settings().muyuCount;
-    $("island-expanded").hidden = kind !== "island" || collapsed;
-    $("overlay-pet").hidden = kind === "island" || kind === "widget" && (settings().scene !== 0 || !settings().widgetBull);
-    for (const [id, scene] of [["market-scene", 1], ["position-scene", 2], ["calm-scene", 3]]) $(id).hidden = kind !== "widget" || settings().scene !== scene;
+    setText($("overlay-name"), name);
+    setText($("overlay-code"), displaySymbol(code()) + " \xB7 " + currency(code()) + (presentation.label ? " \xB7 " + presentation.label : ""));
+    const price = marketPrice(quote?.price, code());
+    const percent = Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014";
+    setText($("overlay-price"), price);
+    setText($("overlay-percent"), percent);
+    setAttributeValue($("overlay-numbers"), "class", tone(quote?.changePct));
+    setAttributeValue($("compact-percent"), "class", tone(quote?.changePct));
+    renderQuoteStatus(record, presentation);
+    if (kind === "island") renderIsland(stock, quote, presentation, name, price, percent);
+    setHidden($("compact-island"), kind !== "island");
+    setHidden($("overlay-content"), kind === "island" && collapsed);
+    setHidden($("mini-canvas"), !settings().islandBull);
+    setHidden($("scene-tabs"), kind !== "widget");
+    setHidden($("overlay-quote"), isWood() || kind === "pet" && !settings().petQuote);
+    setHidden($("overlay-count"), kind === "island" || !isWood() || !settings().muyuCount);
+    setHidden($("island-expanded"), kind !== "island" || collapsed);
+    setHidden($("overlay-pet"), kind === "island" || kind === "widget" && (settings().scene !== 0 || !settings().widgetBull));
+    for (const [id, scene] of [["market-scene", 1], ["position-scene", 2], ["calm-scene", 3]]) setHidden($(id), kind !== "widget" || settings().scene !== scene);
     for (const button of document.querySelectorAll("[data-scene]")) {
       button.classList.toggle("active", Number(button.dataset.scene) === settings().scene);
-      button.setAttribute("aria-pressed", String(Number(button.dataset.scene) === settings().scene));
+      setAttributeValue(button, "aria-pressed", String(Number(button.dataset.scene) === settings().scene));
     }
-    const held = stock && position(stock, quote);
-    const holdingText = held ? settings().private ? "\u6301\u4ED3\u91D1\u989D\u5DF2\u9690\u85CF" : `\u4ECA\u65E5 ${signed(held.today)} \xB7 \u7D2F\u8BA1 ${signed(held.total)} ${currency(code())}` : "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3";
-    $("island-position").textContent = settings().islandHoldings && !isWood() ? holdingText : isWood() ? "\u4ECA\u65E5 " + data.counts.today + " \xB7 \u7D2F\u8BA1 " + data.counts.total : presentation.session || marketSession(code());
-    const positionContainer = $("overlay-position");
-    positionContainer.replaceChildren();
-    if (held) {
-      const grid = element("div", "", "pnl-grid");
-      for (const [label, value] of [["\u4ECA\u65E5\u76C8\u4E8F", held.today], ["\u7D2F\u8BA1\u76C8\u4E8F", held.total]]) {
-        const cell = element("div");
-        cell.append(element("small", label + " \xB7 " + currency(code())), element("strong", settings().private ? "\u2022\u2022\u2022\u2022" : signed(value), settings().private ? "" : tone(value)));
-        grid.append(cell);
-      }
-      positionContainer.append(grid);
-    } else positionContainer.append(element("p", "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3", "position-empty"));
-    const samples = data.histories[code()] || [];
-    $("overlay-chart").hidden = !settings().widgetSparkline;
-    drawSparkline($("overlay-chart"), samples, getComputedStyle(document.documentElement).getPropertyValue(quote?.changePct < 0 ? "--fall" : "--rise"));
-    $("chart-description").textContent = samples.length > 1 ? `\u672C\u6B21\u8FD0\u884C ${samples.length} \u4E2A\u6837\u672C \xB7 ${time(samples[0].at)}\u2013${time(samples.at(-1).at)}` : "\u672C\u6B21\u8FD0\u884C\u91C7\u6837\uFF0C\u7B49\u5F85\u66F4\u591A\u62A5\u4EF7";
+    if (kind === "widget" && settings().scene === 2) {
+      const held = stock && position(stock, quote);
+      const positionContainer = $("overlay-position");
+      positionContainer.replaceChildren();
+      if (held) {
+        const grid = element("div", "", "pnl-grid");
+        for (const [label, value] of [["\u4ECA\u65E5\u76C8\u4E8F", held.today], ["\u7D2F\u8BA1\u76C8\u4E8F", held.total]]) {
+          const cell = element("div");
+          cell.append(element("small", label + " \xB7 " + currency(code())), element("strong", settings().private ? "\u2022\u2022\u2022\u2022" : signed(value), settings().private ? "" : tone(value)));
+          grid.append(cell);
+        }
+        positionContainer.append(grid);
+      } else positionContainer.append(element("p", "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3", "position-empty"));
+    }
+    if (kind === "widget" && settings().scene === 1) {
+      const samples = data.histories[code()] || [];
+      setHidden($("overlay-chart"), !settings().widgetSparkline);
+      if (settings().widgetSparkline) drawSparkline($("overlay-chart"), samples, getComputedStyle(document.documentElement).getPropertyValue(quote?.changePct < 0 ? "--fall" : "--rise"));
+      setText($("chart-description"), samples.length > 1 ? `\u672C\u6B21\u8FD0\u884C ${samples.length} \u4E2A\u6837\u672C \xB7 ${time(samples[0].at)}\u2013${time(samples.at(-1).at)}` : "\u672C\u6B21\u8FD0\u884C\u91C7\u6837\uFF0C\u7B49\u5F85\u66F4\u591A\u62A5\u4EF7");
+    }
     renderCounts();
     updateMood();
   }
   function updateMood() {
     if (!data) return;
     const record = entry();
-    const health = quoteHealth(record, settings().interval);
-    const base = isWood() ? "muyu" : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error || (record?.quote && health.warning ? health.message : null), Date.now(), settings().interval, code()) : "idle";
+    const health = quoteHealth(record, quoteInterval());
+    const base = isWood() ? "muyu" : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error || (record?.quote && health.warning ? health.message : null), Date.now(), quoteInterval(), code()) : "idle";
     const mood = isWood() ? base : desktopMood(base, data, code());
     if (Date.now() > previewUntil) {
       bull.state(mood);
@@ -6283,15 +6450,44 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
       if (settings().scene !== recommended) api.settings({ scene: recommended });
     }
   }
-  async function switchStock(direction) {
+  async function changeStock(task) {
+    if (changingStock) return;
+    changingStock = true;
+    try {
+      await task();
+    } catch (error) {
+      setText($("overlay-status"), error.message);
+    } finally {
+      changingStock = false;
+    }
+  }
+  function switchStock(direction) {
+    if (!data || isWood()) return;
     const stocks = data.state.stocks;
     const index = stocks.findIndex((stock) => stock.code === code());
-    const next = stocks[(index + direction + stocks.length) % stocks.length].code;
+    if (stocks.length < 2 && index >= 0) return;
+    const nextIndex = index < 0 ? direction < 0 ? stocks.length - 1 : 0 : (index + direction + stocks.length) % stocks.length;
+    const next = stocks[nextIndex]?.code;
+    if (!next) return;
+    const pinned = kind === "island" && settings().islandSymbol;
+    void changeStock(() => pinned ? api.settings({ islandSymbol: next }) : api.stock("select", { code: next }));
+    autoCollapse();
+  }
+  function togglePin() {
+    if (!data || kind !== "island" || isWood()) return;
+    const target = settings().islandSymbol ? "" : code();
+    void changeStock(() => api.settings({ islandSymbol: target }));
+    autoCollapse();
+  }
+  async function toggleCollapse() {
+    if (!data || changingCollapse) return;
+    changingCollapse = true;
     try {
-      if (kind === "island" && settings().islandSymbol) await api.settings({ islandSymbol: next });
-      else await api.stock("select", { code: next });
+      await api.window("collapse");
     } catch (error) {
-      $("overlay-status").textContent = error.message;
+      setText($("overlay-status"), error.message);
+    } finally {
+      changingCollapse = false;
     }
   }
   async function interact() {
@@ -6323,13 +6519,17 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   }
   function autoCollapse() {
     clearTimeout(collapseTimer);
-    if (!collapsed && settings().islandAutoCollapse) collapseTimer = setTimeout(() => {
-      if (!collapsed) api.window("collapse");
-    }, 1e4);
+    if (kind === "island" && data && !collapsed && settings().islandAutoCollapse) {
+      collapseTimer = setTimeout(() => {
+        if (!collapsed) void toggleCollapse();
+      }, 1e4);
+    }
   }
   api.onSnapshot((next) => {
+    const collapseChanged = data?.state.settings.islandAutoCollapse !== next.state.settings.islandAutoCollapse;
     data = next;
     render();
+    if (collapseChanged) autoCollapse();
   });
   api.onMamaVoice(({ volume }) => {
     if (data && lastMarketScene && settings().mamaSound && !settings().muted && !isQuietOfficeActive(settings().quietOffice)) {
@@ -6339,8 +6539,11 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     }
   });
   api.onCollapsed((value) => {
+    const focused = document.activeElement;
+    const restoreFocus = kind === "island" && (value ? $("overlay-content").contains(focused) || focused?.closest(".overlay-window-buttons") : focused === $("expand-island"));
     collapsed = value;
     render();
+    if (restoreFocus) $("compact-island").focus({ preventScroll: true });
     autoCollapse();
   });
   api.onPreview((id) => {
@@ -6367,30 +6570,36 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
   });
   $("open-dashboard").onclick = $("edit-position").onclick = () => api.window("dashboard");
   $("close-overlay").onclick = () => api.window("close");
-  $("collapse-overlay").onclick = () => api.window("collapse");
+  $("expand-island").onclick = $("collapse-overlay").onclick = toggleCollapse;
   $("compact-island").onclick = () => {
-    if (isWood()) interact();
-    else {
-      api.window("collapse");
-    }
+    if (data && isWood()) {
+      interact();
+      autoCollapse();
+    } else void toggleCollapse();
   };
   $("compact-island").ondblclick = () => {
-    if (isWood()) api.window("collapse");
+    if (data && isWood()) void toggleCollapse();
   };
-  $("previous-stock").onclick = () => {
-    switchStock(-1);
-    autoCollapse();
-  };
-  $("next-stock").onclick = () => {
-    switchStock(1);
-    autoCollapse();
-  };
+  $("previous-stock").onclick = () => switchStock(-1);
+  $("next-stock").onclick = () => switchStock(1);
+  $("pin-island").onclick = togglePin;
+  $("island-expanded").addEventListener("focusin", autoCollapse);
+  shell.addEventListener("keydown", (event) => {
+    if (kind !== "island" || !data || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === "Escape" && !collapsed) {
+      event.preventDefault();
+      void toggleCollapse();
+    } else if (!isWood() && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+      event.preventDefault();
+      switchStock(event.key === "ArrowLeft" ? -1 : 1);
+    }
+  });
   shell.addEventListener("wheel", (event) => {
+    if (!data || isWood() || !event.deltaY) return;
     event.preventDefault();
     if (Date.now() - wheelAt < 350) return;
     wheelAt = Date.now();
     switchStock(event.deltaY > 0 ? 1 : -1);
-    autoCollapse();
   }, { passive: false });
   function beginPointer(event) {
     if (event.button !== 0) return;
@@ -6442,11 +6651,14 @@ ${quote.source === "custom" ? "\u884C\u60C5\u6743\u9650\u3001\u4EA4\u6613\u8303\
     $("calm-time").textContent = "20 \u79D2";
     $("calm-start").textContent = "\u91CD\u65B0\u8BA1\u65F6";
   };
-  document.addEventListener("visibilitychange", syncMotion);
+  document.addEventListener("visibilitychange", render);
   api.bootstrap().then((next) => {
     data = next;
     render();
-    setInterval(updateMood, 1e3);
+    setInterval(() => {
+      if (kind === "island" && !document.hidden) render();
+      else updateMood();
+    }, 1e3);
     window.__NIULAI_RENDERER_READY__ = true;
   });
 })();

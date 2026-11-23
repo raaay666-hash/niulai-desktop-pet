@@ -6,14 +6,51 @@ export const { quoteHealth } = quoteTime;
 export const catalog = sharedCatalog.map(spec => ['cover', 'slump'].includes(spec.id) ? { ...spec, action: '捂眼哭泣' } : spec);
 export const $ = id => document.getElementById(id);
 export const api = window.desktopPet;
-export const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '—';
-export const marketPrice = (value, code = '') => Number.isFinite(value) ? value.toLocaleString('en-US', {
-  minimumFractionDigits: code.startsWith('rt_hk') ? 3 : 2,
-  maximumFractionDigits: 4
-}) : '—';
+const numberFormats = new Map();
+const priceFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const hkPriceFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 4 });
+const localClock = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const receiptClock = new Intl.DateTimeFormat('zh-CN', {
+  month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hourCycle: 'h23'
+});
+const sourceClocks = new Map();
+export function fmt(value, digits = 2) {
+  if (!Number.isFinite(value)) return '—';
+  if (!numberFormats.has(digits)) numberFormats.set(digits, new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }));
+  return numberFormats.get(digits).format(value);
+}
+export const marketPrice = (value, code = '') => Number.isFinite(value) ? (code.startsWith('rt_hk') ? hkPriceFormat : priceFormat).format(value) : '—';
 export const signed = (value, digits = 2) => Number.isFinite(value) ? `${value > 0 ? '+' : value < 0 ? '−' : ''}${fmt(Math.abs(value), digits)}` : '—';
 export const tone = value => value > 0 ? 'rise' : value < 0 ? 'fall' : 'neutral';
-export const time = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+export const time = value => Number.isFinite(value) ? localClock.format(value) : '—';
+export function setText(node, value) {
+  const text = String(value);
+  if (node.textContent !== text) node.textContent = text;
+}
+export function setAttributeValue(node, name, value) {
+  if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+}
+export function sourceReceiptTiming(delay) {
+  if (!Number.isFinite(delay)) return '';
+  if (delay < 0) return '源时间晚于本机接收时间';
+  return `源时间至接收 ${delay < 10000 ? Math.round(delay) + ' 毫秒' : fmt(delay / 1000, 1) + ' 秒'}`;
+}
+export function streamStatusText(source) {
+  if (!source?.streamConfigured) return '';
+  return { connecting: '正在连接推送', live: '推送已连接', reconnecting: '推送已断开，正在重连' }[source.streamStatus] || '等待推送连接';
+}
+function sourceTimestamp(quote, us, isPush) {
+  if (!Number.isFinite(quote.quotedAt)) return quote.time || '时间未提供';
+  const zone = us ? 'America/New_York' : 'Asia/Shanghai';
+  const precision = quote.timePrecision === 'minute' ? 'minute' :
+    isPush && quote.timePrecision === 'millisecond' ? 'millisecond' : 'second';
+  const key = `${zone}/${precision}`;
+  if (!sourceClocks.has(key)) sourceClocks.set(key, new Intl.DateTimeFormat('zh-CN', {
+    timeZone: zone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    second: precision === 'minute' ? undefined : '2-digit', fractionalSecondDigits: precision === 'millisecond' ? 3 : undefined
+  }));
+  return sourceClocks.get(key).format(quote.quotedAt) + (us ? ' 美东' : '');
+}
 export function quotePresentation(record, interval = 10, now = Date.now()) {
   const quote = record?.quote;
   const health = quoteHealth(record, interval, now);
@@ -21,22 +58,27 @@ export function quotePresentation(record, interval = 10, now = Date.now()) {
   const us = quote.market === 'us' || quote.code.startsWith('gb_');
   const clock = quoteTime.marketClock(quote.code, now);
   const label = us ? { pre: '盘前', regular: '常规', post: '盘后' }[quote.session] || '常规' : '';
-  const provider = quote.source === 'custom' ? quote.sourceName || '自有源' : (quote.source === 'tencent' ? '腾讯' : '新浪') + (quote.fallbackFrom ? '（自有源回退）' : '');
-  const stamp = Number.isFinite(quote.quotedAt) ? new Date(quote.quotedAt).toLocaleString('zh-CN', {
-    timeZone: us ? 'America/New_York' : 'Asia/Shanghai', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: quote.timePrecision === 'minute' ? undefined : '2-digit', hour12: false
-  }) + (us ? ' 美东' : '') : quote.time || '时间未提供';
+  const custom = quote.source === 'custom', isPush = custom && record.transport === 'ndjson';
+  const provider = custom ? (quote.sourceName || '自有源') + ' · ' + (isPush ? '推送' : 'HTTP 快照') : (quote.source === 'tencent' ? '腾讯' : '新浪') + (quote.fallbackFrom ? '（自有源回退）' : '');
+  const stamp = sourceTimestamp(quote, us, isPush);
   const prefix = health.message ? health.message + ' · ' : '';
-  const quoteText = us || quote.source === 'custom' ? `${label ? label + ' · ' : ''}报价 ${stamp}` : `获取于 ${time(record.received)}`;
+  const quoteText = us || custom ? `${label ? label + ' · ' : ''}报价 ${stamp}` : `获取于 ${time(record.received)}`;
   const currentSession = { pre: '盘前', regular: '常规交易时段', post: '盘后', closed: '常规时段外', weekend: '周末休市', lunch: '午间休市' }[clock.phase];
   const basis = quote.session === 'pre' ? '盘前涨跌较上一常规收盘' : quote.session === 'post' ? '盘后涨跌较当日常规收盘' : '涨跌较前收盘';
   const reference = quote.regular && quote.session !== 'regular' ? ` · 常规收盘 ${fmt(quote.regular.price)}` : '';
+  const timing = custom && quote.timePrecision !== 'minute' && Number.isFinite(quote.quotedAt) && Number.isFinite(record.received)
+    ? sourceReceiptTiming(record.received - quote.quotedAt) : '';
+  const receipt = Number.isFinite(record.received) ? receiptClock.format(record.received) : '—';
   return {
     ...health, label, session: us ? currentSession + (label && quote.session !== clock.phase ? ` · 最近${label}报价` : '') : marketSession(quote.code),
-    summary: `${prefix}${provider} · ${quoteText}`,
-    compact: `${prefix}${quote.source === 'custom' || quote.fallbackFrom ? provider + ' · ' : ''}${quoteText}`,
-    detail: `${provider} · ${label || '常规'}报价\n报价时间 ${stamp}\n获取时间 ${new Date(record.received).toLocaleString('zh-CN', { hour12: false })}\n${basis}${reference}\n${quote.source === 'custom' ? '行情权限、交易范围与时效以自有接口为准' : '公开行情可能延迟，不同来源的成交范围可能不同'}`,
-    basis: basis + reference
+    summary: isPush ? `${prefix}${provider}${label ? ' · ' + label : ''}` : `${prefix}${provider} · ${quoteText}`,
+    compact: `${prefix}${custom || quote.fallbackFrom ? provider + ' · ' : ''}${quoteText}`,
+    detail: [
+      `${provider} · ${label || '常规'}报价`, `报价时间 ${stamp}`, `本机接收 ${receipt}`, timing,
+      basis + reference,
+      custom ? '时间差取决于源时间戳与两端时钟。交易范围以自有接口为准。' : '公开行情可能延迟，不同来源的成交范围可能不同'
+    ].filter(Boolean).join('\n'),
+    basis: basis + reference, timing, receipt
   };
 }
 export function element(tag, value = '', className = '') {
@@ -55,9 +97,14 @@ export function desktopMood(base, data, code) {
   if (data.reactions?.[code]?.crying && marketSession(code) === '常规交易时段') return data.quotes[code]?.quote?.changePct <= -5 ? 'slump' : 'cover';
   return ['cover', 'slump'].includes(base) ? 'incense' : base;
 }
+const sparklines = new WeakMap();
 export function drawSparkline(canvas, samples, color) {
-  const context = canvas.getContext('2d');
+  const previous = sparklines.get(canvas);
   const width = canvas.width, height = canvas.height;
+  if (previous?.color === color && previous.width === width && previous.height === height && previous.samples.length === samples.length &&
+      samples.every((sample, index) => sample.at === previous.samples[index].at && sample.price === previous.samples[index].price)) return;
+  sparklines.set(canvas, { color, width, height, samples });
+  const context = canvas.getContext('2d');
   context.clearRect(0, 0, width, height);
   context.strokeStyle = color;
   context.lineWidth = 2.5;

@@ -92,6 +92,31 @@ try {
   assert.equal(await page.evaluate(() => window.__focusedStock.isConnected && document.activeElement === window.__focusedStock), true);
   pass('50-stock quote refresh preserves row identity and keyboard focus');
 
+  await page.evaluate(() => {
+    const list = document.getElementById('watch-stocks');
+    window.__changedRows = new Set();
+    window.__rowObserver = new MutationObserver(changes => {
+      for (const change of changes) {
+        const row = change.target.closest('.stock-row');
+        if (row) window.__changedRows.add(Array.prototype.indexOf.call(list.children, row));
+      }
+    });
+    window.__rowObserver.observe(list, { attributes: true, childList: true, subtree: true });
+  });
+  const singleQuote = await snapshot();
+  const changedRow = 10;
+  singleQuote.quotes[singleQuote.state.stocks[changedRow].code].quote.price = 202;
+  await app.evaluate(({ BrowserWindow }, frame) => {
+    BrowserWindow.getAllWindows().find(window => !window.overlayKind).webContents.send('desktop:snapshot', frame);
+  }, singleQuote);
+  await page.waitForFunction(() => document.querySelectorAll('#watch-stocks .stock-price strong')[10].textContent === '202.00');
+  assert.deepEqual(await page.evaluate(() => {
+    window.__rowObserver.disconnect();
+    return [...window.__changedRows];
+  }), [changedRow]);
+  assert.equal(await page.evaluate(() => document.activeElement === window.__focusedStock), true);
+  pass('a one-stock quote updates only its row and retains keyboard focus');
+
   await page.locator('#watch-stocks .stock-main').nth(1).press('Enter');
   await page.locator('#view-home').waitFor({ timeout: 3000 });
   assert.equal((await snapshot()).state.selected, seed.stocks[1].code);

@@ -1,4 +1,4 @@
-import { element, fmt, signed, quotePresentation } from './desktop-ui.js';
+import { element, fmt, signed, quotePresentation, sourceReceiptTiming } from './desktop-ui.js';
 import symbols from '../main-modules/market-symbols.js';
 
 export async function buildQuoteSourceSettings(container, { api, toast, onSaved, isCurrent }) {
@@ -27,31 +27,46 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
     row.append(element('span', label), control); parent.append(row); controls[key] = control;
     return control;
   }
-  select(form, 'mode', '行情来源', config.mode, [['public', '公共行情 · 新浪 / 腾讯'], ['custom', '使用自己的 HTTP JSON 接口']]);
+  select(form, 'mode', '行情来源', config.mode, [['public', '公共行情 · 新浪 / 腾讯'], ['custom', '使用自有行情接口']]);
   const fields = element('fieldset', '', 'source-options');
-  input(fields, 'name', '来源名称', config.name);
-  const address = input(fields, 'url', '报价接口地址', config.url);
+  function group(label) {
+    const section = element('section', '', 'source-group');
+    section.append(element('h3', label));
+    fields.append(section);
+    return section;
+  }
+  const endpoints = group('接口地址');
+  input(endpoints, 'name', '来源名称', config.name);
+  const address = input(endpoints, 'url', 'HTTP 快照接口地址', config.url);
   address.placeholder = 'https://example.com/quote?symbol={symbol}';
-  fields.append(element('p', '地址支持 {symbol}、{ticker}、{code}、{market}、{exchange}。本地转接服务也可使用 HTTP 地址。', 'footnote'));
-  input(fields, 'seriesUrl', '分时与 K 线接口地址（选填）', config.seriesUrl)
+  endpoints.append(element('p', '支持 {symbol}、{ticker}、{code}、{market}、{exchange}。快照用于启动、手动刷新和推送断线时的轮询。', 'footnote'));
+  input(endpoints, 'streamUrl', 'NDJSON 推送地址（选填）', config.streamUrl || '')
+    .placeholder = 'https://example.com/stream?codes={codes}';
+  endpoints.append(element('p', '使用同源 HTTPS 或本机 HTTP，沿用鉴权。{codes} 替换为逗号分隔的牛来代码。每行须含标的代码和报价时间。', 'footnote'));
+  input(endpoints, 'seriesUrl', '分时与 K 线接口地址（选填）', config.seriesUrl)
     .placeholder = 'https://example.com/series?symbol={symbol}&period={period}&adjustment={adjustment}';
-  fields.append(element('p', '走势接口与报价接口共用域名、端口和鉴权。自有走势地址留空时，分时和 K 线继续显示公开行情。', 'footnote'));
+  endpoints.append(element('p', '与报价接口共用域名、端口和鉴权。留空时显示公开的分时和 K 线。', 'footnote'));
+  const connection = group('市场、刷新与鉴权');
   const marketGroup = element('div', '', 'source-markets');
-  marketGroup.append(element('span', '适用市场'));
+  const marketLabel = element('span', '适用市场');
+  marketLabel.id = 'source-markets-label';
+  marketGroup.setAttribute('role', 'group');
+  marketGroup.setAttribute('aria-labelledby', marketLabel.id);
+  marketGroup.append(marketLabel);
   const markets = [];
   for (const [id, label] of [['cn', 'A 股'], ['hk', '港股'], ['us', '美股']]) {
     const row = element('label'), control = document.createElement('input');
     control.type = 'checkbox'; control.value = id; control.checked = config.markets.includes(id);
     row.append(control, label); marketGroup.append(row); markets.push(control);
   }
-  fields.append(marketGroup, element('p', '所选市场使用自有接口，其余市场继续使用公共行情。', 'footnote'));
+  connection.append(marketGroup, element('p', '所选市场使用自有接口，其余市场继续使用公共行情。', 'footnote'));
   const connectionGrid = element('div', '', 'source-grid');
   select(connectionGrid, 'symbolFormat', '股票代码格式', config.symbolFormat, [['ticker', '原始代码 · MP / 00700 / 600519'], ['yahoo', 'Yahoo 格式 · MP / 0700.HK / 600519.SS'], ['niulai', '牛来代码 · gb_mp / rt_hk00700']]);
-  select(connectionGrid, 'interval', '自有源最短刷新间隔', String(config.interval), [[.5, '500 毫秒'], [1, '1 秒'], [2, '2 秒'], [5, '5 秒'], [10, '10 秒'], [30, '30 秒'], [60, '60 秒']]);
+  select(connectionGrid, 'interval', '快照最短轮询间隔', String(config.interval), [[.2, '200 毫秒'], [.5, '500 毫秒'], [1, '1 秒'], [2, '2 秒'], [5, '5 秒'], [10, '10 秒'], [30, '30 秒'], [60, '60 秒']]);
   select(connectionGrid, 'authType', '鉴权方式', config.authType, [['none', '无需鉴权'], ['bearer', 'Authorization · Bearer'], ['header', '自定义请求头'], ['query', 'URL 查询参数']]);
   input(connectionGrid, 'authName', '请求头 / 参数名称', config.authName);
-  fields.append(connectionGrid);
-  const token = input(fields, 'token', 'API 密钥 / Token', '', 'password');
+  connection.append(connectionGrid, element('p', '按供应商允许的频率轮询，限流时会自动减慢。推送频率由供应商决定。', 'footnote'));
+  const token = input(connection, 'token', 'API 密钥 / Token', '', 'password');
   token.placeholder = config.hasToken ? '已保存，留空保留现有密钥' : '仅保存在这台电脑';
   const mapping = element('details', '', 'source-mapping');
   mapping.append(element('summary', 'JSON 字段与时间设置'));
@@ -74,11 +89,13 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
     element('p', '委托档位包含 unit（手或股）、bids、asks，可选 timestamp。每档包含 price 和 size。', 'footnote'));
   const example = element('pre', '{\n  "symbol": "MP", "price": 37.88,\n  "previousClose": 36.73,\n  "timestamp": "2026-11-12T13:47:00Z",\n  "session": "pre"\n}', 'source-example');
   mapping.append(example); fields.append(mapping);
+  const validation = group('回退与测试');
   const fallback = element('label', '', 'setting-row'), fallbackInput = document.createElement('input');
   fallbackInput.type = 'checkbox'; fallbackInput.id = 'source-fallback'; fallbackInput.checked = config.fallback;
+  fallbackInput.setAttribute('role', 'switch');
   fallback.append(element('span', '自有源失败或报价过期时，允许回退公共行情'), fallbackInput);
-  fields.append(fallback, element('p', '回退时会显示实际采用的来源。来源切换后重新建立报价采样。', 'footnote'));
-  input(fields, 'testCode', '测试股票', config.markets.includes('us') ? 'MP' : config.markets.includes('hk') ? '00700.HK' : '600519');
+  validation.append(fallback, element('p', '回退时显示实际采用的来源。切换来源会重新采样。', 'footnote'));
+  input(validation, 'testCode', '测试股票', config.markets.includes('us') ? 'MP' : config.markets.includes('hk') ? '00700.HK' : '600519');
   form.append(fields);
   const status = element('p', config.error || '', 'source-status footnote'); status.id = 'source-status'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const actions = element('div', '', 'source-actions');
@@ -131,8 +148,10 @@ export async function buildQuoteSourceSettings(container, { api, toast, onSaved,
     const percent = Number.isFinite(result.quote.changePct) ? signed(result.quote.changePct) + '%' : '涨跌幅未提供';
     const book = result.quote.details?.book;
     const series = result.series ? result.series.bars ? ' · 日 K ' + result.series.bars + ' 根' : ' · 走势：' + result.series.error : '';
+    const stream = result.stream?.error ? `推送测试失败 · ${result.stream.error}` : result.stream
+      ? ['推送已收到', result.stream.symbol, sourceReceiptTiming(result.stream.latencyMs)].filter(Boolean).join(' · ') : '';
     status.textContent = `连接成功 · ${result.quote.name} ${fmt(result.quote.price)} · ${percent} · ${presentation.summary}`
-      + (book ? ` · 买 ${book.bids.length} 档 / 卖 ${book.asks.length} 档` : '') + series;
+      + (book ? ` · 买 ${book.bids.length} 档 / 卖 ${book.asks.length} 档` : '') + series + (stream ? ` · ${stream}` : '');
   });
   form.onsubmit = event => {
     event.preventDefault();

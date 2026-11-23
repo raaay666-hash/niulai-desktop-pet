@@ -1,4 +1,4 @@
-import { element, marketPrice } from './desktop-ui.js';
+import { element, marketPrice, setText, setAttributeValue } from './desktop-ui.js';
 import { compactVolume } from '../niulai-android/web/market-chart-data.mjs';
 
 class PanelResource {
@@ -32,16 +32,27 @@ class PanelResource {
 
 const marketZone = code => code.startsWith('gb_') ? 'America/New_York' : code.startsWith('rt_hk') ? 'Asia/Hong_Kong' : 'Asia/Shanghai';
 const marketZoneName = code => code.startsWith('gb_') ? '美东时间' : code.startsWith('rt_hk') ? '香港时间' : '北京时间';
-const shortDate = (value, timeZone, detailed = false) => new Intl.DateTimeFormat('zh-CN', {
-  timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  second: detailed ? '2-digit' : undefined, hourCycle: 'h23'
-}).format(value);
+const shortDateFormats = new Map();
+function shortDate(value, timeZone, detailed = false) {
+  const key = timeZone + '/' + detailed;
+  if (!shortDateFormats.has(key)) shortDateFormats.set(key, new Intl.DateTimeFormat('zh-CN', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    second: detailed ? '2-digit' : undefined, hourCycle: 'h23'
+  }));
+  return shortDateFormats.get(key).format(value);
+}
 
 export class MarketDetails {
   constructor(root, request) {
     this.root = root;
     this.request = request;
-    this.metrics = root.querySelector('.market-metrics');
+    const metrics = root.querySelector('.market-metrics');
+    this.metrics = ['今开', '昨收', '最高', '最低', '成交量', '成交额'].map(label => {
+      const cell = element('div'), value = element('dd', '—');
+      cell.append(element('dt', label), value);
+      metrics.append(cell);
+      return value;
+    });
     this.book = root.querySelector('.market-book');
     this.status = root.querySelector('.market-detail-status');
     this.resource = new PanelResource(record => this.render(record));
@@ -61,69 +72,84 @@ export class MarketDetails {
   render({ result, loading = false, error = false }) {
     const code = this.code;
     const unit = code.startsWith('gb_') ? ' USD' : code.startsWith('rt_hk') ? ' HKD' : ' CNY';
-    this.root.setAttribute('aria-busy', String(loading));
+    setAttributeValue(this.root, 'aria-busy', String(loading));
     if (result !== this.painted || code !== this.paintedCode) {
       this.painted = result;
       this.paintedCode = code;
-      const rows = [
-        ['今开', marketPrice(result?.open, code)], ['昨收', marketPrice(result?.previousClose, code)],
-        ['最高', marketPrice(result?.high, code)], ['最低', marketPrice(result?.low, code)],
-        ['成交量', Number.isFinite(result?.volume) && result.volumeUnit ? compactVolume(result.volume) + result.volumeUnit : '—'],
-        ['成交额', Number.isFinite(result?.amount) ? compactVolume(result.amount) + unit : '—']
+      const values = [
+        marketPrice(result?.open, code), marketPrice(result?.previousClose, code),
+        marketPrice(result?.high, code), marketPrice(result?.low, code),
+        Number.isFinite(result?.volume) && result.volumeUnit ? compactVolume(result.volume) + result.volumeUnit : '—',
+        Number.isFinite(result?.amount) ? compactVolume(result.amount) + unit : '—'
       ];
-      this.metrics.replaceChildren(...rows.map(([label, value]) => {
-        const cell = element('div');
-        cell.append(element('dt', label), element('dd', value));
-        return cell;
-      }));
+      this.metrics.forEach((cell, index) => setText(cell, values[index]));
       this.renderBook(result);
     }
     const timestamp = result?.quotedAt;
     const at = Number.isFinite(timestamp) ? shortDate(timestamp, marketZone(code), true) + ' ' + marketZoneName(code) : '';
-    this.status.textContent = [
+    setText(this.status, [
       result?.source, at || (result ? '未提供时间' : ''),
       result?.source === '腾讯公开行情' ? '可能延迟' : '',
       error ? (result ? '更新失败，显示上次数据' : '行情资料加载失败') : loading ? '更新中…' : ''
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join(' · '));
   }
 
   renderBook(result) {
     const book = result?.book;
-    const heading = element('div', '', 'market-book-heading');
-    heading.append(element('h3', book ? result.depthLabel : '委托档位'));
     if (!book) {
-      this.book.replaceChildren(heading, element('p', result ? '当前行情源未提供该标的的委托档位。' : '等待委托档位。', 'muted'));
+      const empty = result ? '当前行情源未提供该标的的委托档位。' : '等待委托档位。';
+      if (this.bookView?.empty !== empty) {
+        const heading = element('div', '', 'market-book-heading');
+        heading.append(element('h3', '委托档位'));
+        this.book.replaceChildren(heading, element('p', empty, 'muted'));
+        this.bookView = { empty };
+      }
       return;
     }
     const depth = Math.max(book.bids.length, book.asks.length);
-    const maxSize = Math.max(...[...book.bids, ...book.asks].map(level => level.size));
+    if (this.bookView?.depth !== depth) this.createBookView(depth);
+    const { title, timestamp, sides } = this.bookView;
+    const maxSize = Math.max(0, ...book.bids.map(level => level.size), ...book.asks.map(level => level.size));
     const at = Number.isFinite(book.quotedAt) ? shortDate(book.quotedAt, marketZone(this.code), true) : '未提供时间';
-    heading.append(element('span', at, 'muted'));
+    setText(title, result.depthLabel || '委托档位');
+    setText(timestamp, at);
+    for (const [side, levels] of [[sides[0], book.bids], [sides[1], book.asks]]) {
+      setText(side.unit, '委托量/' + book.unit);
+      for (const [index, { price, size }] of side.rows.entries()) {
+        const level = levels[index];
+        setText(price, marketPrice(level?.price, this.code));
+        setText(size, compactVolume(level?.size));
+        const share = level && maxSize > 0 ? (level.size / maxSize * 100) + '%' : '';
+        if (size.style.getPropertyValue('--depth-share') !== share) size.style.setProperty('--depth-share', share);
+        setAttributeValue(size, 'title', level ? level.size.toLocaleString('zh-CN') + book.unit : '');
+      }
+    }
+  }
+
+  createBookView(depth) {
+    const heading = element('div', '', 'market-book-heading');
+    const title = element('h3'), timestamp = element('span', '', 'muted');
+    heading.append(title, timestamp);
     const columns = element('div', '', 'market-book-columns');
-    const sides = [[book.bids, '买盘', '买'], [book.asks, '卖盘', '卖']];
-    for (const [levels, label, prefix] of sides) {
-      const table = element('table', '', 'market-book-' + (prefix === '买' ? 'bid' : 'ask'));
+    const sides = [['bid', '买盘', '买'], ['ask', '卖盘', '卖']].map(([key, label, prefix]) => {
+      const table = element('table', '', 'market-book-' + key);
       table.append(element('caption', label));
       const header = table.createTHead().insertRow();
-      for (const title of ['档位', '价格', '委托量/' + book.unit]) {
-        const col = element('th', title);
+      const unit = element('th');
+      for (const col of [element('th', '档位'), element('th', '价格'), unit]) {
         col.scope = 'col';
         header.append(col);
       }
       const body = table.createTBody();
-      for (let index = 0; index < depth; index++) {
-        const level = levels[index], row = body.insertRow();
+      const rows = Array.from({ length: depth }, (_, index) => {
+        const row = body.insertRow();
         row.insertCell().textContent = prefix + (index + 1);
-        row.insertCell().textContent = marketPrice(level?.price, this.code);
-        const size = row.insertCell();
-        size.textContent = compactVolume(level?.size);
-        if (level) {
-          size.style.setProperty('--depth-share', (level.size / maxSize * 100) + '%');
-          size.title = level.size.toLocaleString('zh-CN') + book.unit;
-        }
-      }
+        return { price: row.insertCell(), size: row.insertCell() };
+      });
       columns.append(table);
-    }
+      return { unit, rows };
+    });
+    this.bookView = { depth, title, timestamp, sides };
     this.book.replaceChildren(heading, columns);
   }
 }
@@ -157,7 +183,8 @@ export class MarketNews {
     root.querySelector('.market-news-permissions').onclick = event => this.updatePreference('permissions', null, event.currentTarget);
     this.test.onclick = () => this.updatePreference('test', null, this.test);
     this.resource = new PanelResource(record => this.render(record));
-    for (const button of root.querySelectorAll('[data-news-scope]')) {
+    this.scopeButtons = root.querySelectorAll('[data-news-scope]');
+    for (const button of this.scopeButtons) {
       button.onclick = () => this.setScope(button.dataset.newsScope);
     }
     this.more.onclick = () => {
@@ -191,23 +218,24 @@ export class MarketNews {
     const { code, name } = this.stock, scope = this.scope;
     const key = scope === 'market' ? 'market' : code;
     if (key !== this.resource.key) this.visible = 5;
-    this.title.textContent = scope === 'market' ? '市场动态' : name;
-    this.follow.hidden = scope === 'market';
-    for (const button of this.root.querySelectorAll('[data-news-scope]')) {
-      button.setAttribute('aria-pressed', String(button.dataset.newsScope === scope));
+    setText(this.title, scope === 'market' ? '市场动态' : name);
+    const hideFollow = scope === 'market';
+    if (this.follow.hidden !== hideFollow) this.follow.hidden = hideFollow;
+    for (const button of this.scopeButtons) {
+      setAttributeValue(button, 'aria-pressed', String(button.dataset.newsScope === scope));
     }
     this.resource.update({ key, active: this.active, request: () => this.request(scope === 'market' ? 'market' : 'stock', code, force), interval: 300000, force });
   }
 
   render({ result, loading = false, error = false }) {
-    this.root.setAttribute('aria-busy', String(loading));
-    this.refresh.disabled = loading;
+    setAttributeValue(this.root, 'aria-busy', String(loading));
+    if (this.refresh.disabled !== loading) this.refresh.disabled = loading;
     if (this.articles !== result?.articles || this.paintedKey !== this.resource.key || this.paintedScope !== this.scope) this.paintArticles(result?.articles);
-    this.status.textContent = [
+    setText(this.status, [
       result?.source,
       error ? (result ? '更新失败，显示上次新闻' : '新闻加载失败，请刷新重试') :
         loading ? '正在获取新闻…' : result && this.visibleArticles().length === 0 ? '暂未找到相关新闻' : ''
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join(' · '));
   }
 
   visibleArticles() {
@@ -281,11 +309,12 @@ export class MarketNews {
   paintPreferences() {
     const preferences = this.preferences;
     const following = preferences.followed.includes(this.stock.code);
-    this.follow.setAttribute('aria-pressed', String(following));
-    this.follow.textContent = following ? '已关注' : '关注新闻';
-    this.autoTranslate.checked = preferences.autoTranslate;
-    this.notify.checked = preferences.notifications;
-    this.test.disabled = !preferences.notifications;
+    setAttributeValue(this.follow, 'aria-pressed', String(following));
+    setText(this.follow, following ? '已关注' : '关注新闻');
+    if (!this.autoTranslate.disabled && this.autoTranslate.checked !== preferences.autoTranslate) this.autoTranslate.checked = preferences.autoTranslate;
+    if (!this.notify.disabled && this.notify.checked !== preferences.notifications) this.notify.checked = preferences.notifications;
+    const disableTest = Boolean(this.testing) || !preferences.notifications;
+    if (this.test.disabled !== disableTest) this.test.disabled = disableTest;
     const stocks = preferences.followed.map(code => this.stocks.find(stock => stock.code === code)).filter(Boolean);
     const key = stocks.map(stock => stock.code + stock.name).join('|');
     if (key === this.followedKey) return;
@@ -301,6 +330,7 @@ export class MarketNews {
   }
 
   async updatePreference(operation, value, control) {
+    if (operation === 'test') this.testing = true;
     control.disabled = true;
     this.notifyStatus.textContent = '';
     try {
@@ -310,6 +340,7 @@ export class MarketNews {
       this.notifyStatus.textContent = String(error.message).replace(/^Error invoking remote method '[^']+': Error: /, '');
       this.root.querySelector('.market-news-preferences').open = true;
     } finally {
+      if (operation === 'test') this.testing = false;
       control.disabled = operation === 'test' && !this.preferences.notifications;
       this.paintPreferences();
     }
