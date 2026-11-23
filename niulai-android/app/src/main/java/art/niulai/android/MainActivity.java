@@ -2,7 +2,6 @@ package art.niulai.android;
 import android.app.*;
 import android.appwidget.AppWidgetManager;
 import android.content.*;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.*;
@@ -16,6 +15,8 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private static final String OPEN_FROM_COVER = "art.niulai.OPEN_FROM_COVER";
     static final String OPEN_WIDGET_STOCK = "art.niulai.OPEN_WIDGET_STOCK";
+    private static final int REQUEST_NOTIFICATIONS = 77;
+    private static final String NOTIFICATION_PROMPTED = "system_notification_prompted";
     private WebView web;
     private FoldFeatures foldFeatures;
     private String lastFoldLayout = "";
@@ -34,16 +35,58 @@ public class MainActivity extends Activity {
         }}catch(Exception ignored){}
     }
     void checkUpdatesNative(){nativeUpdateRequested=true;updates.check(true);}
-    void updatePermission(){
-        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED && !PetConfig.prefs(this).getBoolean("update_permission_asked",false)) {
-            PetConfig.prefs(this).edit().putBoolean("update_permission_asked",true).apply();requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},77);
-        } else startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()));
+    String appVersion() { return updates.current(); }
+    void updatePermission() { requestAlertSettings(AlertChannel.UPDATES); }
+
+    private boolean requestNotificationPermission(boolean automatic) {
+        if (requestingNotifications) return true;
+        if (AlertChannel.hasPermission(this)) return false;
+        String permission = android.Manifest.permission.POST_NOTIFICATIONS;
+        SharedPreferences prefs = PetConfig.prefs(this);
+        boolean prompted = prefs.getBoolean(NOTIFICATION_PROMPTED, false);
+        boolean canAskAgain = shouldShowRequestPermissionRationale(permission);
+        if (automatic ? prompted || canAskAgain : prompted && !canAskAgain) return false;
+        prefs.edit().putBoolean(NOTIFICATION_PROMPTED, true).apply();
+        requestingNotifications = true;
+        requestPermissions(new String[]{permission}, REQUEST_NOTIFICATIONS);
+        return true;
+    }
+
+    private void requestAlertSettings(AlertChannel alert) {
+        if (!requestNotificationPermission(false)) openNotificationSettings(alert);
+    }
+
+    private void openNotificationSettings(AlertChannel alert) {
+        NotificationChannel channel = AlertChannel.appEnabled(this) ? alert.get(this) : null;
+        Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+        if (channel != null) {
+            intent.setAction(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS);
+            intent.putExtra(Settings.EXTRA_CHANNEL_ID, channel.getId());
+        }
+        try { startActivity(intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())); }
+        catch (RuntimeException error) { supportSettingsNative("app"); }
+    }
+
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (!focused || coverMode() || updates == null || isFinishing() || AlertChannel.hasPermission(this)) return;
+        JSONObject news = AppState.load(this).optJSONObject("news");
+        if (updates.enabled() || (news != null && news.optBoolean("notifications"))) {
+            requestNotificationPermission(true);
+        }
+    }
+
+    private void refreshNotificationState() {
+        updates.refreshNotification();
+        publishUpdate();
+        js("window.__niulaiNotificationsChanged && window.__niulaiNotificationsChanged()");
     }
     private CompatPanel panel;private int webMajor;private boolean receiverRegistered;
     private FrameLayout host;
     private int background=Color.rgb(244,243,238);
     private final Handler main=new Handler(Looper.getMainLooper());
     private boolean pendingPet = false;
+    private boolean requestingNotifications, launchPetAfterPermission, testNewsAfterPermission;
     private String requestedFeature = "pet";
     private final BroadcastReceiver petChanged = new BroadcastReceiver() { @Override public void onReceive(Context c, Intent i) { notifyPetState(); } };
     protected boolean coverMode() { return false; }
@@ -60,7 +103,13 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(surface); getWindow().setNavigationBarColor(surface);
         if (!coverMode()) getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         if (Build.VERSION.SDK_INT >= 28) { WindowManager.LayoutParams p = getWindow().getAttributes(); p.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER; getWindow().setAttributes(p); }
-        if(saved!=null){pendingPet=saved.getBoolean("pendingPet",false);requestedFeature=saved.getString("feature","pet");}
+        if (saved != null) {
+            pendingPet = saved.getBoolean("pendingPet");
+            requestedFeature = saved.getString("feature", "pet");
+            requestingNotifications = saved.getBoolean("requestingNotifications");
+            launchPetAfterPermission = saved.getBoolean("launchPetAfterPermission");
+            testNewsAfterPermission = saved.getBoolean("testNewsAfterPermission");
+        }
         try{
             if(coverMode() || !PetConfig.prefs(this).getBoolean("force_native",false)){
                 web=new WebView(this);webMajor=AndroidCompat.webMajor(web.getSettings().getUserAgentString());
@@ -144,7 +193,10 @@ public class MainActivity extends Activity {
             return;
         }
         pendingPet=false;
-        if (Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED&&!PetConfig.prefs(this).getBoolean("notification_asked",false)) { PetConfig.prefs(this).edit().putBoolean("notification_asked",true).apply();requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},42); return; }
+        if (requestNotificationPermission(false)) {
+            launchPetAfterPermission = true;
+            return;
+        }
         launchPet();
     }
     private void launchPet() {
@@ -153,18 +205,36 @@ public class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] grants) {
         super.onRequestPermissionsResult(code,permissions,grants);
-        if (code == 42) {
+        if (code != REQUEST_NOTIFICATIONS) return;
+        requestingNotifications = false;
+        if (launchPetAfterPermission) {
+            launchPetAfterPermission = false;
             boolean systemIsland = requestedFeature.equals("island") && SystemIsland.use(this, AppState.load(this));
             if (systemIsland || Settings.canDrawOverlays(this)) launchPet();
         }
-        if(code==77)publishUpdate();
+        if (testNewsAfterPermission) {
+            testNewsAfterPermission = false;
+            if (AlertChannel.NEWS.enabled(this)) sendNewsTest();
+            else Toast.makeText(this, "请在通知设置中允许新闻通知", Toast.LENGTH_SHORT).show();
+        }
+        refreshNotificationState();
     }
     public class MarketBridge {
         @JavascriptInterface public String updateStatus(){return updates.status();}
         @JavascriptInterface public void checkUpdates(){runOnUiThread(()->updates.check(true));}
-        @JavascriptInterface public void updateNotifications(boolean enabled){runOnUiThread(()->updates.enabled(enabled));}
+        @JavascriptInterface public void updateNotifications(boolean enabled){runOnUiThread(()->{
+            updates.enabled(enabled);
+            if (enabled && !AlertChannel.UPDATES.enabled(MainActivity.this)) updatePermission();
+            refreshNotificationState();
+        });}
         @JavascriptInterface public void updatePermission(){runOnUiThread(()->MainActivity.this.updatePermission());}
-        @JavascriptInterface public boolean newsPermission(){return allowedNewsNotifications();}
+        @JavascriptInterface public boolean newsPermission(){return AlertChannel.NEWS.enabled(MainActivity.this);}
+        @JavascriptInterface public void newsSettings(){runOnUiThread(()->requestAlertSettings(AlertChannel.NEWS));}
+        @JavascriptInterface public void testNewsNotification(){runOnUiThread(()->{
+            if (AlertChannel.NEWS.enabled(MainActivity.this)) sendNewsTest();
+            else if (requestNotificationPermission(false)) testNewsAfterPermission = true;
+            else openNotificationSettings(AlertChannel.NEWS);
+        });}
         @JavascriptInterface public boolean showStockNews(String code, String title, String text){return postNews(code,title,text);}
         @JavascriptInterface public String newsTarget(){
             Intent current = getIntent();
@@ -213,9 +283,14 @@ public class MainActivity extends Activity {
         @JavascriptInterface public boolean systemDark(){return Appearance.systemDark(MainActivity.this);}
         @JavascriptInterface public boolean cameraInteractionReady(){return FrontCameraService.connected != null;}
         @JavascriptInterface public String islandStatus(){return SystemIsland.status(MainActivity.this).toString();}
+        @JavascriptInterface public void islandOverlaySettings(){runOnUiThread(()->{
+            try { startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))); }
+            catch (RuntimeException error) { supportSettingsNative("app"); }
+        });}
         @JavascriptInterface public void islandSettings(){runOnUiThread(()->{
-            Intent settings = new Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS", Uri.parse("package:" + getPackageName()));
-            if (Build.VERSION.SDK_INT < 36 || settings.resolveActivity(getPackageManager()) == null) settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            if (!AlertChannel.hasPermission(MainActivity.this) && requestNotificationPermission(false)) return;
+            Intent settings = new Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS").putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            if (!AlertChannel.appEnabled(MainActivity.this) || Build.VERSION.SDK_INT < 36 || settings.resolveActivity(getPackageManager()) == null) settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
             try { startActivity(settings); } catch (RuntimeException error) { supportSettingsNative("app"); }
         });}
         @JavascriptInterface public void cameraInteractionSettings(){runOnUiThread(()->{
@@ -231,23 +306,21 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String deviceInfo() { try { JSONObject o=new JSONObject(); o.put("brand",Build.MANUFACTURER); o.put("model",Build.MODEL); o.put("sdk",Build.VERSION.SDK_INT);o.put("android",Build.VERSION.RELEASE); o.put("overlay",Settings.canDrawOverlays(MainActivity.this)); return o.toString(); }catch(Exception e){return "{}";} }
         @JavascriptInterface public void supportSettings(String kind) {runOnUiThread(()->supportSettingsNative(kind));}
     }
-    private static final String NEWS_CHANNEL = "stock_news";
-    private boolean allowedNewsNotifications(){
-        NotificationManager manager=getSystemService(NotificationManager.class);
-        NotificationChannel channel=manager.getNotificationChannel(NEWS_CHANNEL);
-        return manager.areNotificationsEnabled() && (channel==null||channel.getImportance()!=NotificationManager.IMPORTANCE_NONE)
-            &&(Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED);
+    private void sendNewsTest() {
+        boolean sent = postNews("", "牛来盯盘 · 新闻通知", "关注的股票出现新消息时会在这里提醒。");
+        Toast.makeText(this, sent ? "已发送测试通知" : "请在通知设置中允许新闻通知", Toast.LENGTH_SHORT).show();
     }
     private boolean postNews(String code, String title, String text){
-        if(code==null||!code.isEmpty()&&!NativeMarket.valid(code)||title==null||text==null||!allowedNewsNotifications())return false;
+        if(code==null||!code.isEmpty()&&!NativeMarket.valid(code)||title==null||text==null||!AlertChannel.NEWS.enabled(this))return false;
         NotificationManager manager=getSystemService(NotificationManager.class);
-        manager.createNotificationChannel(new NotificationChannel(NEWS_CHANNEL,"关注股票的新闻",NotificationManager.IMPORTANCE_DEFAULT));
+        NotificationChannel channel = AlertChannel.NEWS.get(this);
+        if (channel == null) return false;
         Intent target=new Intent(this,MainActivity.class).putExtra("news_stock",code).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         int id=0x4e000000 | (code.hashCode()&0xffffff);
         PendingIntent content=PendingIntent.getActivity(this,id,target,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         String headline=text.substring(0,Math.min(320,text.length()));
         int icon=getResources().getIdentifier("pet_notification","drawable",getPackageName());
-        Notification notification=new Notification.Builder(this,NEWS_CHANNEL).setSmallIcon(icon)
+        Notification notification=new Notification.Builder(this,channel.getId()).setSmallIcon(icon)
             .setContentTitle(title.substring(0,Math.min(100,title.length()))).setContentText(headline)
             .setStyle(new Notification.BigTextStyle().bigText(headline)).setContentIntent(content).setAutoCancel(true).build();
         try {manager.notify(id,notification);return true;} catch(SecurityException error){return false;}
@@ -270,7 +343,38 @@ public class MainActivity extends Activity {
     }
     void pinWidgetNative(){AppWidgetManager m=getSystemService(AppWidgetManager.class);try{if(m.isRequestPinAppWidgetSupported()){m.requestPinAppWidget(new ComponentName(this,StackWidgetProvider.class),null,null);Toast.makeText(this,"请在系统弹窗中确认添加",Toast.LENGTH_LONG).show();return;}}catch(RuntimeException ignored){}Toast.makeText(this,"请长按桌面空白处，进入小组件，找到牛来盯盘",Toast.LENGTH_LONG).show();}
     void supportSettingsNative(String kind){try{startActivity("battery".equals(kind)?new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS):new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}catch(Exception e){Toast.makeText(this,"请在系统设置中搜索牛来盯盘",Toast.LENGTH_LONG).show();}}
-    @Override protected void onResume() { super.onResume();if(updates!=null){updates.check(false);publishUpdate();}JSONObject resumeState=AppState.load(this);if(!pendingPet&&!PetService.running&&(AndroidCompat.overlays(this)||(resumeState.optBoolean("islandEnabled")&&SystemIsland.use(this,resumeState)))&&(resumeState.optBoolean("petEnabled")||resumeState.optBoolean("islandEnabled")))AndroidCompat.startPet(this);PetService.appVisible=true;sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));StackWidgetProvider.refreshAll(this);js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");if(panel!=null)panel.resume();if(gateway!=null) gateway.setActive(true); if(web!=null){web.onResume();js("window.__niulaiLifecycle && window.__niulaiLifecycle(true)");}notifyPetState();if(pendingPet){pendingPet=false;if(AndroidCompat.overlays(this))requestFeature(requestedFeature);else{AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",false);notifyPetState();}} }
+    @Override protected void onResume() {
+        super.onResume();
+        if (updates != null) {
+            updates.check(false);
+            refreshNotificationState();
+        }
+        JSONObject resumeState = AppState.load(this);
+        if (!pendingPet && !PetService.running
+                && (AndroidCompat.overlays(this) || resumeState.optBoolean("islandEnabled") && SystemIsland.use(this, resumeState))
+                && (resumeState.optBoolean("petEnabled") || resumeState.optBoolean("islandEnabled"))) {
+            AndroidCompat.startPet(this);
+        }
+        PetService.appVisible = true;
+        sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));
+        StackWidgetProvider.refreshAll(this);
+        js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");
+        if (panel != null) panel.resume();
+        if (gateway != null) gateway.setActive(true);
+        if (web != null) {
+            web.onResume();
+            js("window.__niulaiLifecycle && window.__niulaiLifecycle(true)");
+        }
+        notifyPetState();
+        if (pendingPet) {
+            pendingPet = false;
+            if (AndroidCompat.overlays(this)) requestFeature(requestedFeature);
+            else {
+                AppState.feature(this, requestedFeature.equals("island") ? "islandEnabled" : "petEnabled", false);
+                notifyPetState();
+            }
+        }
+    }
     private boolean selectWidgetStock(Intent intent){
         return intent!=null&&OPEN_WIDGET_STOCK.equals(intent.getAction())&&AppState.select(this,intent.getStringExtra("widget_stock"));
     }
@@ -284,6 +388,13 @@ public class MainActivity extends Activity {
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){super.onConfigurationChanged(configuration);JSONObject state=AppState.load(this);applyAppearance(Appearance.dark(this,state.optString("theme","system")));if(panel!=null)panel.refreshAppearance();js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");StackWidgetProvider.refreshAll(this);}
     @Override public void onBackPressed(){handleBack();}
     private void handleBack(){if(web==null){moveTaskToBack(true);return;}web.evaluateJavascript("window.__niulaiBack && window.__niulaiBack()",value->{if(!"true".equals(value))moveTaskToBack(true);});}
-    @Override protected void onSaveInstanceState(Bundle out){out.putBoolean("pendingPet",pendingPet);out.putString("feature",requestedFeature);super.onSaveInstanceState(out);}
+    @Override protected void onSaveInstanceState(Bundle out) {
+        out.putBoolean("pendingPet", pendingPet);
+        out.putString("feature", requestedFeature);
+        out.putBoolean("requestingNotifications", requestingNotifications);
+        out.putBoolean("launchPetAfterPermission", launchPetAfterPermission);
+        out.putBoolean("testNewsAfterPermission", testNewsAfterPermission);
+        super.onSaveInstanceState(out);
+    }
     @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(foldFeatures!=null)foldFeatures.close();if(updates!=null)updates.close();if(feedback!=null)feedback.close();if(receiverRegistered)unregisterReceiver(petChanged);if(panel!=null)panel.close();if(gateway!=null)gateway.close();if(web!=null){web.removeJavascriptInterface("NiulaiNative");web.destroy();web=null;}super.onDestroy();}
 }

@@ -21,6 +21,7 @@ final class SystemIsland {
     static final String CHANNEL = "market_live";
     static final int NOTIFICATION_ID = 100;
     private static final int PROMOTED_FLAG = 0x40000;
+    private static final String REQUEST_PROMOTION = "android.requestPromotedOngoing";
 
     static int focusProtocol(Context context) {
         try { return Settings.System.getInt(context.getContentResolver(), "notification_focus_protocol", 0); }
@@ -51,33 +52,56 @@ final class SystemIsland {
         return manager.areNotificationsEnabled() && (channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE);
     }
 
+    private static boolean promotionAllowed(NotificationManager manager) {
+        if (Build.VERSION.SDK_INT < 36) return false;
+        try { return Boolean.TRUE.equals(NotificationManager.class.getMethod("canPostPromotedNotifications").invoke(manager)); }
+        catch (ReflectiveOperationException | RuntimeException ignored) { return false; }
+    }
+
+    static boolean canRequestPromotion(Context context) {
+        return notifications(context) && (promotionAllowed(context.getSystemService(NotificationManager.class))
+            || focusProtocol(context) >= 3 && !appId(context).isEmpty());
+    }
+
+    private static Notification activeNotification(NotificationManager manager) {
+        for (StatusBarNotification item : manager.getActiveNotifications()) {
+            Notification notification = item.getNotification();
+            if (item.getId() == NOTIFICATION_ID && CHANNEL.equals(notification.getChannelId())) return notification;
+        }
+        return null;
+    }
+
+    private static boolean promoted(Notification notification) {
+        return Build.VERSION.SDK_INT >= 36 && notification != null && (notification.flags & PROMOTED_FLAG) != 0;
+    }
+
+    static boolean promoted(Context context) {
+        try { return promoted(activeNotification(context.getSystemService(NotificationManager.class))); }
+        catch (RuntimeException ignored) { return false; }
+    }
+
     static JSONObject status(Context context) {
         JSONObject status = new JSONObject();
         try {
             JSONObject state = AppState.load(context);
             boolean system = use(context, state);
             NotificationManager manager = context.getSystemService(NotificationManager.class);
-            boolean promoted = false, posted = false, allowed = false;
-            if (Build.VERSION.SDK_INT >= 36) {
-                try { allowed = (Boolean)NotificationManager.class.getMethod("canPostPromotedNotifications").invoke(manager); }
-                catch (ReflectiveOperationException ignored) { }
-            }
-            for (StatusBarNotification item : manager.getActiveNotifications()) {
-                if (item.getId() == NOTIFICATION_ID && CHANNEL.equals(item.getNotification().getChannelId())) {
-                    posted = true;
-                    promoted = (item.getNotification().flags & PROMOTED_FLAG) != 0;
-                }
-            }
+            Notification notification = activeNotification(manager);
             status.put("system", system);
             status.put("supported", supported(context));
             status.put("sdk", Build.VERSION.SDK_INT);
             status.put("focusProtocol", focusProtocol(context));
             status.put("xiaomiConfigured", !appId(context).isEmpty());
             status.put("notifications", notifications(context));
-            status.put("promotionAllowed", allowed);
-            status.put("promoted", promoted);
-            status.put("posted", posted);
+            status.put("promotionAllowed", promotionAllowed(manager));
+            status.put("promoted", promoted(notification));
+            status.put("posted", notification != null);
             status.put("enabled", state.optBoolean("islandEnabled"));
+            status.put("overlayPermission", AndroidCompat.overlays(context));
+            status.put("floating", PetService.islandShowing);
+            status.put("floatingVisible", PetService.islandVisible);
+            status.put("fallback", PetService.islandFallback);
+            status.put("checking", PetService.islandCheckingPromotion);
         } catch (RuntimeException | JSONException error) {
             try { status.put("error", "系统状态暂不可用"); } catch (JSONException ignored) { }
         }
@@ -127,12 +151,15 @@ final class SystemIsland {
         }
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
         if (Build.VERSION.SDK_INT >= 36) {
+            // The framework builder setter is public from 36.1. Android 16 also accepts the extras key.
+            Bundle liveUpdate = new Bundle();
+            liveUpdate.putBoolean(REQUEST_PROMOTION, true);
+            builder.addExtras(liveUpdate);
             try {
-                Notification.Builder.class.getMethod("setRequestPromotedOngoing", boolean.class).invoke(builder, true);
                 String critical = wood ? "木鱼" : change.isEmpty() ? value : change;
                 Notification.Builder.class.getMethod("setShortCriticalText", String.class).invoke(builder, critical);
             } catch (ReflectiveOperationException reflectionError) {
-                android.util.Log.w("NiulaiIsland", "Live Update API unavailable", reflectionError);
+                android.util.Log.w("NiulaiIsland", "Live Update short text unavailable", reflectionError);
             }
         }
         Notification notification = builder.build();
