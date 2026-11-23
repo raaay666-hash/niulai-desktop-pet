@@ -14,9 +14,10 @@ import org.json.*;
 public class PetService extends Service {
     static final String CONFIG = "art.niulai.CONFIG", CHANGED = "art.niulai.PET_CHANGED", STOP = "art.niulai.STOP";
     static final String APP_VISIBLE = "art.niulai.APP_VISIBLE", CLOSE_PET = "art.niulai.CLOSE_PET", CLOSE_ISLAND = "art.niulai.CLOSE_ISLAND";
+    static final String ISLAND_STATUS_ONLY = "islandStatusOnly";
     private static final long PROMOTION_GRACE_MS = 3000, PROMOTION_RECHECK_MS = 10000;
     public static volatile boolean running, petShowing, islandShowing, systemIslandActive, appVisible;
-    static volatile boolean islandFallback, islandVisible, islandCheckingPromotion;
+    static volatile boolean islandFallback, islandVisible, islandCheckingPromotion, islandOemRoute;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager wm;
     private WindowManager islandWm;
@@ -37,13 +38,16 @@ public class PetService extends Service {
     private String symbol = "s_sh000001", islandSymbol = "s_sh000001";
     private boolean collapsed, receiverRegistered;
     private boolean systemIsland, systemIslandVisible;
-    private boolean promotionEligible, promotionConfirmed;
+    private boolean promotionEligible, promotionConfirmed, oemEligible, usingOemRoute;
+    private boolean needsPromotionRecheck;
     private String islandMode = "";
     private String notificationKey = "";
-    private long previewUntil;
+    private long petPreviewUntil, islandPreviewUntil;
     private MuyuSound woodSound;
     private android.animation.ValueAnimator islandAnimator;
-    private final Runnable endPreview = this::syncVisibility;
+    private final Runnable endPetPreview = this::syncVisibility;
+    private final Runnable endIslandPreview = this::syncVisibility;
+    private final Runnable recoverWindows = this::syncVisibility;
     private final Runnable promotionCheck = this::checkIslandPromotion;
     private final Runnable collapseIsland = () -> {
         if (island != null && island.expanded() && config.optBoolean("islandAutoCollapse", true)) toggleIsland();
@@ -86,11 +90,12 @@ public class PetService extends Service {
                 DisplayCutout next = insets.getDisplayCutout();
                 if (!java.util.Objects.equals(next, detectedCutout)) {
                     detectedCutout = next;
-                    handler.post(() -> { if (island != null) { placeIsland(); updateWindows(); } });
+                    handler.post(() -> { if (island != null) { cancelIslandAnimation(); placeIsland(); updateIslandWindow(); } });
                 }
                 return insets;
             });
-            wm.addView(cutoutProbe, probe);
+            try { wm.addView(cutoutProbe, probe); }
+            catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Camera geometry probe unavailable", error); }
         }
         woodSound = new MuyuSound(this);
         root = new DragFrame();
@@ -159,19 +164,25 @@ public class PetService extends Service {
                 state.put("shares", stock.optDouble("shares", 0));
             }
             PetConfig.configure(this, state.toString());
+            boolean autoCollapse = config.optBoolean("islandAutoCollapse", true);
             config = new JSONObject(PetConfig.json(this));
             String nextMode = config.optString("islandMode", "auto");
             boolean nextSystemIsland = config.optBoolean("islandEnabled") && SystemIsland.use(this, config);
             boolean nextPromotionEligible = nextSystemIsland && SystemIsland.canRequestPromotion(this);
-            if (systemIsland != nextSystemIsland || promotionEligible != nextPromotionEligible || !islandMode.equals(nextMode)) {
+            boolean nextOemEligible = nextSystemIsland && SystemIsland.seemsOemEligible(this);
+            if (systemIsland != nextSystemIsland || promotionEligible != nextPromotionEligible
+                    || oemEligible != nextOemEligible || !islandMode.equals(nextMode)) {
                 cancelPromotionCheck();
+                usingOemRoute = false;
                 islandFallback = false;
-                if (nextSystemIsland && !nextPromotionEligible) startIslandFallback();
+                if (nextSystemIsland && !nextPromotionEligible && !nextOemEligible) startIslandFallback();
             }
             islandMode = nextMode;
             systemIsland = nextSystemIsland;
             systemIslandActive = nextSystemIsland;
             promotionEligible = nextPromotionEligible;
+            oemEligible = nextOemEligible;
+            cancelIslandAnimation();
             refreshIslandHost();
             String nextSymbol = config.optString("symbol", "s_sh000001");
             if (!symbol.equals(nextSymbol)) { primaryQuote = null; primaryError = null; }
@@ -188,31 +199,50 @@ public class PetService extends Service {
             islandFeed.configure(islandSymbol, config.optInt("islandInterval", 5));
             if (islandSymbol.equals(symbol) && config.optBoolean("islandEnabled"))
                 feed.configure(symbol, Math.min(config.optInt("interval", 10), config.optInt("islandInterval", 5)));
-            attachSurfaces();
             clampPet();
             placeIsland();
-            updateWindows();
+            updatePetWindow();
+            updateIslandWindow();
             syncVisibility();
+            if (autoCollapse != config.optBoolean("islandAutoCollapse", true)) scheduleIslandCollapse();
             sendBroadcast(new Intent(CHANGED).setPackage(getPackageName()));
         } catch (Exception e) { android.util.Log.e("NiulaiPet", "Overlay configuration failed", e); }
     }
 
-    private void attachSurfaces() {
-        try {
-            if (config.optBoolean("petEnabled") && AndroidCompat.overlays(this) && !petShowing) {
-                clampPet(); wm.addView(root, petParams); petShowing = true;
-            } else if (!config.optBoolean("petEnabled") && petShowing) {
-                wm.removeView(root); petShowing = false;
+    private void attachSurfaces(boolean canOverlay) {
+        if (!canOverlay || !config.optBoolean("petEnabled")) detachPetWindow();
+        else if (!petShowing) {
+            try {
+                clampPet();
+                root.setVisibility(View.INVISIBLE);
+                wm.addView(root, petParams);
+                petShowing = true;
+            } catch (RuntimeException error) {
+                android.util.Log.w("NiulaiPet", "Floating pet unavailable", error);
+                detachPetWindow();
             }
-        } catch (RuntimeException e) { android.util.Log.w("NiulaiPet", "Floating pet unavailable", e); }
+        }
+        boolean showIsland = canOverlay && config.optBoolean("islandEnabled") && (!systemIsland || islandFallback);
+        if (!showIsland) detachIslandWindow();
+        else if (!islandShowing && !attachIslandWindow() && cameraHost != null) {
+            setIslandHost(null);
+            attachIslandWindow();
+        }
+    }
+
+    private boolean attachIslandWindow() {
         try {
-            boolean showFloating = config.optBoolean("islandEnabled") && (!systemIsland || islandFallback) && AndroidCompat.overlays(this);
-            if (showFloating && !islandShowing) {
-                placeIsland(); updateBridge(); islandWm.addView(island, islandParams); islandShowing = true;
-            } else if (!showFloating && islandShowing) {
-                islandWm.removeView(island); islandShowing = false; removeBridge();
-            }
-        } catch (RuntimeException e) { android.util.Log.w("NiulaiPet", "Floating island unavailable", e); removeBridge(); }
+            placeIsland();
+            island.setVisibility(View.INVISIBLE);
+            updateBridge();
+            islandWm.addView(island, islandParams);
+            islandShowing = true;
+            return true;
+        } catch (RuntimeException error) {
+            android.util.Log.w("NiulaiPet", "Floating island unavailable", error);
+            detachIslandWindow();
+            return false;
+        }
     }
 
     private Point displaySize() {
@@ -267,11 +297,14 @@ public class PetService extends Service {
     }
 
     private void refreshIslandHost() {
-        FrontCameraService next = !systemIsland && config.optBoolean("islandCameraInteraction") && !config.optString("islandPlacement", "auto").equals("below") ? FrontCameraService.connected : null;
-        if (next != cameraHost) {
-            if (islandShowing) { islandWm.removeView(island); islandShowing = false; }
-            removeBridge(); cameraHost = next;
-        }
+        FrontCameraService next = (!systemIsland || islandFallback) && config.optBoolean("islandCameraInteraction")
+            && !config.optString("islandPlacement", "auto").equals("below") ? FrontCameraService.connected : null;
+        if (next != cameraHost) detachIslandWindow();
+        setIslandHost(next);
+    }
+
+    private void setIslandHost(FrontCameraService next) {
+        cameraHost = next;
         islandWm = next == null ? wm : (WindowManager)next.getSystemService(WINDOW_SERVICE);
         islandParams.type = next == null ? AndroidCompat.overlayType() : WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
         islandParams.token = null;
@@ -281,7 +314,11 @@ public class PetService extends Service {
     }
 
     private void removeBridge() {
-        if (bridgeShowing) { try { islandWm.removeView(cameraBridge); } catch (RuntimeException ignored) { } bridgeShowing = false; }
+        if (cameraBridge == null || !bridgeShowing && cameraBridge.getParent() == null) return;
+        bridgeShowing = false;
+        cameraBridge.setVisibility(View.INVISIBLE);
+        try { islandWm.removeViewImmediate(cameraBridge); }
+        catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Camera join detach failed", error); }
     }
 
     private void updateBridge() {
@@ -301,29 +338,86 @@ public class PetService extends Service {
         bridgeParams.setTitle("Niulai Camera Join");
         if (bridgeShowing) islandWm.updateViewLayout(cameraBridge, bridgeParams);
         else {
-            if (islandShowing) islandWm.removeView(island);
+            boolean restoreIsland = islandShowing;
+            if (restoreIsland) { islandWm.removeViewImmediate(island); islandShowing = false; }
+            cameraBridge.setVisibility(island.getVisibility());
             islandWm.addView(cameraBridge, bridgeParams); bridgeShowing = true;
-            if (islandShowing) islandWm.addView(island, islandParams);
+            if (restoreIsland) { islandWm.addView(island, islandParams); islandShowing = true; }
         }
     }
 
-    private void updateWindows() {
-        if (!AndroidCompat.overlays(this)) { if (!systemIsland) stopSelf(); return; }
+    private void detachPetWindow() {
+        if (!petShowing && root.getParent() == null) return;
+        petShowing = false;
+        root.setVisibility(View.INVISIBLE);
+        try { wm.removeViewImmediate(root); }
+        catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Floating pet detach failed", error); }
+    }
+
+    private void detachIslandWindow() {
+        islandVisible = false;
+        if (islandShowing || island.getParent() != null) {
+            islandShowing = false;
+            island.setVisibility(View.INVISIBLE);
+            try { islandWm.removeViewImmediate(island); }
+            catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Floating island detach failed", error); }
+        }
+        removeBridge();
+    }
+
+    private void scheduleWindowRecovery() {
+        handler.removeCallbacks(recoverWindows);
+        handler.post(recoverWindows);
+    }
+
+    private void updatePetWindow() {
+        if (!petShowing) return;
         try {
-            if (petShowing) wm.updateViewLayout(root, petParams);
-            if (islandShowing) { islandWm.updateViewLayout(island, islandParams); updateBridge(); }
-        } catch (RuntimeException e) { stopSelf(); }
+            if (AndroidCompat.overlays(this)) { wm.updateViewLayout(root, petParams); return; }
+        } catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Floating pet update failed", error); }
+        detachPetWindow();
+        scheduleWindowRecovery();
+    }
+
+    private void updateIslandWindow() {
+        if (!islandShowing) return;
+        try {
+            if (AndroidCompat.overlays(this)) {
+                islandWm.updateViewLayout(island, islandParams);
+                updateBridge();
+                return;
+            }
+        } catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Floating island update failed", error); }
+        detachIslandWindow();
+        cancelIslandAnimation();
+        if (cameraHost != null) setIslandHost(null);
+        scheduleWindowRecovery();
     }
 
     private void syncVisibility() {
         if (feed == null) return;
+        boolean wasMounted = islandShowing, wasVisible = islandVisible, wasSystemVisible = systemIslandVisible;
+        boolean wasChecking = islandCheckingPromotion;
+        boolean canOverlay = AndroidCompat.overlays(this);
+        attachSurfaces(canOverlay);
+        if (!config.optBoolean("petEnabled")) { petPreviewUntil = 0; handler.removeCallbacks(endPetPreview); }
+        if (!config.optBoolean("islandEnabled")) { islandPreviewUntil = 0; handler.removeCallbacks(endIslandPreview); }
         boolean screen = ((PowerManager)getSystemService(POWER_SERVICE)).isInteractive()
             && !((KeyguardManager)getSystemService(KEYGUARD_SERVICE)).isKeyguardLocked();
-        boolean preview = SystemClock.uptimeMillis() < previewUntil;
-        boolean petVisible = screen && petShowing && (!appVisible || !config.optBoolean("petHideInApp", true) || preview);
-        boolean showIsland = screen && (!appVisible || !config.optBoolean("islandHideInApp", true) || preview);
+        long now = SystemClock.uptimeMillis();
+        boolean petVisible = screen && petShowing && (!appVisible || !config.optBoolean("petHideInApp", true) || now < petPreviewUntil);
+        boolean showIsland = screen && (!appVisible || !config.optBoolean("islandHideInApp", true) || now < islandPreviewUntil);
+        if (!showIsland) {
+            island.setVisibility(View.INVISIBLE);
+            if (cameraBridge != null) cameraBridge.setVisibility(View.INVISIBLE);
+        }
+        if ((!showIsland || !islandShowing) && resetIslandExpansion() && islandShowing) {
+            placeIsland();
+            updateIslandWindow();
+        }
         islandVisible = showIsland && islandShowing;
-        systemIslandVisible = showIsland && systemIsland && !islandShowing;
+        systemIslandVisible = showIsland && systemIsland && !islandShowing && SystemIsland.notifications(this);
+        islandOemRoute = systemIsland && !islandFallback && oemEligible && (!promotionEligible || usingOemRoute);
         root.setVisibility(petVisible ? View.VISIBLE : View.INVISIBLE);
         island.setVisibility(islandVisible ? View.VISIBLE : View.INVISIBLE);
         if (cameraBridge != null) cameraBridge.setVisibility(islandVisible ? View.VISIBLE : View.INVISIBLE);
@@ -334,85 +428,149 @@ public class PetService extends Service {
         feed.setActive((petVisible && petMarket) || ((islandVisible || systemIslandVisible) && islandMarket && islandSymbol.equals(symbol)));
         islandFeed.setActive((islandVisible || systemIslandVisible) && islandMarket && !islandSymbol.equals(symbol));
         updateSystemNotification();
-        if (systemIslandVisible && promotionEligible && !islandFallback) schedulePromotionCheck();
+        if (systemIslandVisible && promotionEligible && !islandFallback && !usingOemRoute) schedulePromotionCheck();
         else cancelPromotionCheck();
         if (!screen) woodSound.stop();
+        if (!canOverlay && !systemIsland) stopSelf();
+        if (wasMounted != islandShowing || wasVisible != islandVisible || wasSystemVisible != systemIslandVisible
+                || wasChecking != islandCheckingPromotion) notifyIslandStatus();
         android.util.Log.i("NiulaiPet", "visible=" + petVisible + ";island=" + islandVisible);
+    }
+
+    private void notifyIslandStatus() {
+        sendBroadcast(new Intent(CHANGED).setPackage(getPackageName()).putExtra(ISLAND_STATUS_ONLY, true));
     }
 
     private void updateSystemNotification() {
         if (feed == null) return;
         NativeMarket.Quote quote = islandSymbol.equals(symbol) ? primaryQuote : secondaryQuote;
         String error = islandSymbol.equals(symbol) ? primaryError : secondaryError;
-        String key = systemIslandVisible ? config.toString() + ":" + islandSymbol + ":" + (quote == null ? "waiting" : quote.received) + ":" + error + ":" + MuyuStore.read(this).optLong("session") : "service";
+        boolean requestPromotion = systemIslandVisible && !islandFallback && (promotionEligible || oemEligible);
+        String key = systemIslandVisible ? config.toString() + ":" + islandSymbol + ":" + (quote == null ? "waiting" : quote.received)
+            + ":" + error + ":" + MuyuStore.read(this).optLong("session") + ":" + requestPromotion : "service";
         if (key.equals(notificationKey)) return;
-        notificationKey = key;
-        Notification notification = systemIslandVisible ? SystemIsland.create(this, config, quote, error) : AndroidCompat.notification(this);
-        getSystemService(NotificationManager.class).notify(SystemIsland.NOTIFICATION_ID, notification);
+        try {
+            Notification notification = systemIslandVisible ? SystemIsland.create(this, config, quote, error, requestPromotion) : AndroidCompat.notification(this);
+            getSystemService(NotificationManager.class).notify(SystemIsland.NOTIFICATION_ID, notification);
+            notificationKey = key;
+        } catch (RuntimeException failure) { android.util.Log.w("NiulaiPet", "Island notification update failed", failure); }
     }
 
     private void schedulePromotionCheck() {
         if (islandCheckingPromotion) return;
         islandCheckingPromotion = true;
-        handler.postDelayed(promotionCheck, promotionConfirmed ? PROMOTION_RECHECK_MS : PROMOTION_GRACE_MS);
+        handler.postDelayed(promotionCheck, promotionConfirmed && !needsPromotionRecheck ? PROMOTION_RECHECK_MS : PROMOTION_GRACE_MS);
     }
 
     private void cancelPromotionCheck() {
         handler.removeCallbacks(promotionCheck);
         islandCheckingPromotion = false;
         promotionConfirmed = false;
+        needsPromotionRecheck = false;
     }
 
     private void checkIslandPromotion() {
         islandCheckingPromotion = false;
         if (!systemIslandVisible || islandFallback) return;
         if (SystemIsland.promoted(this)) {
-            if (!promotionConfirmed) sendBroadcast(new Intent(CHANGED).setPackage(getPackageName()));
+            boolean changed = !promotionConfirmed || needsPromotionRecheck;
             promotionConfirmed = true;
+            needsPromotionRecheck = false;
             schedulePromotionCheck();
+            if (changed) notifyIslandStatus();
+            return;
+        }
+        if (promotionConfirmed && !needsPromotionRecheck) {
+            needsPromotionRecheck = true;
+            schedulePromotionCheck();
+            notifyIslandStatus();
+            return;
+        }
+        if (oemEligible) {
+            promotionConfirmed = false;
+            usingOemRoute = true;
+            islandOemRoute = true;
+            notifyIslandStatus();
             return;
         }
         startIslandFallback();
-        attachSurfaces();
+        refreshIslandHost();
         syncVisibility();
-        sendBroadcast(new Intent(CHANGED).setPackage(getPackageName()));
+        notifyIslandStatus();
     }
 
     private void startIslandFallback() {
         islandFallback = true;
-        if (islandAnimator != null) islandAnimator.cancel();
+        resetIslandExpansion();
+    }
+
+    private void cancelIslandAnimation() {
+        if (islandAnimator == null) return;
+        android.animation.ValueAnimator animation = islandAnimator;
+        islandAnimator = null;
+        animation.cancel();
+    }
+
+    private boolean resetIslandExpansion() {
+        boolean changed = island.expanded() || islandAnimator != null;
         handler.removeCallbacks(collapseIsland);
-        island.expanded(false);
+        cancelIslandAnimation();
+        if (island.expanded()) island.expanded(false);
+        return changed;
+    }
+
+    private void scheduleIslandCollapse() {
+        handler.removeCallbacks(collapseIsland);
+        if (islandVisible && island.expanded() && config.optBoolean("islandAutoCollapse", true)) {
+            handler.postDelayed(collapseIsland, 10000);
+        }
     }
 
     private void togglePet() {
         collapsed = !collapsed;
         pet.collapsed(collapsed);
-        clampPet(); updateWindows();
+        clampPet(); updatePetWindow();
         PetConfig.prefs(this).edit().putBoolean("collapsed", collapsed).apply();
     }
 
     private void toggleIsland() {
-        if(islandAnimator!=null)islandAnimator.cancel();
-        int oldWidth=islandParams.width,oldHeight=islandParams.height,oldX=islandParams.x,oldY=islandParams.y;
+        if (!islandVisible) return;
+        cancelIslandAnimation();
+        int oldWidth = islandParams.width, oldHeight = islandParams.height, oldX = islandParams.x, oldY = islandParams.y;
         island.expanded(!island.expanded());
         placeIsland();
-        int targetWidth=islandParams.width,targetHeight=islandParams.height,targetX=islandParams.x,targetY=islandParams.y;
-        if(config.optBoolean("islandMotion",true)&&config.optBoolean("motion",true)&&islandShowing){
-            islandAnimator=android.animation.ValueAnimator.ofFloat(0,1);islandAnimator.setDuration(220);
-            islandAnimator.addUpdateListener(animation->{float fraction=(float)animation.getAnimatedValue();islandParams.width=Math.round(oldWidth+(targetWidth-oldWidth)*fraction);islandParams.height=Math.round(oldHeight+(targetHeight-oldHeight)*fraction);islandParams.x=Math.round(oldX+(targetX-oldX)*fraction);islandParams.y=Math.round(oldY+(targetY-oldY)*fraction);island.cameraWindowX(islandParams.x);updateWindows();});islandAnimator.start();
-        }else updateWindows();
-        handler.removeCallbacks(collapseIsland);
-        if (island.expanded() && config.optBoolean("islandAutoCollapse", true)) handler.postDelayed(collapseIsland, 10000);
+        int targetWidth = islandParams.width, targetHeight = islandParams.height, targetX = islandParams.x, targetY = islandParams.y;
+        if (config.optBoolean("islandMotion", true) && config.optBoolean("motion", true)) {
+            islandAnimator = android.animation.ValueAnimator.ofFloat(0, 1);
+            islandAnimator.setDuration(220);
+            islandAnimator.addUpdateListener(animation -> {
+                float fraction = (float)animation.getAnimatedValue();
+                islandParams.width = Math.round(oldWidth + (targetWidth - oldWidth) * fraction);
+                islandParams.height = Math.round(oldHeight + (targetHeight - oldHeight) * fraction);
+                islandParams.x = Math.round(oldX + (targetX - oldX) * fraction);
+                islandParams.y = Math.round(oldY + (targetY - oldY) * fraction);
+                island.cameraWindowX(islandParams.x);
+                updateIslandWindow();
+            });
+            islandAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (islandAnimator == animation) islandAnimator = null;
+                }
+            });
+            islandAnimator.start();
+        } else updateIslandWindow();
+        scheduleIslandCollapse();
     }
 
     private void selectIsland(int direction) {
         try {
             JSONObject state = AppState.load(this);
             JSONArray stocks = state.getJSONArray("stocks");
-            int index = 0;
+            if (stocks.length() == 0) return;
+            int index = -1;
             for (int i = 0; i < stocks.length(); i++) if (stocks.getJSONObject(i).optString("code").equals(islandSymbol)) index = i;
-            index = (index + direction + stocks.length()) % stocks.length();
+            if (index < 0) index = direction < 0 ? stocks.length() - 1 : 0;
+            else index = (index + direction + stocks.length()) % stocks.length();
             state.put("islandSymbol", stocks.getJSONObject(index).getString("code"));
             AppState.save(this, state.toString()); configure();
         } catch (Exception ignored) { }
@@ -445,15 +603,18 @@ public class PetService extends Service {
         else if ("art.niulai.ISLAND_PREVIOUS".equals(action)) selectIsland(-1);
         else if ("art.niulai.ISLAND_NEXT".equals(action)) selectIsland(1);
         else if ("art.niulai.PREVIEW".equals(action) && pet != null) {
-            previewUntil = SystemClock.uptimeMillis() + 6000;
+            petPreviewUntil = SystemClock.uptimeMillis() + 6000;
+            handler.removeCallbacks(endPetPreview);
+            handler.postAtTime(endPetPreview, petPreviewUntil);
             pet.preview(intent.getStringExtra("motion"));
-            syncVisibility(); handler.removeCallbacks(endPreview); handler.postDelayed(endPreview, 6100);
+            syncVisibility();
         } else {
-            configure();
-            if ("art.niulai.ISLAND_PREVIEW".equals(action)) {
-                previewUntil = SystemClock.uptimeMillis() + 10000;
-                syncVisibility(); handler.removeCallbacks(endPreview); handler.postDelayed(endPreview, 10100);
+            if ("art.niulai.ISLAND_PREVIEW".equals(action) && island != null) {
+                islandPreviewUntil = SystemClock.uptimeMillis() + 10000;
+                handler.removeCallbacks(endIslandPreview);
+                handler.postAtTime(endIslandPreview, islandPreviewUntil);
             }
+            configure();
         }
         return START_NOT_STICKY;
     }
@@ -478,7 +639,7 @@ public class PetService extends Service {
         @Override public boolean onTouchEvent(MotionEvent event) {
             if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
                 petParams.x = startX + (int)(event.getRawX() - downX); petParams.y = startY + (int)(event.getRawY() - downY);
-                clampPet(); updateWindows();
+                clampPet(); updatePetWindow();
             }
             if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                 PetConfig.prefs(PetService.this).edit().putInt("x", petParams.x).putInt("y", petParams.y).apply(); dragging = false;
@@ -490,8 +651,8 @@ public class PetService extends Service {
     @Override public void onDestroy() {
         running = false;
         systemIslandActive = false;
-        islandFallback = islandVisible = islandCheckingPromotion = false;
-        if(islandAnimator!=null)islandAnimator.cancel();
+        islandFallback = islandVisible = islandCheckingPromotion = islandOemRoute = false;
+        cancelIslandAnimation();
         handler.removeCallbacksAndMessages(null);
         if (feed != null) feed.close();
         if (islandFeed != null) islandFeed.close();
@@ -499,9 +660,8 @@ public class PetService extends Service {
         if (island != null) island.close();
         if (woodSound != null) woodSound.close();
         if (receiverRegistered) unregisterReceiver(receiver);
-        try { if (petShowing) wm.removeView(root); } catch (RuntimeException ignored) { }
-        try { if (islandShowing) islandWm.removeView(island); } catch (RuntimeException ignored) { }
-        removeBridge();
+        if (root != null) detachPetWindow();
+        if (island != null) detachIslandWindow();
         try { if (cutoutProbe != null) wm.removeView(cutoutProbe); } catch (RuntimeException ignored) { }
         petShowing = islandShowing = false;
         stopForeground(STOP_FOREGROUND_REMOVE);

@@ -1,13 +1,15 @@
 package art.niulai.android;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.MotionEvent;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.text.SimpleDateFormat;
@@ -22,6 +24,7 @@ final class NativeIslandView extends FrameLayout {
 
     private final Actions actions;
     private final MarketMood moods = new MarketMood();
+    private final IslandTrend trend = new IslandTrend();
     private final TapFeedback feedback;
     private JSONObject config = new JSONObject();
     private NativeMarket.Quote quote;
@@ -29,11 +32,13 @@ final class NativeIslandView extends FrameLayout {
     private boolean expanded, active = true;
     private TextView title, compactPrice, compactDelta, mainValue, detail, source, holding;
     private NativeBullView bull, miniBull;
+    private TrendView trendView, expandedTrend;
     private int ink, muted, surface, accent;
+    private boolean dark;
     private LinearLayout headerLeft, headerRight;
     private View headerGap;
     private boolean fused;
-    private int gapLeft, gapRight, windowX;
+    private int gapLeft, gapRight, windowX, windowWidth;
     private float downX, downY;
     private long downTime;
 
@@ -42,6 +47,7 @@ final class NativeIslandView extends FrameLayout {
         fused = layout.fused;
         gapLeft = layout.x + layout.gapLeft; gapRight = layout.x + layout.gapRight;
         windowX = layout.x;
+        windowWidth = layout.width;
         if (changed) rebuild();
         layoutHeader();
     }
@@ -54,7 +60,8 @@ final class NativeIslandView extends FrameLayout {
         if (gap == 0) {
             headerGap.setVisibility(GONE);
             headerLeft.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1));
-            headerRight.setLayoutParams(new LinearLayout.LayoutParams(dp(92), -1));
+            int valueWidth = compactDelta != null && compactDelta.getVisibility() == GONE ? 44 : 96;
+            headerRight.setLayoutParams(new LinearLayout.LayoutParams(dp(valueWidth), -1));
         } else {
             headerGap.setVisibility(VISIBLE);
             int left = Math.max(0, gapLeft - windowX - dp(10));
@@ -62,6 +69,7 @@ final class NativeIslandView extends FrameLayout {
             headerGap.setLayoutParams(new LinearLayout.LayoutParams(gap, -1));
             headerRight.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1));
         }
+        updateTrendVisibility();
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
@@ -92,10 +100,16 @@ final class NativeIslandView extends FrameLayout {
     int desiredHeight() { return dp(expanded ? 206 : 44); }
     boolean expanded() { return expanded; }
 
-    void expanded(boolean value) { expanded = value; rebuild(); }
+    void expanded(boolean value) {
+        if (expanded == value) return;
+        expanded = value;
+        rebuild();
+    }
 
     void configure(JSONObject next) {
         config = next;
+        trend.select(symbol());
+        if (quote != null && !quote.code.equals(symbol())) { quote = null; error = null; }
         rebuild();
     }
 
@@ -103,7 +117,7 @@ final class NativeIslandView extends FrameLayout {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
         drawable.setCornerRadius(dp(radius));
-        drawable.setStroke(dp(1), fused ? 0xff000000 : Appearance.dark(getContext(), config.optString("islandTheme", "dark")) ? 0xff393e35 : 0xffe2e5dc);
+        drawable.setStroke(dp(1), fused ? 0xff000000 : dark ? 0xff3b434f : 0xffdadfe6);
         return drawable;
     }
 
@@ -130,12 +144,18 @@ final class NativeIslandView extends FrameLayout {
         if (bull != null) bull.configure(false, false);
         if (miniBull != null) miniBull.configure(false,false);miniBull=null;bull=null;
         removeAllViews();
-        boolean dark = fused || Appearance.dark(getContext(), config.optString("islandTheme", "dark"));
-        ink = dark ? 0xffeeefe8 : 0xff282925;
-        muted = dark ? 0xffa0a498 : 0xff74766f;
-        surface = fused ? 0xff000000 : dark ? 0xff111411 : 0xfffafbf5;
-        accent = dark ? 0xffe1a378 : 0xffa6492e;
-        setBackground(background(surface, expanded ? 27 : 24));setClipToOutline(true);
+        dark = fused || Appearance.dark(getContext(), config.optString("islandTheme", "dark"));
+        ink = dark ? 0xfff0f2f7 : 0xff212733;
+        muted = dark ? 0xffadb7c6 : 0xff546073;
+        surface = fused ? 0xff000000 : dark ? 0xff171a21 : 0xfffafbfe;
+        accent = dark ? 0xffadbfff : 0xff324e95;
+        String style = muyu() ? "quote" : config.optString("islandStyle", "quote");
+        boolean minimal = "minimal".equals(style);
+        boolean inline = minimal && !fused;
+        trendView = expandedTrend = null;
+        int radius = "trend".equals(style) ? 15 : minimal ? 12 : 24;
+        setBackground(background(surface, expanded ? radius + 3 : radius));
+        setClipToOutline(true);
         LinearLayout content = new LinearLayout(getContext());
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(10), 0, dp(8), dp(expanded ? 8 : 0));
@@ -148,7 +168,7 @@ final class NativeIslandView extends FrameLayout {
         headerGap = new View(getContext()); header.addView(headerGap, new LinearLayout.LayoutParams(0, -1));
         headerRight = new LinearLayout(getContext()); headerRight.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
         header.addView(headerRight, new LinearLayout.LayoutParams(-2, -1));
-        if (config.optBoolean("islandBull", true)) {
+        if ("quote".equals(style) && config.optBoolean("islandBull", true)) {
             NativeBullView icon = new NativeBullView(getContext());
             icon.mini(true);miniBull=icon;
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(fused && gapRight > gapLeft ? 24 : 32), dp(34));
@@ -156,18 +176,34 @@ final class NativeIslandView extends FrameLayout {
             headerLeft.addView(icon, iconParams);
         }
         LinearLayout summary = new LinearLayout(getContext());
-        summary.setOrientation(LinearLayout.VERTICAL);
-        title = label("牛来", 9, muted);
-        compactPrice = label("—", 12, ink);
+        summary.setOrientation(inline ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        summary.setGravity(Gravity.CENTER_VERTICAL);
+        title = label("牛来", inline ? 11 : 10, muted);
+        compactPrice = label("—", inline ? 15 : 13, ink);
         compactPrice.setTypeface(null, 1);
-        summary.addView(title, new LinearLayout.LayoutParams(-1, dp(16)));
-        summary.addView(compactPrice, new LinearLayout.LayoutParams(-1, dp(18)));
+        if (inline) {
+            compactPrice.setMaxWidth(dp(108));
+            compactPrice.setPadding(dp(5), 0, 0, 0);
+            summary.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+            summary.addView(compactPrice, new LinearLayout.LayoutParams(-2, -2));
+        } else {
+            summary.addView(title, new LinearLayout.LayoutParams(-1, dp(16)));
+            summary.addView(compactPrice, new LinearLayout.LayoutParams(-1, dp(19)));
+        }
         headerLeft.addView(summary, new LinearLayout.LayoutParams(0, -2, 1));
+        if ("trend".equals(style)) {
+            trendView = new TrendView();
+            trendView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams chart = new LinearLayout.LayoutParams(dp(43), dp(22));
+            chart.setMargins(dp(5), 0, dp(4), 0);
+            headerLeft.addView(trendView, chart);
+        }
         compactDelta = label("—", 12, ink);
+        compactDelta.setGravity(Gravity.CENTER);
         compactDelta.setTypeface(null, 1);
         headerRight.addView(compactDelta, new LinearLayout.LayoutParams(0, -1, 1));
-        TextView toggle = button(expanded ? "×" : "⌄", expanded ? "关闭灵动岛" : "展开灵动岛", expanded ? actions::close : actions::expand);
-        headerRight.addView(toggle, new LinearLayout.LayoutParams(dp(22), dp(40)));
+        TextView toggle = button(expanded ? "⌃" : "⌄", expanded ? "收起灵动岛" : "展开灵动岛", actions::expand);
+        headerRight.addView(toggle, new LinearLayout.LayoutParams(dp(44), dp(44)));
         header.setOnClickListener(v -> { if (muyu()) actions.knock(); else actions.expand(); });
         content.addView(header, new LinearLayout.LayoutParams(-1, dp(44)));
         layoutHeader();
@@ -185,25 +221,29 @@ final class NativeIslandView extends FrameLayout {
             values.addView(detail, new LinearLayout.LayoutParams(-1, dp(23)));
             values.addView(holding, new LinearLayout.LayoutParams(-1, dp(20)));
             body.addView(values, new LinearLayout.LayoutParams(0, -2, 1));
-            if (config.optBoolean("islandBull", true)) {
+            if ("trend".equals(style)) {
+                expandedTrend = new TrendView();
+                expandedTrend.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                body.addView(expandedTrend, new LinearLayout.LayoutParams(dp(86), dp(52)));
+            } else if (config.optBoolean("islandBull", true)) {
                 bull = new NativeBullView(getContext());
                 bull.setContentDescription(muyu() ? "敲木鱼" : "牛来动作");
                 bull.setOnClickListener(v -> { if (muyu()) actions.knock(); else actions.open(); });
                 body.addView(bull, new LinearLayout.LayoutParams(dp(72), dp(88)));
             }
-            content.addView(body, new LinearLayout.LayoutParams(-1, dp(93)));
+            content.addView(body, new LinearLayout.LayoutParams(-1, dp(90)));
             source = label("", 9, muted);
             content.addView(source, new LinearLayout.LayoutParams(-1, dp(20)));
             LinearLayout controls = new LinearLayout(getContext());
-            String[] labels = muyu() ? new String[]{"敲一下", "打开", "收起"} : new String[]{"上一只", "下一只", "打开", "收起"};
-            Runnable[] callbacks = muyu() ? new Runnable[]{actions::knock, actions::open, actions::expand}
-                : new Runnable[]{actions::previous, actions::next, actions::open, actions::expand};
+            String[] labels = muyu() ? new String[]{"敲一下", "打开", "关闭"} : new String[]{"上一只", "下一只", "打开", "关闭"};
+            Runnable[] callbacks = muyu() ? new Runnable[]{actions::knock, actions::open, actions::close}
+                : new Runnable[]{actions::previous, actions::next, actions::open, actions::close};
             for (int i = 0; i < labels.length; i++) {
                 TextView control = button(labels[i], labels[i], callbacks[i]);
                 control.setTextColor(accent);
-                controls.addView(control, new LinearLayout.LayoutParams(0, dp(36), 1));
+                controls.addView(control, new LinearLayout.LayoutParams(0, dp(44), 1));
             }
-            content.addView(controls, new LinearLayout.LayoutParams(-1, dp(36)));
+            content.addView(controls, new LinearLayout.LayoutParams(-1, dp(44)));
         }
         addView(feedback, new FrameLayout.LayoutParams(-1, -1));
         updateText();
@@ -211,9 +251,27 @@ final class NativeIslandView extends FrameLayout {
 
     private boolean muyu() { return "muyu".equals(config.optString("islandContent")); }
 
+    private String symbol() {
+        String pinned = config.optString("islandSymbol");
+        return NativeMarket.valid(pinned) ? pinned : config.optString("symbol", "s_sh000001");
+    }
+
+    private void updateTrendVisibility() {
+        if (trendView == null) return;
+        boolean ready = trend.ready();
+        boolean compact = !expanded && gapLeft == gapRight && windowWidth >= dp(240) && ready;
+        trendView.setVisibility(compact ? VISIBLE : GONE);
+        if (compact) trendView.invalidate();
+        if (expandedTrend != null) {
+            expandedTrend.setVisibility(ready ? VISIBLE : GONE);
+            if (ready) expandedTrend.invalidate();
+        }
+    }
+
     void update(NativeMarket.Quote value, String failure) {
-        quote = value;
+        quote = value != null && symbol().equals(value.code) ? value : null;
         error = failure;
+        if (failure == null) trend.record(quote);
         updateText();
     }
 
@@ -221,31 +279,80 @@ final class NativeIslandView extends FrameLayout {
 
     private void updateText() {
         boolean wood = muyu();
-        JSONObject counts = MuyuStore.read(getContext());
-        boolean stale = error != null || quote != null && System.currentTimeMillis() - quote.received > 45000;
-        title.setText(wood ? "牛来木鱼" : quote == null ? "牛来盯盘" : quote.name);
-        compactPrice.setText(wood ? config.optBoolean("islandCount",true) ? "本轮 " + counts.optLong("session") : "轻触敲击" : quote == null ? "连接中" : String.format(Locale.US, "%,.2f", quote.price));
+        JSONObject counts = wood ? MuyuStore.read(getContext()) : null;
+        long now = System.currentTimeMillis();
+        boolean stale = error != null || quote != null && now - quote.received > 45000;
+        String code = symbol();
+        String name = quote != null ? quote.name : code.equals(config.optString("symbol"))
+            ? config.optString("name", NativeMarket.display(code)) : NativeMarket.display(code);
+        boolean minimal = !wood && "minimal".equals(config.optString("islandStyle"));
+        title.setText(wood ? "牛来木鱼" : minimal ? NativeMarket.display(code) : name);
+        String price = quote != null ? NativeMarket.priceText(quote) : error == null ? "等待行情" : "获取失败";
+        compactPrice.setText(wood ? config.optBoolean("islandCount", true) ? "本轮 " + counts.optLong("session") : "轻触敲击" : price);
         compactPrice.setVisibility(wood || config.optBoolean("islandPrice", true) ? VISIBLE : GONE);
-        compactDelta.setText(wood ? "+1" : quote == null ? "—" : stale ? "更新延迟" : String.format(Locale.US, "%+.2f%%", quote.pct));
-        compactDelta.setVisibility(wood || config.optBoolean("islandPercent", true) ? VISIBLE : GONE);
-        int quoteColor = quote != null && quote.pct < 0 ? 0xff63c5a6 : 0xfffa8086;
-        if (!fused && !Appearance.dark(getContext(), config.optString("islandTheme", "dark"))) quoteColor = quote != null && quote.pct < 0 ? 0xff22836d : 0xffcc4148;
-        compactDelta.setTextColor(wood ? 0xffdda961 : stale ? muted : quoteColor);
-        String code=quote==null?config.optString("islandSymbol",config.optString("symbol","s_sh000001")):quote.code;if(!NativeMarket.valid(code))code=config.optString("symbol","s_sh000001");
-        String motionState = wood ? "muyu" : moods.update(code,quote==null?0:quote.price,quote==null?0:quote.pct,quote==null?0:quote.received,quote!=null,stale,System.currentTimeMillis(),config.optInt("islandInterval",5));
+        boolean hasPercent = quote != null && Double.isFinite(quote.pct);
+        compactDelta.setText(stale ? "延迟" : hasPercent ? String.format(Locale.US, "%+.2f%%", quote.pct) : "—");
+        int deltaVisibility = !wood && (stale || config.optBoolean("islandPercent", true)) ? VISIBLE : GONE;
+        if (compactDelta.getVisibility() != deltaVisibility) {
+            compactDelta.setVisibility(deltaVisibility);
+            layoutHeader();
+        }
+        int quoteColor = !hasPercent || quote.pct == 0 ? ink : quote.pct < 0
+            ? (dark ? 0xff72d0ad : 0xff18724f) : (dark ? 0xffff929e : 0xffb62945);
+        compactDelta.setTextColor(stale ? muted : quoteColor);
+        updateTrendVisibility();
+        String motionState = wood ? "muyu" : moods.update(code, quote == null ? 0 : quote.price, quote == null ? 0 : quote.pct,
+            quote == null ? 0 : quote.received, quote != null, stale, now, config.optInt("islandInterval", 5));
         if(miniBull!=null){miniBull.state(motionState);miniBull.configure(active,config.optBoolean("motion",true)&&config.optBoolean("islandMotion",true));}
         if (!expanded) return;
-        mainValue.setText(wood ? config.optBoolean("islandCount",true) ? Long.toString(counts.optLong("session")) : "木鱼" : quote == null ? "—" : config.optBoolean("islandPrice", true) ? String.format(Locale.US, "%,.2f", quote.price) : quote.name);
-        mainValue.setTextColor(wood ? ink : quoteColor);
-        detail.setText(wood ? "今日 " + counts.optLong("today") + " · 累计 " + counts.optLong("total") : stale ? "更新延迟" : quote == null ? "等待报价" : String.format(Locale.US, "%+.3f  ·  %s", quote.change, NativeMarket.currency(code)));
+        mainValue.setText(wood ? config.optBoolean("islandCount", true) ? Long.toString(counts.optLong("session")) : "木鱼" : config.optBoolean("islandPrice", true) ? price : name);
+        mainValue.setTextColor(wood || stale || !config.optBoolean("islandPrice", true) ? ink : quoteColor);
+        detail.setText(wood ? "今日 " + counts.optLong("today") + " · 累计 " + counts.optLong("total")
+            : stale ? (quote == null ? "行情暂不可用" : "更新延迟 · 保留上次报价")
+            : quote != null && Double.isFinite(quote.change) ? String.format(Locale.US, "%+.3f  ·  %s", quote.change, NativeMarket.currency(code)) : "等待报价");
         detail.setVisibility(!wood || config.optBoolean("islandCount", true) ? VISIBLE : GONE);
         holding.setVisibility(!wood && config.optBoolean("islandHoldings") ? VISIBLE : GONE);
         holding.setText(holdingText());
         source.setText(wood ? "点击敲击 · 本机计数" : quote == null ? "等待行情" : (quote.source.equals("tencent") ? "腾讯" : "新浪") + " · 获取 " + new SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(new Date(quote.received)));
         if (bull != null) {
-            
             bull.state(motionState);
             bull.configure(active, config.optBoolean("motion", true) && config.optBoolean("islandMotion", true));
+        }
+    }
+
+    private final class TrendView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path line = new Path();
+
+        TrendView() { super(NativeIslandView.this.getContext()); }
+
+        @Override protected void onDraw(Canvas canvas) {
+            if (!trend.ready()) return;
+            double low = Double.POSITIVE_INFINITY, high = Double.NEGATIVE_INFINITY;
+            for (IslandTrend.Sample sample : trend) {
+                low = Math.min(low, sample.price);
+                high = Math.max(high, sample.price);
+            }
+            long start = trend.first().at, span = trend.last().at - start;
+            float inset = dp(3), width = getWidth() - 2 * inset, height = getHeight() - 2 * inset;
+            if (width <= 0 || height <= 0) return;
+            float x = 0, y = 0;
+            boolean first = true;
+            line.rewind();
+            for (IslandTrend.Sample sample : trend) {
+                x = inset + (span == 0 ? width / 2 : width * (sample.at - start) / span);
+                y = inset + (high == low ? height / 2 : (float)(height * (high - sample.price) / (high - low)));
+                if (first) line.moveTo(x, y); else line.lineTo(x, y);
+                first = false;
+            }
+            paint.setColor(error == null ? accent : muted);
+            paint.setStrokeWidth(Math.max(1.5f, dp(1)));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStyle(Paint.Style.STROKE);
+            canvas.drawPath(line, paint);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(x, y, dp(2), paint);
         }
     }
 

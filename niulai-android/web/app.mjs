@@ -8,7 +8,7 @@ import { DesktopBullMotion as BullMotion } from '../../renderer-modules/desktop-
 import { featureDefaults, cleanFeatures, localCounts } from './features.mjs';
 import { TapVoice } from './tap-voice.mjs';
 import { MobileMarkets } from './market-workspace.mjs';
-import { marketPrice } from '../../renderer-modules/desktop-ui.js';
+import { drawSparkline, marketPrice } from '../../renderer-modules/desktop-ui.js';
 import { createFeedbackForm } from '../../renderer-modules/feedback-form.js';
 import { watchFoldLayout } from './fold-layout.mjs';
 
@@ -72,7 +72,7 @@ function syncMotionVisibility() {
   bullMotion?.configure(petVisible(), state.motion);
   galleryMotion?.configure(active && $('motion-dialog').open, state.motion);
   woodMotion?.configure(active && tab === 'muyu' && !coverVisible() && !dialogOpen(), state.motion);
-  miniMotion?.configure(active && $('settings-dialog').open && settingsPanel === 'island' && state.islandBull, state.motion && state.islandMotion);
+  miniMotion?.configure(active && $('settings-dialog').open && settingsPanel === 'island' && !$('island-demo-panel').hidden && !$('island-mini').hidden, state.motion && state.islandMotion);
   coverMotion?.configure(active && coverVisible(), false);
 }
 function selectSettings(panel) {
@@ -232,6 +232,7 @@ function render() {
   $('market-details').textContent=q?`昨收 ${fmt(q.prevClose,3)} · ${currency(stock.code)}。${q.time?'行情源时间 '+q.time:'接口未提供行情时间；获取时间不代表成交时间。'}`:'等待连接，暂无可展示的行情。';
   syncPet();
   updateMood();
+  if ($('settings-dialog').open && settingsPanel === 'island') paintIslandPreview();
 }
 function syncPet(){
   const stock=selectedStock();if(!stock)return;
@@ -438,7 +439,7 @@ async function fetchQuotes(codes, epoch) {
     if (!stock) continue;
     const quote = resolved.get(code);
     if (quote) {
-      quotes.set(code, { quote, received });
+      rememberQuote(code, quote, received);
       snapshots.push({ code, price: quote.price, changePct: quote.changePct, received });
       if (stock.name !== quote.name) { stock.name = quote.name; renamed = true; }
     } else {
@@ -448,6 +449,17 @@ async function fetchQuotes(codes, epoch) {
   if (renamed && !nativeCover) persist();
   if (snapshots.length) window.NiulaiNative?.publishWatchQuotes?.(JSON.stringify(snapshots));
   updatePetMessage();
+}
+function rememberQuote(code, quote, received) {
+  const previous = quotes.get(code);
+  const at = quote.quotedAt ?? received;
+  let samples = previous?.quote?.session === quote.session ? previous?.samples || [] : [];
+  const last = samples[samples.length - 1];
+  if (last && at - last.at > 15 * 60 * 1000) samples = [];
+  if (!last || at > last.at || at === last.at && quote.price !== last.price) {
+    samples = [...samples.slice(-23), { at, price: quote.price }];
+  }
+  quotes.set(code, { quote, received, samples });
 }
 function changeTab(next) {
   if (!coverVisible()) tabScroll.set(tab, appContent.scrollTop);
@@ -482,6 +494,7 @@ function removeStock(code) {
   state.stocks = state.stocks.filter(s => s.code !== code); quotes.delete(code);
   markets.remove(code);
   if (state.selected === code) state.selected = state.stocks[0].code;
+  if (state.islandSymbol === code) state.islandSymbol = '';
   persist(); render(); updatePetMessage();
 }
 function openSearch() { $('search-dialog').showModal(); $('search-input').focus(); }
@@ -526,7 +539,7 @@ async function addStock(stock) {
     if (!active || epoch !== requestEpoch || searchTicket !== searchEpoch || !$('search-dialog').open) return;
     if (!quote || quote.price <= 0) throw new Error('暂未获取到有效行情，请检查代码或稍后再试');
     state.stocks.push({ code: stock.code, name: quote.name, cost: 0, shares: 0 });
-    quotes.set(stock.code, { quote, received: Date.now() }); persist(); select(stock.code); $('search-dialog').close(); toast('已加入自选');
+    rememberQuote(stock.code, quote, Date.now()); persist(); select(stock.code); $('search-dialog').close(); toast('已加入自选');
   } catch (error) { if (searchTicket === searchEpoch) $('search-message').textContent = error.message; }
   finally { adding = false; for (const button of document.querySelectorAll('#search-dialog .result, #search-dialog [data-code], #search-form button')) button.disabled = false; }
 }
@@ -712,17 +725,33 @@ function knockWood(fromCover = false) {
 }
 
 function paintIslandPreview() {
-  const quote = quotes.get(state.selected)?.quote;
+  const stock = state.stocks.find(item => item.code === state.islandSymbol) || selectedStock();
+  const entry = quotes.get(stock?.code), quote = entry?.quote;
   const wood = state.islandContent === 'muyu';
+  const style = wood ? 'quote' : state.islandStyle;
+  const minimal = style === 'minimal';
+  const light = state.islandTheme === 'light' || state.islandTheme === 'system' && !systemIsDark();
   const demo = document.querySelector('.island-demo');
-  demo.style.width=state.islandWidth+'px';demo.style.maxWidth='100%';
-  demo.classList.toggle('light', state.islandTheme === 'light' || state.islandTheme === 'system' && !systemIsDark());
-  $('island-demo-name').textContent = wood ? '牛来木鱼' : quote?.name || selectedStock()?.name || '牛来盯盘';
-  $('island-demo-value').textContent = wood ? '本轮 ' + Number(counts.session || 0).toLocaleString('zh-CN') : state.islandPrice && quote ? fmt(quote.price) : '牛来';
-  $('island-demo-percent').textContent = wood ? '+1' : state.islandPercent && quote ? signed(quote.changePct) + '%' : '';
-  $('island-demo-percent').className = wood ? '' : quote ? tone(quote.changePct) : '';
-  $('island-mini').hidden = !state.islandBull;
-  miniMotion?.state(wood?'muyu':liveMood);syncMotionVisibility();
+  demo.style.width = `${state.islandWidth}px`;
+  demo.classList.toggle('light', light);
+  demo.classList.toggle('trend', style === 'trend');
+  demo.classList.toggle('minimal', minimal);
+  $('island-demo-name').textContent = wood ? '牛来木鱼' : minimal && stock ? displaySymbol(stock.code) : quote?.name || stock?.name || '牛来盯盘';
+  const value = $('island-demo-value');
+  value.textContent = wood ? state.islandCount ? `本轮 ${Number(counts.session || 0).toLocaleString('zh-CN')}` : '轻触敲击'
+    : state.islandPrice ? quote ? marketPrice(quote.price, stock.code) : entry?.error ? '获取失败' : '等待行情' : '';
+  value.hidden = !value.textContent;
+  const percent = $('island-demo-percent');
+  percent.textContent = !wood && state.islandPercent && quote && Number.isFinite(quote.changePct) ? `${signed(quote.changePct)}%` : '';
+  percent.hidden = !percent.textContent;
+  percent.className = wood ? '' : tone(quote?.changePct);
+  $('island-mini').hidden = style !== 'quote' || !state.islandBull;
+  const chart = $('island-demo-chart');
+  const samples = entry?.samples || [];
+  chart.hidden = style !== 'trend' || state.islandWidth < 240 || samples.length < 2;
+  if (!chart.hidden) drawSparkline(chart, samples, light ? '#324e95' : '#adbfff');
+  miniMotion?.state(wood ? 'muyu' : stock?.code === state.selected ? liveMood : 'idle');
+  syncMotionVisibility();
 }
 
 function paintFeatureSettings() {
@@ -738,52 +767,69 @@ function paintFeatureSettings() {
   for (const stock of state.stocks) { const option = text('option', stock.name); option.value = stock.code; options.append(option); }
   options.value = state.islandSymbol;
   $('island-market-settings').hidden = state.islandContent === 'muyu';
-  $('islandCount').closest('.setting-row').hidden = state.islandContent !== 'muyu';
+  $('island-count-setting').hidden = state.islandContent !== 'muyu';
+  $('islandStyle').closest('.setting-row').hidden = state.islandContent === 'muyu';
   for (const key of ['islandWidth', 'islandOffsetX', 'islandOffsetY', 'islandCameraX', 'islandCameraWidth', 'islandCameraHeight']) $(key + '-value').textContent = state[key] + (key === 'islandCameraX' ? '%' : ' dp');
-  $('camera-manual').hidden = state.islandPlacement !== 'manual';
-  const cameraReady = window.NiulaiNative?.cameraInteractionReady?.() || false;
-  $('camera-status').textContent = cameraReady && state.islandCameraInteraction ? '前摄交互已开启。位置识别有误时，可选择手动校准。' : '要在摄像头周围点击和滑动，请在系统无障碍设置中开启“牛来前摄交互”。';
-  $('camera-permission').hidden = cameraReady;
   paintIslandStatus();
   paintIslandPreview();
 }
 
 function paintIslandStatus() {
-  let info = {};
-  try { info = JSON.parse(window.NiulaiNative?.islandStatus?.() || '{}'); } catch {}
+  const bridge = window.NiulaiNative;
+  let info;
+  try { info = JSON.parse(bridge?.islandStatus?.() || 'null'); } catch {}
+  const native = Boolean(info && !info.error);
+  info ||= {};
   const system = state.islandMode === 'system' || state.islandMode === 'auto' && info.supported;
-  const native = Boolean(window.NiulaiNative?.islandStatus) && !info.error;
-  const floating = !system || info.fallback && info.floating;
-  const visibleHint = info.floatingVisible ? '已显示在屏幕顶部' : info.floating ? '返回桌面或点击预览后显示' : '开启后可预览';
+  const xiaomi = info.focusProtocol >= 3 && info.xiaomiConfigured;
+  let systemBlock = '';
+  if (system) {
+    if (!info.supported) systemBlock = '此设备未提供系统实时通知';
+    else if (!info.notifications) systemBlock = '行情通知权限未开启';
+    else if (info.sdk < 36 && !xiaomi) systemBlock = '当前版本尚未接入小米超级岛';
+    else if (info.sdk >= 36 && !info.promotionAllowed && !xiaomi) systemBlock = '实时通知提升权限未开启';
+  }
+  const floating = !system || native && (info.fallback || Boolean(systemBlock));
+  const attached = info.floating && info.overlayPermission;
+  const preview = $('preview-island');
+  preview.disabled = !state.islandEnabled || !native || !bridge?.previewIsland || !(floating ? attached : info.systemActive);
+  preview.textContent = floating ? '预览悬浮窗 · 10 秒' : '预览系统实时通知 · 10 秒';
   let status = '请在 Android 安装版中查看灵动岛状态';
-  if (native && !system) {
-    status = info.overlayPermission ? `顶部悬浮窗。${visibleHint}` : '允许悬浮窗权限后，可在屏幕顶部显示';
-  } else if (native && info.promoted) {
-    status = '系统已提升实时通知，显示位置与展开样式由系统决定';
+  if (native && !state.islandEnabled) {
+    status = floating ? '已关闭。开启后使用顶部悬浮窗。' : '已关闭。开启后优先使用系统实时通知。';
+  } else if (native && floating) {
+    const reason = systemBlock || (system && info.fallback ? '系统未确认实时通知提升' : '');
+    const surface = !info.overlayPermission ? '顶部悬浮窗需要授权。'
+      : info.floatingVisible ? '顶部悬浮窗正在显示。'
+      : attached ? '顶部悬浮窗已就绪。可返回桌面或点击预览。'
+      : info.running ? '顶部悬浮窗暂不可用。' : '顶部悬浮窗未运行。可重新开启灵动岛。';
+    status = reason ? `${reason}。${surface}` : surface;
   } else if (native) {
-    if (!info.notifications) status = '系统通知权限或行情通知通道未开启';
-    else if (!info.supported) status = '当前系统尚未提供实时通知提升';
-    else if (info.sdk < 36 && !info.xiaomiConfigured) status = '当前版本尚未接入小米超级岛服务';
-    else if (info.sdk >= 36 && !info.promotionAllowed) status = '系统未授予实时通知提升权限';
-    else if (info.checking) status = '正在等待系统确认实时通知提升';
-    else if (info.posted || info.fallback) status = '系统未确认实时通知提升';
-    else status = '优先使用系统实时通知，开启后可预览';
-    if (info.fallback) status += info.floatingVisible ? '。当前使用顶部悬浮窗'
-      : info.floating ? '。已切换到顶部悬浮窗，返回桌面或点击预览后显示'
-      : info.overlayPermission ? '。顶部悬浮窗暂未显示，请重新开启灵动岛' : '。允许悬浮窗后可在屏幕顶部显示';
+    if (info.promoted) status = '系统已提升实时通知，显示位置与展开样式由系统控制。';
+    else if (info.oemRoute && info.posted) status = '已发送小米焦点通知。顶栏是否显示由系统决定。';
+    else if (info.oemRoute) status = '小米焦点通知已就绪。可返回桌面或点击预览。';
+    else if (info.checking || info.posted) status = '正在等待系统确认实时通知提升。';
+    else if (info.systemActive) status = '系统实时通知已就绪。可返回桌面或点击预览。';
+    else status = '系统实时通知未运行。可重新开启灵动岛。';
   }
-  $('island-system-status').textContent = status;
-  $('island-notification-settings').hidden = !native || !system;
-  $('island-overlay-settings').hidden = !window.NiulaiNative?.islandOverlaySettings || Boolean(info.overlayPermission) || system && !info.fallback;
-  for (const control of document.querySelectorAll('[data-floating-island]')) {
-    control.hidden = Boolean(system) || control.id === 'camera-manual' && state.islandPlacement !== 'manual' || control.id === 'camera-permission' && Boolean(window.NiulaiNative?.cameraInteractionReady?.());
-  }
-  $('preview-island').textContent = floating ? '预览悬浮窗 · 10 秒' : '发送系统通知预览 · 10 秒';
+  const statusText = $('island-system-status');
+  if (statusText.textContent !== status) statusText.textContent = status;
+  $('island-check-status').hidden = !native;
+  $('island-notification-settings').hidden = !native || !bridge?.islandSettings || !system || !info.supported;
+  $('island-overlay-settings').hidden = !native || !bridge?.islandOverlaySettings || !floating || Boolean(info.overlayPermission);
+  for (const control of document.querySelectorAll('[data-floating-island]')) control.hidden = !floating;
+  const cameraReady = Boolean(bridge?.cameraInteractionReady?.());
+  $('camera-manual').hidden = state.islandPlacement !== 'manual';
+  $('camera-status').hidden = !state.islandCameraInteraction;
+  $('camera-status').textContent = cameraReady ? '前摄交互已开启。位置识别有误时，可选择手动校准。' : '在系统无障碍设置中开启“牛来前摄交互”，即可在摄像头周围点击和滑动。';
+  $('camera-permission').hidden = !state.islandCameraInteraction || cameraReady || !bridge?.cameraInteractionSettings;
+  syncMotionVisibility();
 }
 
 $('island-check-status').onclick = paintIslandStatus;
 $('island-notification-settings').onclick = () => window.NiulaiNative?.islandSettings?.();
 $('island-overlay-settings').onclick = () => window.NiulaiNative?.islandOverlaySettings?.();
+window.__niulaiIslandChanged = paintIslandStatus;
 
 for (const [key, fallback] of Object.entries(featureDefaults)) {
   const element = $(key);

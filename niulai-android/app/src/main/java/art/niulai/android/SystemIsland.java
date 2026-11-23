@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -29,7 +30,7 @@ final class SystemIsland {
     }
 
     static boolean supported(Context context) {
-        return Build.VERSION.SDK_INT >= 36 || focusProtocol(context) >= 3;
+        return Build.VERSION.SDK_INT >= 36 || focusProtocol(context) >= 3 && !appId(context).isEmpty();
     }
 
     static boolean use(Context context, JSONObject config) {
@@ -59,8 +60,18 @@ final class SystemIsland {
     }
 
     static boolean canRequestPromotion(Context context) {
-        return notifications(context) && (promotionAllowed(context.getSystemService(NotificationManager.class))
-            || focusProtocol(context) >= 3 && !appId(context).isEmpty());
+        return notifications(context) && promotionAllowed(context.getSystemService(NotificationManager.class));
+    }
+
+    static boolean seemsOemEligible(Context context) {
+        if (focusProtocol(context) < 3 || appId(context).isEmpty() || !notifications(context)) return false;
+        try {
+            Bundle extras = new Bundle();
+            extras.putString("package", context.getPackageName());
+            Bundle result = context.getContentResolver().call(Uri.parse("content://miui.statusbar.notification.public"),
+                "canShowFocus", null, extras);
+            return result != null && result.getBoolean("canShowFocus");
+        } catch (RuntimeException ignored) { return false; }
     }
 
     private static Notification activeNotification(NotificationManager manager) {
@@ -97,6 +108,9 @@ final class SystemIsland {
             status.put("promoted", promoted(notification));
             status.put("posted", notification != null);
             status.put("enabled", state.optBoolean("islandEnabled"));
+            status.put("running", PetService.running);
+            status.put("systemActive", PetService.systemIslandActive);
+            status.put("oemRoute", PetService.islandOemRoute);
             status.put("overlayPermission", AndroidCompat.overlays(context));
             status.put("floating", PetService.islandShowing);
             status.put("floatingVisible", PetService.islandVisible);
@@ -108,7 +122,7 @@ final class SystemIsland {
         return status;
     }
 
-    static Notification create(Context context, JSONObject config, NativeMarket.Quote quote, String error) {
+    static Notification create(Context context, JSONObject config, NativeMarket.Quote quote, String error, boolean requestPromotion) {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "系统灵动岛行情", NotificationManager.IMPORTANCE_DEFAULT);
         channel.setDescription("用户开启盯盘期间的实时行情与关闭操作");
@@ -119,7 +133,7 @@ final class SystemIsland {
         String selected = config.optString("islandSymbol");
         if (!NativeMarket.valid(selected)) selected = config.optString("symbol", "s_sh000001");
         String name = quote == null ? NativeMarket.display(selected) : quote.name;
-        String value = quote == null ? "等待行情" : String.format(Locale.US, "%.2f", quote.price);
+        String value = quote == null ? (error == null ? "等待行情" : "获取失败") : NativeMarket.priceText(quote);
         String change = quote == null || !Double.isFinite(quote.pct) ? "" : String.format(Locale.US, "%+.2f%%", quote.pct);
         if (!config.optBoolean("islandPrice", true)) value = "盯盘中";
         if (!config.optBoolean("islandPercent", true)) change = "";
@@ -129,8 +143,8 @@ final class SystemIsland {
             change = "";
         }
         String summary = value + (change.isEmpty() ? "" : "  " + change);
-        String source = wood ? "点击通知打开木鱼" : quote == null ? "正在获取公开行情" : ("tencent".equals(quote.source) ? "腾讯" : "新浪") + " · 获取于 " + new java.text.SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(new java.util.Date(quote.received));
-        if (error != null) source = "更新失败，保留上次报价";
+        String source = wood ? "点击通知打开牛来" : quote == null ? "正在获取公开行情" : ("tencent".equals(quote.source) ? "腾讯" : "新浪") + " · 获取于 " + new java.text.SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(new java.util.Date(quote.received));
+        if (!wood && error != null) source = quote == null ? "行情暂不可用" : "更新失败，保留上次报价";
         int icon = context.getResources().getIdentifier("pet_notification", "drawable", context.getPackageName());
         PendingIntent open = PendingIntent.getActivity(context, 70, new Intent(context, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = new Notification.Builder(context, CHANNEL)
@@ -150,20 +164,22 @@ final class SystemIsland {
             builder.addAction(new Notification.Action.Builder(null, "下一只", action(context, "art.niulai.ISLAND_NEXT", 72)).build());
         }
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
-        if (Build.VERSION.SDK_INT >= 36) {
+        if (requestPromotion) builder.setDeleteIntent(action(context, PetService.CLOSE_ISLAND, 74));
+        if (requestPromotion && Build.VERSION.SDK_INT >= 36) {
             // The framework builder setter is public from 36.1. Android 16 also accepts the extras key.
             Bundle liveUpdate = new Bundle();
             liveUpdate.putBoolean(REQUEST_PROMOTION, true);
             builder.addExtras(liveUpdate);
             try {
-                String critical = wood ? "木鱼" : change.isEmpty() ? value : change;
+                String critical = wood ? "木鱼" : error != null ? "行情延迟" : change.isEmpty() ? value : change;
+                if (critical.length() > 7) critical = "盯盘中";
                 Notification.Builder.class.getMethod("setShortCriticalText", String.class).invoke(builder, critical);
             } catch (ReflectiveOperationException reflectionError) {
                 android.util.Log.w("NiulaiIsland", "Live Update short text unavailable", reflectionError);
             }
         }
         Notification notification = builder.build();
-        if (focusProtocol(context) >= 3 && !appId(context).isEmpty()) {
+        if (requestPromotion && focusProtocol(context) >= 3 && !appId(context).isEmpty()) {
             try {
                 notification.extras.putString("miui.focus.param", xiaomiPayload(name, summary, change));
                 Bundle pictures = new Bundle();

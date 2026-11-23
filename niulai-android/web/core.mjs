@@ -29,12 +29,14 @@ export function loadState(storage) {
       cursors[code] = { since: cursor.since, seen: cursor.seen.filter(id => typeof id === 'string' && /^[0-9a-f]{16}$/.test(id)).slice(-75) };
     }
   }
+  const features = cleanFeatures(raw);
+  if (!stocks.some(stock => stock.code === features.islandSymbol)) features.islandSymbol = '';
   return { stocks, selected: stocks.some(s => s.code === raw.selected) ? raw.selected : stocks[0].code,
     theme: ['system', 'light', 'dark'].includes(raw.theme) ? raw.theme : 'system',
     sound: raw.sound === true, haptic: raw.haptic !== false, motion: raw.motion !== false,
     interval: [1, 3, 5, 10, 30].includes(raw.interval) ? raw.interval : 3,
     private: raw.private !== false, scene: [0,1,2,3].includes(raw.scene) ? raw.scene : 0,
-    smartScene: raw.smartScene !== false, ...cleanFeatures(raw),
+    smartScene: raw.smartScene !== false, ...features,
     news: { followed, cursors, notifications: raw.news?.notifications === true, autoTranslate: raw.news?.autoTranslate !== false }
   };
 }

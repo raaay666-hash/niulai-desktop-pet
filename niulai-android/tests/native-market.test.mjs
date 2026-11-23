@@ -39,3 +39,12 @@ test('native symbol entry uses the same A/HK/US canonical codes',()=>{
   const inputs=['600519','sh000001','sz000001','上证','00700','hk700','700.hk','AAPL','$AAPL','AAPL.US','gb_msft','https://bad.example','12345678'];
   const results=java(inputs.map(s=>'N\t'+b64(s)));inputs.forEach((s,i)=>assert.equal(results[i],normalizeMarketSymbol(s)||'-',s));
 });
+test('Island trend stays within its symbol and session and preserves small prices', () => {
+  const trend = path.join(path.dirname(source), 'IslandTrend.java');
+  const harness = path.join(project, 'tests/IslandTrendHarness.java');
+  const env = { encoding: 'utf8', windowsHide: true };
+  const build = spawnSync('javac', ['-encoding', 'UTF-8', '--release', '8', '-cp', classes, '-d', classes, trend, harness], env);
+  assert.equal(build.status, 0, build.stderr);
+  const result = spawnSync('java', ['-cp', classes, 'art.niulai.android.IslandTrendHarness'], env);
+  assert.equal(result.status, 0, result.stderr);
+});

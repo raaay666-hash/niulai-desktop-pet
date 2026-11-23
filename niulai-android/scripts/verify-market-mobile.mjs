@@ -104,7 +104,8 @@ await page.addInitScript(() => {
     haptic() {}, appearance() {}, configurePet() {}, publishQuote() {}, petStatus() { return 'permission'; },
     openNewsArticle(url) { window.__article = url; return true; },
     newsPermission() { return Boolean(window.__permission); },
-    updatePermission() { window.__permission = true; },
+    newsSettings() { window.__permission = true; },
+    testNewsNotification() { window.__testNewsNotification = true; },
     showStockNews(code, title) { window.__notification = [code, title]; return window.__permission; }
   };
 });
@@ -141,7 +142,7 @@ try {
   assert.equal(await news.locator('.market-news-original:visible').count(), 0);
   await news.locator('.market-news-notify').check();
   await news.locator('.market-news-test').tap();
-  await news.getByText('已发送测试通知', { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.__testNewsNotification), true);
   assert.equal(await page.evaluate(() => window.__permission), true);
   assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('niulai:android:v1')).news.followed), ['gb_aapl']);
   pass('bilingual newsroom, translation preference, stock following and native notification bridge');

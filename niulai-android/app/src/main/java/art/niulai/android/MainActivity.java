@@ -88,10 +88,19 @@ public class MainActivity extends Activity {
     private boolean pendingPet = false;
     private boolean requestingNotifications, launchPetAfterPermission, testNewsAfterPermission;
     private String requestedFeature = "pet";
-    private final BroadcastReceiver petChanged = new BroadcastReceiver() { @Override public void onReceive(Context c, Intent i) { notifyPetState(); } };
+    private final BroadcastReceiver petChanged = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            if (i.getBooleanExtra(PetService.ISLAND_STATUS_ONLY, false)) notifyIslandState();
+            else notifyPetState();
+        }
+    };
     protected boolean coverMode() { return false; }
     private void js(String script) { runOnUiThread(() -> { if (web != null && !isFinishing()) web.evaluateJavascript(script, null); }); }
-    private void notifyPetState() { if(panel!=null)panel.updatePetState();else js("window.__niulaiPetChanged && window.__niulaiPetChanged();window.__niulaiSettingsChanged && window.__niulaiSettingsChanged()"); }
+    private void notifyIslandState() { js("window.__niulaiIslandChanged && window.__niulaiIslandChanged()"); }
+    private void notifyPetState() {
+        if (panel != null) panel.updatePetState();
+        else js("window.__niulaiPetChanged && window.__niulaiPetChanged();window.__niulaiSettingsChanged && window.__niulaiSettingsChanged();window.__niulaiIslandChanged && window.__niulaiIslandChanged()");
+    }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         selectWidgetStock(getIntent());
@@ -178,6 +187,10 @@ public class MainActivity extends Activity {
         boolean island = "island".equals(feature);
         if (enabled) requestFeature(island ? "island" : "pet");
         else {
+            if (requestedFeature.equals(island ? "island" : "pet")) {
+                pendingPet = false;
+                launchPetAfterPermission = false;
+            }
             AppState.feature(this, island ? "islandEnabled" : "petEnabled", false);
             if (PetService.running) startService(new Intent(this, PetService.class).setAction(island ? PetService.CLOSE_ISLAND : PetService.CLOSE_PET));
             notifyPetState();
@@ -200,8 +213,33 @@ public class MainActivity extends Activity {
         launchPet();
     }
     private void launchPet() {
-        try { AppState.feature(this,requestedFeature.equals("island")?"islandEnabled":"petEnabled",true);AndroidCompat.startPet(this); notifyPetState(); }
-        catch (Exception e) { Toast.makeText(this,"桌宠未能启动，请检查悬浮窗和后台运行权限",Toast.LENGTH_LONG).show(); }
+        boolean island = requestedFeature.equals("island");
+        String key = island ? "islandEnabled" : "petEnabled";
+        try {
+            AppState.feature(this, key, true);
+            AndroidCompat.startPet(this);
+        } catch (RuntimeException error) {
+            AppState.feature(this, key, island ? PetService.islandShowing || PetService.systemIslandActive : PetService.petShowing);
+            Toast.makeText(this, (island ? "灵动岛" : "桌宠") + "未能启动，请检查权限后重试", Toast.LENGTH_LONG).show();
+        }
+        notifyPetState();
+    }
+
+    private void openIslandNotificationSettings() {
+        if (!AlertChannel.hasPermission(this) && requestNotificationPermission(false)) return;
+        Intent settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+        if (AlertChannel.appEnabled(this)) {
+            NotificationChannel channel = getSystemService(NotificationManager.class).getNotificationChannel(SystemIsland.CHANNEL);
+            if (channel != null && channel.getImportance() == NotificationManager.IMPORTANCE_NONE) {
+                settings = new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()).putExtra(Settings.EXTRA_CHANNEL_ID, SystemIsland.CHANNEL);
+            } else if (Build.VERSION.SDK_INT >= 36) {
+                Intent promotion = new Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS")
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                if (promotion.resolveActivity(getPackageManager()) != null) settings = promotion;
+            }
+        }
+        try { startActivity(settings); } catch (RuntimeException error) { supportSettingsNative("app"); }
     }
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] grants) {
         super.onRequestPermissionsResult(code,permissions,grants);
@@ -287,12 +325,7 @@ public class MainActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))); }
             catch (RuntimeException error) { supportSettingsNative("app"); }
         });}
-        @JavascriptInterface public void islandSettings(){runOnUiThread(()->{
-            if (!AlertChannel.hasPermission(MainActivity.this) && requestNotificationPermission(false)) return;
-            Intent settings = new Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS").putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
-            if (!AlertChannel.appEnabled(MainActivity.this) || Build.VERSION.SDK_INT < 36 || settings.resolveActivity(getPackageManager()) == null) settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
-            try { startActivity(settings); } catch (RuntimeException error) { supportSettingsNative("app"); }
-        });}
+        @JavascriptInterface public void islandSettings(){runOnUiThread(MainActivity.this::openIslandNotificationSettings);}
         @JavascriptInterface public void cameraInteractionSettings(){runOnUiThread(()->{
             try { Intent settings = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS); startActivity(settings); }
             catch (RuntimeException error) { Toast.makeText(MainActivity.this,"请在系统无障碍设置中开启牛来前摄交互",Toast.LENGTH_LONG).show(); }
@@ -350,12 +383,13 @@ public class MainActivity extends Activity {
             refreshNotificationState();
         }
         JSONObject resumeState = AppState.load(this);
+        PetService.appVisible = true;
         if (!pendingPet && !PetService.running
                 && (AndroidCompat.overlays(this) || resumeState.optBoolean("islandEnabled") && SystemIsland.use(this, resumeState))
                 && (resumeState.optBoolean("petEnabled") || resumeState.optBoolean("islandEnabled"))) {
-            AndroidCompat.startPet(this);
+            try { AndroidCompat.startPet(this); }
+            catch (RuntimeException error) { android.util.Log.w("NiulaiPet", "Cannot restore floating features", error); }
         }
-        PetService.appVisible = true;
         sendBroadcast(new Intent(PetService.APP_VISIBLE).setPackage(getPackageName()));
         StackWidgetProvider.refreshAll(this);
         js("window.__niulaiSystemTheme && window.__niulaiSystemTheme()");

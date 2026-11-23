@@ -29,6 +29,13 @@ final class NativeMarket {
     }
     static String display(String code){return code.startsWith("gb_")?code.substring(3).toUpperCase(Locale.US):code.startsWith("rt_hk")?"HK "+code.substring(5):code.replaceFirst("^s_","");}
     static String currency(String code){return code.startsWith("gb_")?"USD":code.startsWith("rt_hk")?"HKD":"CNY";}
+    static String priceText(Quote quote) {
+        if (quote == null || !Double.isFinite(quote.price) || quote.price <= 0) return "—";
+        int digits = quote.code.startsWith("rt_hk") ? 3 : 2;
+        if (quote.price < .000001) return String.format(Locale.US, "%.2e", quote.price);
+        if (quote.price < 1) digits = Math.max(digits, Math.min(6, 1 + (int)Math.ceil(-Math.log10(quote.price))));
+        return String.format(Locale.US, "%,." + digits + "f", quote.price);
+    }
     static String provider(String code){return code.startsWith("rt_hk")?"hk"+code.substring(5):code.startsWith("gb_")?"us"+code.substring(3).toUpperCase(Locale.US):code;}
     static String field(String[] parts,int index){return index>=0&&index<parts.length?parts[index]:"";}
     static double number(String[] parts,int index){try{return Double.parseDouble(field(parts,index));}catch(Exception e){return Double.NaN;}}
