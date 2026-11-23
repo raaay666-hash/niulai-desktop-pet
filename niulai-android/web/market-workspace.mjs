@@ -61,6 +61,7 @@ export class MobileMarkets {
       this.revealNews();
     };
     window.__niulaiNewsTarget = openTarget;
+    window.__niulaiNotificationsChanged = () => this.schedule(0);
     const savedTarget = native()?.newsTarget?.();
     if (savedTarget) setTimeout(() => openTarget(savedTarget), 0);
   }
@@ -161,8 +162,12 @@ export class MobileMarkets {
 
   async save(operation, value) {
     const preferences = this.state.news;
-    if (operation === 'test') return Boolean(native()?.showStockNews?.('', '牛来盯盘 · 新闻通知', '关注的股票出现新消息时会在这里提醒。'));
-    if (operation === 'permissions') { native()?.updatePermission?.(); return true; }
+    if (operation === 'test') {
+      if (!native()?.testNewsNotification) return false;
+      native().testNewsNotification();
+      return null;
+    }
+    if (operation === 'permissions') { native()?.newsSettings?.(); return true; }
     if (operation === 'follow') {
       if (preferences.followed.includes(value)) this.remove(value);
       else {
@@ -172,7 +177,7 @@ export class MobileMarkets {
     } else if (operation === 'notifications' || operation === 'autoTranslate') {
       if (operation === 'notifications' && value !== preferences.notifications) {
         preferences.cursors = {};
-        if (value && !native()?.newsPermission?.()) native()?.updatePermission?.();
+        if (value && !native()?.newsPermission?.()) native()?.newsSettings?.();
       }
       preferences[operation] = value;
     }
@@ -212,14 +217,17 @@ export class MobileMarkets {
         const result = await this.loadNews(stock).catch(() => null);
         if (!allowed() || !preferences.followed.includes(code) || !result) continue;
         const { cursor, eligible } = newsNotificationBatch(preferences.cursors[code], result.articles, Date.now(), newsId);
+        if (eligible.length) {
+          if (!native()?.newsPermission?.()) continue;
+          const [latest] = eligible;
+          const translated = preferences.autoTranslate ? await this.headline(latest) : '';
+          if (!allowed() || !preferences.followed.includes(code)) continue;
+          const extra = eligible.length > 1 ? ' · 另有 ' + (eligible.length - 1) + ' 条' : '';
+          const sent = native()?.showStockNews?.(code, stock.name + ' · ' + latest.publisher + extra, translated || latest.title);
+          if (!sent) continue;
+        }
         preferences.cursors[code] = cursor;
         this.persist();
-        if (!eligible.length || !native()?.newsPermission?.()) continue;
-        const [latest] = eligible;
-        const translated = preferences.autoTranslate ? await this.headline(latest) : '';
-        if (!allowed() || !preferences.followed.includes(code)) continue;
-        const extra = eligible.length > 1 ? ' · 另有 ' + (eligible.length - 1) + ' 条' : '';
-        native()?.showStockNews?.(code, stock.name + ' · ' + latest.publisher + extra, translated || latest.title);
       }
     } finally {
       this.checking = false;

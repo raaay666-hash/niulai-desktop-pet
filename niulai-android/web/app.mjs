@@ -18,7 +18,7 @@ const appContent = $('app-content');
 const nativeCover = location.hash === '#cover';
 const openFeedback = createFeedbackForm({
   submit: value => request('feedback', JSON.stringify(value)),
-  context: () => (JSON.parse(window.NiulaiNative?.updateStatus?.() || '{}').current || '1.6.2') + ' · Android',
+  context: () => (JSON.parse(window.NiulaiNative?.updateStatus?.() || '{}').current || '1.6.3') + ' · Android',
   open: () => {
     for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
     $('feedback-dialog').showModal();
@@ -31,7 +31,7 @@ window.__niulaiUpdate = value => {
   $('update-banner').hidden = !value.available;
   $('update-title').textContent = '牛来盯盘 ' + (value.version || '') + ' 已发布';
   $('update-note').textContent = (value.notes || []).slice(0, 2).join(' · ');
-  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.6.2'));
+  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.6.3'));
   $('check-update').disabled = Boolean(value.checking);
   $('update-notifications').checked = value.enabled !== false;
   $('update-permission').textContent = value.permission ? '系统通知设置' : '开启系统通知';
@@ -752,27 +752,38 @@ function paintIslandStatus() {
   let info = {};
   try { info = JSON.parse(window.NiulaiNative?.islandStatus?.() || '{}'); } catch {}
   const system = state.islandMode === 'system' || state.islandMode === 'auto' && info.supported;
-  let status = '顶部悬浮窗模式';
-  if (system) {
-    if (!window.NiulaiNative?.islandStatus) status = '请在安装版中检查系统实时通知能力';
-    else if (!info.notifications) status = '请开启牛来的通知权限和“系统灵动岛行情”通知通道';
-    else if (info.promoted) status = '已获得系统实时通知提升，岛的外观与展开由系统管理';
-    else if (info.sdk < 36 && info.focusProtocol < 3) status = '当前系统尚未提供 Android 16 实时通知或小米超级岛接口';
-    else if (info.sdk < 36 && !info.xiaomiConfigured) status = '当前系统需接入小米超级岛服务，等待开发者配置 App ID 与服务授权';
-    else if (info.sdk >= 36 && !info.promotionAllowed) status = '系统实时通知提升权限尚未开启，可前往系统通知设置检查';
-    else if (info.posted) status = '已发送系统实时通知，系统尚未确认提升状态';
-    else status = '系统实时通知模式，可开启后预览，或返回桌面查看';
+  const native = Boolean(window.NiulaiNative?.islandStatus) && !info.error;
+  const floating = !system || info.fallback && info.floating;
+  const visibleHint = info.floatingVisible ? '已显示在屏幕顶部' : info.floating ? '返回桌面或点击预览后显示' : '开启后可预览';
+  let status = '请在 Android 安装版中查看灵动岛状态';
+  if (native && !system) {
+    status = info.overlayPermission ? `顶部悬浮窗。${visibleHint}` : '允许悬浮窗权限后，可在屏幕顶部显示';
+  } else if (native && info.promoted) {
+    status = '系统已提升实时通知，显示位置与展开样式由系统决定';
+  } else if (native) {
+    if (!info.notifications) status = '系统通知权限或行情通知通道未开启';
+    else if (!info.supported) status = '当前系统尚未提供实时通知提升';
+    else if (info.sdk < 36 && !info.xiaomiConfigured) status = '当前版本尚未接入小米超级岛服务';
+    else if (info.sdk >= 36 && !info.promotionAllowed) status = '系统未授予实时通知提升权限';
+    else if (info.checking) status = '正在等待系统确认实时通知提升';
+    else if (info.posted || info.fallback) status = '系统未确认实时通知提升';
+    else status = '优先使用系统实时通知，开启后可预览';
+    if (info.fallback) status += info.floatingVisible ? '。当前使用顶部悬浮窗'
+      : info.floating ? '。已切换到顶部悬浮窗，返回桌面或点击预览后显示'
+      : info.overlayPermission ? '。顶部悬浮窗暂未显示，请重新开启灵动岛' : '。允许悬浮窗后可在屏幕顶部显示';
   }
   $('island-system-status').textContent = status;
-  $('island-notification-settings').hidden = !system;
+  $('island-notification-settings').hidden = !native || !system;
+  $('island-overlay-settings').hidden = !window.NiulaiNative?.islandOverlaySettings || Boolean(info.overlayPermission) || system && !info.fallback;
   for (const control of document.querySelectorAll('[data-floating-island]')) {
     control.hidden = Boolean(system) || control.id === 'camera-manual' && state.islandPlacement !== 'manual' || control.id === 'camera-permission' && Boolean(window.NiulaiNative?.cameraInteractionReady?.());
   }
-  $('preview-island').textContent = system ? '发送系统岛预览 · 10 秒' : '预览悬浮窗 · 10 秒';
+  $('preview-island').textContent = floating ? '预览悬浮窗 · 10 秒' : '发送系统通知预览 · 10 秒';
 }
 
 $('island-check-status').onclick = paintIslandStatus;
 $('island-notification-settings').onclick = () => window.NiulaiNative?.islandSettings?.();
+$('island-overlay-settings').onclick = () => window.NiulaiNative?.islandOverlaySettings?.();
 
 for (const [key, fallback] of Object.entries(featureDefaults)) {
   const element = $(key);

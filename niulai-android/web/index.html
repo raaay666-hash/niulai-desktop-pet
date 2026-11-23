@@ -108,9 +108,10 @@
   <section class="settings-section" id="island-settings" data-settings-panel="island" role="tabpanel" aria-labelledby="settings-tab-island"><h3>灵动岛</h3>
     <div class="island-demo"><canvas id="island-mini" width="80" height="80" aria-label="微缩牛来"></canvas><div><small id="island-demo-name">牛来盯盘</small><strong id="island-demo-value">—</strong></div><b id="island-demo-percent">—</b></div>
     <div class="setting-row"><label for="islandEnabled">开启灵动岛</label><input id="islandEnabled" type="checkbox" role="switch"></div>
-    <div class="setting-row"><label for="islandMode">显示方式</label><select id="islandMode"><option value="auto">自动选择系统支持</option><option value="system">系统灵动岛 / 实时通知</option><option value="floating">顶部悬浮窗</option></select></div>
+    <div class="setting-row"><label for="islandMode">显示方式</label><select id="islandMode"><option value="auto">自动选择</option><option value="system">优先使用系统实时通知</option><option value="floating">顶部悬浮窗</option></select></div>
     <p id="island-system-status" class="subtext" role="status"></p>
     <button id="island-notification-settings" class="text-button full">系统实时通知权限</button>
+    <button id="island-overlay-settings" type="button" class="text-button full" hidden>允许顶部悬浮窗</button>
     <button id="island-check-status" class="text-button full">检查系统接入状态</button>
     <button id="preview-island" class="text-button full">预览灵动岛 · 10 秒</button>
     <div class="setting-row"><label for="islandContent">显示内容</label><select id="islandContent"><option value="market">股票行情</option><option value="muyu">木鱼计数</option></select></div>
@@ -152,10 +153,10 @@
     <div class="setting-row"><label for="smartScene">首页跟随常规交易时段</label><input id="smartScene" type="checkbox" role="switch"></div>
       <p class="eyebrow">使用模式</p><div class="quick-stocks"><button data-preset="office">静音</button><button data-preset="commute">通勤</button><button data-preset="home">标准</button><button data-preset="battery">省电</button></div>
       <h3>版本更新</h3><div class="setting-row"><label for="update-notifications">系统更新提醒</label><input id="update-notifications" type="checkbox" role="switch" checked></div>
-      <p id="update-status" class="subtext" role="status">当前版本 1.6.2</p><p class="subtext">有新版本时提醒一次。</p>
+      <p id="update-status" class="subtext" role="status">当前版本 1.6.3</p><p class="subtext">有新版本时提醒一次。</p>
       <div class="quick-stocks"><button id="check-update">检查更新</button><button id="update-permission">系统通知设置</button><button id="update-history">更新记录</button></div>
   </section>
-  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.6.2</strong><button id="about-feedback" class="text-button full">问题与建议</button><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛可使用系统实时通知或顶部悬浮窗。在设置中选择显示方式。悬浮窗和桌宠需要悬浮窗权限，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
+  <div class="about" id="about-settings" data-settings-panel="about" role="tabpanel" aria-labelledby="settings-tab-about" hidden><strong>牛来盯盘 Android · 1.6.3</strong><button id="about-feedback" class="text-button full">问题与建议</button><p>行情来自新浪 / 腾讯公开接口，可能延迟或中断。常规时段按周历估算，节假日和临时休市以交易所公告为准。</p><p>灵动岛可使用系统实时通知或顶部悬浮窗。在设置中选择显示方式。悬浮窗和桌宠需要悬浮窗权限，锁屏与熄屏时暂停。</p><p>自选、持仓和木鱼计数保存在本机。搜索词与股票代码发送给行情提供方，成本、股数和计数保存在本机。</p></div>
 </dialog>
   <section id="cover-view" class="cover-view" aria-label="牛来背屏" hidden>
     <div id="cover-tools" class="cover-tools" aria-label="预览尺寸" hidden>

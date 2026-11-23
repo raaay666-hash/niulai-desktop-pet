@@ -14,7 +14,9 @@ import org.json.*;
 public class PetService extends Service {
     static final String CONFIG = "art.niulai.CONFIG", CHANGED = "art.niulai.PET_CHANGED", STOP = "art.niulai.STOP";
     static final String APP_VISIBLE = "art.niulai.APP_VISIBLE", CLOSE_PET = "art.niulai.CLOSE_PET", CLOSE_ISLAND = "art.niulai.CLOSE_ISLAND";
+    private static final long PROMOTION_GRACE_MS = 3000, PROMOTION_RECHECK_MS = 10000;
     public static volatile boolean running, petShowing, islandShowing, systemIslandActive, appVisible;
+    static volatile boolean islandFallback, islandVisible, islandCheckingPromotion;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager wm;
     private WindowManager islandWm;
@@ -35,11 +37,14 @@ public class PetService extends Service {
     private String symbol = "s_sh000001", islandSymbol = "s_sh000001";
     private boolean collapsed, receiverRegistered;
     private boolean systemIsland, systemIslandVisible;
+    private boolean promotionEligible, promotionConfirmed;
+    private String islandMode = "";
     private String notificationKey = "";
     private long previewUntil;
     private MuyuSound woodSound;
     private android.animation.ValueAnimator islandAnimator;
     private final Runnable endPreview = this::syncVisibility;
+    private final Runnable promotionCheck = this::checkIslandPromotion;
     private final Runnable collapseIsland = () -> {
         if (island != null && island.expanded() && config.optBoolean("islandAutoCollapse", true)) toggleIsland();
     };
@@ -53,6 +58,8 @@ public class PetService extends Service {
             } else if (Intent.ACTION_CONFIGURATION_CHANGED.equals(action)) {
                 configure();
                 StackWidgetProvider.refreshAll(PetService.this);
+            } else if (APP_VISIBLE.equals(action) && appVisible) {
+                configure();
             } else syncVisibility();
         }
     };
@@ -153,7 +160,18 @@ public class PetService extends Service {
             }
             PetConfig.configure(this, state.toString());
             config = new JSONObject(PetConfig.json(this));
-            systemIsland = SystemIsland.use(this, config);
+            String nextMode = config.optString("islandMode", "auto");
+            boolean nextSystemIsland = config.optBoolean("islandEnabled") && SystemIsland.use(this, config);
+            boolean nextPromotionEligible = nextSystemIsland && SystemIsland.canRequestPromotion(this);
+            if (systemIsland != nextSystemIsland || promotionEligible != nextPromotionEligible || !islandMode.equals(nextMode)) {
+                cancelPromotionCheck();
+                islandFallback = false;
+                if (nextSystemIsland && !nextPromotionEligible) startIslandFallback();
+            }
+            islandMode = nextMode;
+            systemIsland = nextSystemIsland;
+            systemIslandActive = nextSystemIsland;
+            promotionEligible = nextPromotionEligible;
             refreshIslandHost();
             String nextSymbol = config.optString("symbol", "s_sh000001");
             if (!symbol.equals(nextSymbol)) { primaryQuote = null; primaryError = null; }
@@ -186,12 +204,15 @@ public class PetService extends Service {
             } else if (!config.optBoolean("petEnabled") && petShowing) {
                 wm.removeView(root); petShowing = false;
             }
-            if (config.optBoolean("islandEnabled") && !systemIsland && AndroidCompat.overlays(this) && !islandShowing) {
+        } catch (RuntimeException e) { android.util.Log.w("NiulaiPet", "Floating pet unavailable", e); }
+        try {
+            boolean showFloating = config.optBoolean("islandEnabled") && (!systemIsland || islandFallback) && AndroidCompat.overlays(this);
+            if (showFloating && !islandShowing) {
                 placeIsland(); updateBridge(); islandWm.addView(island, islandParams); islandShowing = true;
-            } else if ((!config.optBoolean("islandEnabled") || systemIsland) && islandShowing) {
+            } else if (!showFloating && islandShowing) {
                 islandWm.removeView(island); islandShowing = false; removeBridge();
             }
-        } catch (RuntimeException e) { android.util.Log.w("NiulaiPet", "Floating window unavailable", e); stopSelf(); }
+        } catch (RuntimeException e) { android.util.Log.w("NiulaiPet", "Floating island unavailable", e); removeBridge(); }
     }
 
     private Point displaySize() {
@@ -300,8 +321,9 @@ public class PetService extends Service {
             && !((KeyguardManager)getSystemService(KEYGUARD_SERVICE)).isKeyguardLocked();
         boolean preview = SystemClock.uptimeMillis() < previewUntil;
         boolean petVisible = screen && petShowing && (!appVisible || !config.optBoolean("petHideInApp", true) || preview);
-        boolean islandVisible = screen && islandShowing && (!appVisible || !config.optBoolean("islandHideInApp", true) || preview);
-        systemIslandVisible = screen && systemIsland && config.optBoolean("islandEnabled") && (!appVisible || !config.optBoolean("islandHideInApp", true) || preview);
+        boolean showIsland = screen && (!appVisible || !config.optBoolean("islandHideInApp", true) || preview);
+        islandVisible = showIsland && islandShowing;
+        systemIslandVisible = showIsland && systemIsland && !islandShowing;
         root.setVisibility(petVisible ? View.VISIBLE : View.INVISIBLE);
         island.setVisibility(islandVisible ? View.VISIBLE : View.INVISIBLE);
         if (cameraBridge != null) cameraBridge.setVisibility(islandVisible ? View.VISIBLE : View.INVISIBLE);
@@ -312,6 +334,8 @@ public class PetService extends Service {
         feed.setActive((petVisible && petMarket) || ((islandVisible || systemIslandVisible) && islandMarket && islandSymbol.equals(symbol)));
         islandFeed.setActive((islandVisible || systemIslandVisible) && islandMarket && !islandSymbol.equals(symbol));
         updateSystemNotification();
+        if (systemIslandVisible && promotionEligible && !islandFallback) schedulePromotionCheck();
+        else cancelPromotionCheck();
         if (!screen) woodSound.stop();
         android.util.Log.i("NiulaiPet", "visible=" + petVisible + ";island=" + islandVisible);
     }
@@ -325,7 +349,40 @@ public class PetService extends Service {
         notificationKey = key;
         Notification notification = systemIslandVisible ? SystemIsland.create(this, config, quote, error) : AndroidCompat.notification(this);
         getSystemService(NotificationManager.class).notify(SystemIsland.NOTIFICATION_ID, notification);
-        systemIslandActive = systemIsland && config.optBoolean("islandEnabled");
+    }
+
+    private void schedulePromotionCheck() {
+        if (islandCheckingPromotion) return;
+        islandCheckingPromotion = true;
+        handler.postDelayed(promotionCheck, promotionConfirmed ? PROMOTION_RECHECK_MS : PROMOTION_GRACE_MS);
+    }
+
+    private void cancelPromotionCheck() {
+        handler.removeCallbacks(promotionCheck);
+        islandCheckingPromotion = false;
+        promotionConfirmed = false;
+    }
+
+    private void checkIslandPromotion() {
+        islandCheckingPromotion = false;
+        if (!systemIslandVisible || islandFallback) return;
+        if (SystemIsland.promoted(this)) {
+            if (!promotionConfirmed) sendBroadcast(new Intent(CHANGED).setPackage(getPackageName()));
+            promotionConfirmed = true;
+            schedulePromotionCheck();
+            return;
+        }
+        startIslandFallback();
+        attachSurfaces();
+        syncVisibility();
+        sendBroadcast(new Intent(CHANGED).setPackage(getPackageName()));
+    }
+
+    private void startIslandFallback() {
+        islandFallback = true;
+        if (islandAnimator != null) islandAnimator.cancel();
+        handler.removeCallbacks(collapseIsland);
+        island.expanded(false);
     }
 
     private void togglePet() {
@@ -433,6 +490,7 @@ public class PetService extends Service {
     @Override public void onDestroy() {
         running = false;
         systemIslandActive = false;
+        islandFallback = islandVisible = islandCheckingPromotion = false;
         if(islandAnimator!=null)islandAnimator.cancel();
         handler.removeCallbacksAndMessages(null);
         if (feed != null) feed.close();
