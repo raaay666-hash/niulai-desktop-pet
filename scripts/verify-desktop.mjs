@@ -9,6 +9,10 @@ const { _electron } = require('../niulai-android/node_modules/playwright');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = process.env.NIULAI_QA_OUTPUT || path.join(root, 'outputs/desktop-1.5.0');
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'niulai-desktop-150-'));
+await fs.writeFile(path.join(profile, 'desktop-state-v2.json'), JSON.stringify({
+  state: { settings: { islandEnabled: true, islandSymbol: 's_sh600519' } },
+  positions: { island: { x: 30, y: 30 } }
+}));
 await fs.mkdir(output, { recursive: true });
 const checks = [], errors = [];
 const executablePath = process.env.NIULAI_QA_EXECUTABLE || require('electron');
@@ -106,21 +110,14 @@ try {
   await page.waitForFunction(() => !document.getElementById('confirm-dialog').open);
   pass('removal follows the confirmation flow');
   await page.locator('[data-tab=settings]').click();
-  await page.locator('[data-settings-panel=island]').click();
-  await page.locator('#settings-content [data-setting=islandEnabled]').check();
-  const island = await overlay('island');
-  assert.equal(await island.locator('#overlay').evaluate(node => node.classList.contains('collapsed')), true);
-  await island.locator('#compact-island').click();
-  await island.waitForFunction(() => !document.getElementById('overlay').classList.contains('collapsed'));
-  await island.locator('#next-stock').click();
-  await page.waitForFunction(() => document.getElementById('quote-name').textContent !== '上证指数');
-  pass('independent island expands and switches the shared selected stock');
-  await island.screenshot({ path: path.join(output, 'island-expanded.png') });
-  await island.locator('#previous-stock').click();
-  await page.waitForFunction(() => document.getElementById('quote-name').textContent === '上证指数');
   await page.locator('[data-settings-panel=widget]').click();
   await page.locator('#settings-content [data-setting=widgetEnabled]').check();
   const widget = await overlay('widget');
+  assert.equal(await page.locator('[data-settings-panel=island], [data-setting=islandEnabled]').count(), 0);
+  assert.equal(Object.hasOwn((await state(page)).state.settings, 'islandEnabled'), false);
+  assert.deepEqual(await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().flatMap(window => window.overlayKind || []).sort()), ['pet', 'widget']);
+  pass('a saved legacy Island is ignored while the pet and desktop card remain available');
   for (let scene = 0; scene < 4; scene++) {
     await widget.locator(`[data-scene="${scene}"]`).click();
     await widget.waitForFunction(value => document.querySelector(`[data-scene="${value}"]`).classList.contains('active'), scene);
@@ -149,7 +146,8 @@ try {
   pass('new wood round resets the session and preserves lifetime count');
   await pet.locator('#collapse-overlay').click();
   await pet.waitForFunction(() => document.getElementById('overlay').classList.contains('collapsed'));
-  await pet.locator('#collapse-overlay').click();
+  await pet.locator('#collapse-overlay').press('Enter');
+  await pet.waitForFunction(() => !document.getElementById('overlay').classList.contains('collapsed'));
   pass('desktop pet collapses and restores');
   await page.locator('[data-tab=home]').click();
   await page.locator('#motions-open').click();
@@ -220,7 +218,7 @@ try {
   await page.waitForFunction(() => !document.getElementById('connection').textContent.includes('更新延迟'), { timeout: 25000 });
   pass('lock and unlock pause overlays and recover public quotes');
   await page.locator('[data-tab=home]').click();
-  await page.evaluate(() => window.desktopPet.settings({ mamaSound: true, muted: false, motion: true, autoActions: true, petMode: 'market', islandContent: 'market', scene: 0, smartScene: false }));
+  await page.evaluate(() => window.desktopPet.settings({ mamaSound: true, muted: false, motion: true, autoActions: true, petMode: 'market', scene: 0, smartScene: false }));
   const fixtureTime = Date.parse('2026-11-12T02:00:00Z');
   for (const surface of app.windows()) {
     await surface.evaluate(value => {
@@ -285,7 +283,6 @@ try {
   assert.deepEqual(restored.state.stocks.map(stock => [stock.code, stock.cost, stock.shares]), saved.state.stocks.map(stock => [stock.code, stock.cost, stock.shares]));
   assert.equal(restored.state.settings.theme, 'dark');
   assert.equal(restored.state.settings.petEnabled, saved.state.settings.petEnabled);
-  assert.equal(restored.state.settings.islandEnabled, saved.state.settings.islandEnabled);
   assert.equal(restored.state.settings.widgetEnabled, saved.state.settings.widgetEnabled);
   pass('restart preserves settings, fractional positions and shared counts');
   assert.deepEqual(errors, []);

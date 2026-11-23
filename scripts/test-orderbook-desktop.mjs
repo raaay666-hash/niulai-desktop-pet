@@ -144,7 +144,7 @@ async function testSnapshotCadence() {
 try {
   await fs.mkdir(output, { recursive: true });
   await fs.writeFile(path.join(profile, 'desktop-state-v2.json'), JSON.stringify({
-    state: normalizeState({ settings: { petEnabled: false, islandEnabled: false, widgetEnabled: false, interval: 30, motion: false, theme: 'light' } })
+    state: normalizeState({ settings: { petEnabled: false, widgetEnabled: false, interval: 30, motion: false, theme: 'light' } })
   }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   await launch();

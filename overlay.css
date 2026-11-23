@@ -29,63 +29,7 @@
 .overlay-shell[data-kind=pet].collapsed #overlay-title, .overlay-shell[data-kind=pet].collapsed #open-dashboard, .overlay-shell[data-kind=pet].collapsed #close-overlay { display: none; }
 .overlay-shell[data-kind=pet].collapsed .overlay-pet { margin-top: 9px; height: 66px; }
 .overlay-shell[data-kind=pet].collapsed .overlay-quote, .overlay-shell[data-kind=pet].collapsed .overlay-status, .overlay-shell[data-kind=pet].collapsed .overlay-count { display: none !important; }
-.overlay-shell[data-kind=island] {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-}
-.overlay-shell[data-kind=island].collapsed { border-radius: 13px; }
-.overlay-shell[data-kind=island] .overlay-toolbar { flex: 0 0 28px; border-bottom: 1px solid var(--line); }
-.overlay-shell[data-kind=island].collapsed .overlay-toolbar {
-  position: absolute;
-  inset: 0 auto 0 0;
-  z-index: 2;
-  width: 28px;
-  height: auto;
-  border: 0;
-  padding: 0 3px;
-}
-.overlay-shell[data-kind=island].collapsed #overlay-title,
-.overlay-shell[data-kind=island].collapsed .overlay-window-buttons { display: none; }
-.compact-island { width: 100%; height: 52px; flex: 0 0 52px; padding: 0 11px; display: flex; align-items: center; gap: 7px; text-align: left; }
-.collapsed .compact-island { padding-inline: 29px 34px; }
-.compact-island canvas { width: 34px; height: 34px; flex: 0 0 auto; }
-.compact-identity { min-width: 0; flex: 1 1 auto; }
-.compact-values { min-width: 0; max-width: 56%; flex: 0 1 auto; text-align: right; font-variant-numeric: tabular-nums; }
-.compact-island strong, .compact-island small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#compact-name { font-size: 12px; font-weight: 620; }
-#compact-meta { margin-top: 3px; font-size: 10px; color: var(--muted); }
-#compact-price { font-size: 16px; font-weight: 610; }
-#compact-percent { margin-top: 2px; font-size: 11px; }
-.quote-warning .overlay-status, .quote-warning #compact-meta { color: var(--warning); }
-#expand-island {
-  position: absolute;
-  top: 50%;
-  right: 5px;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 28px;
-  padding: 0 0 3px;
-  border-radius: 4px;
-  color: var(--muted);
-}
-#expand-island:hover { background: var(--soft); color: var(--text); }
-.overlay-shell[data-kind=island] button:focus-visible { outline-offset: -2px; }
-.overlay-shell[data-kind=island] .overlay-quote, .overlay-shell[data-kind=island] .overlay-pet { display: none; }
-.overlay-shell[data-kind=island] #overlay-content { display: flex; flex: 1; flex-direction: column; min-height: 0; padding-inline: 11px; }
-#island-expanded { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 8px; padding-bottom: 3px; }
-#island-position { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
-.island-navigation { display: grid; grid-template-columns: auto minmax(27px, 1fr) auto auto; align-items: center; gap: 5px; }
-.island-navigation button { min-height: 30px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; font-size: 11px; white-space: nowrap; }
-.island-navigation button:hover:enabled { background: var(--soft); }
-#pin-island[aria-pressed=true] { color: var(--blue); }
-#island-stock-index { font-size: 11px; text-align: center; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
-.overlay-shell[data-kind=island] .overlay-status { border-top: 1px solid var(--line); padding: 6px 0 7px; text-align: left; font-size: 10px; }
+.quote-warning .overlay-status { color: var(--warning); }
 .overlay-shell[data-kind=widget] { background: var(--surface); border: 1px solid var(--line); }
 .overlay-shell[data-kind=widget] .overlay-toolbar { border-bottom: 1px solid var(--line); }
 .overlay-shell[data-kind=widget] #collapse-overlay { display: none; }

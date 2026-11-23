@@ -54,6 +54,7 @@ let newsTimer, checkingNews = false, newsGeneration = 0;
 const newsInterval = 5 * 60000;
 const newsId = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 const positions = {};
+const overlayNames = { pet: '桌宠', widget: '桌面卡片' };
 const collapsed = new Set();
 const crying = new CryingReaction();
 let logFile;
@@ -136,7 +137,6 @@ function constrain(bounds) {
   };
 }
 function overlaySize(kind) {
-  if (kind === 'island') return { width: state.settings.islandWidth, height: collapsed.has(kind) ? 66 : 194 };
   if (kind === 'widget') return { width: 346, height: 358 };
   if (collapsed.has(kind)) return { width: 104, height: 86 };
   return { width: Math.round(282 * state.settings.petScale / 100), height: Math.round(302 * state.settings.petScale / 100) };
@@ -146,8 +146,8 @@ function overlayBounds(kind) {
   const size = overlaySize(kind);
   return constrain({
     ...size,
-    x: positions[kind]?.x ?? (kind === 'island' ? area.x + (area.width - size.width) / 2 : area.x + area.width - size.width - (kind === 'widget' ? 346 : 32)),
-    y: positions[kind]?.y ?? (kind === 'island' ? area.y + 12 : area.y + area.height - size.height - 32)
+    x: positions[kind]?.x ?? (area.x + area.width - size.width - (kind === 'widget' ? 346 : 32)),
+    y: positions[kind]?.y ?? (area.y + area.height - size.height - 32)
   });
 }
 function configureWindow(window) {
@@ -170,12 +170,10 @@ function configureWindow(window) {
 }
 function createOverlay(kind) {
   if (quitting || overlays.has(kind)) return;
-  if (kind === 'island') collapsed.add(kind);
-  const names = { pet: '桌宠', island: '悬浮窗', widget: '桌面卡片' };
   const window = new BrowserWindow({
     ...overlayBounds(kind), frame: false, transparent: true, resizable: false,
     maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
-    hasShadow: false, show: false, backgroundColor: '#00000000', title: '牛来' + names[kind],
+    hasShadow: false, show: false, backgroundColor: '#00000000', title: '牛来' + overlayNames[kind],
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true }
   });
   window.overlayKind = kind;
@@ -200,8 +198,8 @@ function createOverlay(kind) {
 }
 function syncOverlays() {
   if (!state || quitting) return;
-  for (const kind of ['pet', 'island', 'widget']) {
-    const enabled = state.settings[kind === 'pet' ? 'petEnabled' : kind === 'island' ? 'islandEnabled' : 'widgetEnabled'];
+  for (const kind of Object.keys(overlayNames)) {
+    const enabled = state.settings[kind + 'Enabled'];
     if (enabled) createOverlay(kind);
     const window = overlays.get(kind);
     if (!window) continue;
@@ -247,7 +245,7 @@ async function requestText(url, referer, encoding = 'gbk') {
   return new TextDecoder(encoding).decode(await response.arrayBuffer());
 }
 function quoteCodes() {
-  return [...new Set([...state.stocks.map(stock => stock.code), state.settings.islandSymbol].filter(Boolean))];
+  return state.stocks.map(stock => stock.code);
 }
 function activeQuoteConfig() {
   return state.settings.quoteSourceMode === 'custom' ? customQuoteConfig : null;
@@ -257,8 +255,7 @@ function usesCustomQuote(code) {
     (!customQuoteConfig || customQuoteConfig.markets.includes(marketForSymbol(code)));
 }
 function requestedQuoteInterval() {
-  const { interval, islandEnabled, islandInterval } = state.settings;
-  return (islandEnabled ? Math.min(interval, islandInterval) : interval) * 1000;
+  return state.settings.interval * 1000;
 }
 function customQuoteInterval() {
   return Math.max(requestedQuoteInterval(), (activeQuoteConfig()?.interval || 0) * 1000);
@@ -624,7 +621,7 @@ handle('desktop:settings', async (_event, patch) => {
     if (orderbook.snapshotCode) orderbook.stop('行情来源已变化，本轮已停止');
   }
   syncOverlays(); broadcast();
-  if (['interval', 'islandInterval', 'islandEnabled', 'islandSymbol', 'quoteSourceMode', 'quoteSourceFallback'].some(key => Object.hasOwn(patch, key))) {
+  if (['interval', 'quoteSourceMode', 'quoteSourceFallback'].some(key => Object.hasOwn(patch, key))) {
     quoteEpoch++;
     schedulePoll(0);
   }
@@ -660,7 +657,6 @@ handle('desktop:stock', async (_event, operation, payload = {}) => {
     if (state.stocks.length <= 1) throw new Error('请保留至少一只自选');
     state.stocks = state.stocks.filter(item => item.code !== code);
     if (state.selected === code) state.selected = state.stocks[0].code;
-    if (state.settings.islandSymbol === code) state.settings.islandSymbol = '';
     quotes.delete(code); histories.delete(code); customRecords.delete(code);
     watchlistChanged = Boolean(stock);
     if (orderbook.snapshotCode === code) orderbook.stop('监控标的已移出自选');
@@ -1011,13 +1007,11 @@ handle('desktop:scene', (event, value) => {
 
 function playMarketReaction() {
   if (!state || suspended || quitting) return;
-  const candidates = windows().filter(window => window.isVisible() && window.marketScene);
-  for (const code of new Set([state.selected, state.settings.islandSymbol].filter(Boolean))) {
-    const target = candidates.find(window => window.overlayKind === 'island' ? (state.settings.islandSymbol || state.selected) === code : state.selected === code);
-    if (crying.claimAudio(code, quotes.get(code), state.settings, Boolean(target))) {
-      target.webContents.send('desktop:mama', { volume: state.settings.volume });
-      persist().catch(error => log('ERROR', error.message));
-    }
+  const target = windows().find(window => window.isVisible() && window.marketScene);
+  const code = state.selected;
+  if (crying.claimAudio(code, quotes.get(code), state.settings, Boolean(target))) {
+    target.webContents.send('desktop:mama', { volume: state.settings.volume });
+    persist().catch(error => log('ERROR', error.message));
   }
 }
 handle('desktop:feedback', (_event, value) => submitFeedback(value, app.getVersion() + ' · ' + ({ win32: 'Windows', darwin: 'macOS' }[process.platform] || process.platform) + ' ' + process.arch));
@@ -1027,15 +1021,15 @@ handle('desktop:window', async (event, action, value) => {
   if (action === 'dashboard') showDashboard();
   else if (action === 'hide') { dashboard.hide(); syncOverlays(); }
   else if (action === 'quit') app.quit();
-  else if (action === 'collapse' && kind) {
+  else if (action === 'collapse' && kind === 'pet') {
     collapsed.has(kind) ? collapsed.delete(kind) : collapsed.add(kind);
     window.setBounds(constrain({ ...window.getBounds(), ...overlaySize(kind) }));
     window.webContents.send('desktop:collapsed', collapsed.has(kind));
   } else if (action === 'close' && kind) {
-    state.settings[kind === 'pet' ? 'petEnabled' : kind === 'island' ? 'islandEnabled' : 'widgetEnabled'] = false;
+    state.settings[kind + 'Enabled'] = false;
     syncOverlays(); broadcast(); await persist();
   } else if (action === 'reset') {
-    for (const item of ['pet', 'island', 'widget']) delete positions[item];
+    for (const item of Object.keys(overlayNames)) delete positions[item];
     for (const [item, overlay] of overlays) overlay.setBounds(overlayBounds(item));
     await persist();
   } else if (action === 'external') {
@@ -1085,7 +1079,10 @@ app.whenReady().then(async () => {
   log('INFO', `启动 ${app.getVersion()}`);
   try {
     persisted = JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
-    Object.assign(positions, persisted.positions);
+    for (const kind of ['dashboard', ...Object.keys(overlayNames)]) {
+      const position = persisted.positions?.[kind];
+      if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) positions[kind] = position;
+    }
     for (const [code, cursor] of Object.entries(persisted.newsCursors || {}).slice(0, MAX_NEWS_FOLLOWS)) {
       if (typeof code === 'string' && code === normalizeMarketSymbol(code) && Number.isFinite(cursor?.since)) {
         newsCursors.set(code, { since: cursor.since, seen: Array.isArray(cursor.seen) ? cursor.seen.filter(id => typeof id === 'string' && /^[0-9a-f]{24}$/.test(id)).slice(-75) : [] });

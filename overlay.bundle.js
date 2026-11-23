@@ -5963,10 +5963,8 @@
     node.className = className;
     return node;
   }
-  function makeMotion(canvas, mini2 = false) {
-    const motion = new DesktopBullMotion(canvas, null, { assetBase: "assets/2d/frames/webp/" });
-    motion.mini = mini2;
-    return motion;
+  function makeMotion(canvas) {
+    return new DesktopBullMotion(canvas, null, { assetBase: "assets/2d/frames/webp/" });
   }
   function desktopMood(base, data2, code2) {
     if (!data2.state.settings.autoActions || data2.suspended || ["offline", "loading", "preopen", "closed", "weekend", "lunch"].includes(base)) return base;
@@ -6225,16 +6223,14 @@
   var kind = new URLSearchParams(location.search).get("kind");
   var shell = $("overlay");
   shell.dataset.kind = kind;
-  document.title = "\u725B\u6765" + { pet: "\u684C\u5BA0", island: "\u60AC\u6D6E\u7A97", widget: "\u684C\u9762\u5361\u7247" }[kind];
+  document.title = "\u725B\u6765" + { pet: "\u684C\u5BA0", widget: "\u684C\u9762\u5361\u7247" }[kind];
   var bull = makeMotion($("pet-canvas"));
-  var mini = makeMotion($("mini-canvas"), true);
   var moods = new MarketMood();
   var voice = new TapVoice("assets/audio/niulai-tap.wav");
   var mamaVoice = new MamaVoice();
   var sounds = { rise: new Audio("assets/audio/niulai.mp3"), fall: new Audio("assets/audio/mama.mp3") };
   var data;
-  var collapsed = kind === "island";
-  var collapseTimer;
+  var collapsed = false;
   var previewUntil = 0;
   var wheelAt = 0;
   var manualSceneUntil = 0;
@@ -6247,7 +6243,7 @@
   var changingStock = false;
   var changingCollapse = false;
   function code() {
-    return kind === "island" && data.state.settings.islandSymbol || data.state.selected;
+    return data.state.selected;
   }
   function settings() {
     return data.state.settings;
@@ -6255,11 +6251,8 @@
   function entry() {
     return data.quotes[code()];
   }
-  function quoteInterval() {
-    return kind === "island" ? settings().islandInterval : settings().interval;
-  }
   function isWood() {
-    return (kind === "island" ? settings().islandContent : settings().petMode) === "muyu" && kind !== "widget";
+    return kind === "pet" && settings().petMode === "muyu";
   }
   function setHidden(node, hidden) {
     if (node.hidden !== hidden) node.hidden = hidden;
@@ -6276,14 +6269,14 @@
     if (!data) return;
     const visible = !document.hidden && !data.suspended;
     const moving = settings().motion && !matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const marketScene = visible && moving && !isWood() && (kind === "pet" || kind === "widget" && settings().scene === 0 && settings().widgetBull || kind === "island" && settings().islandBull && settings().islandMotion);
+    const showBull = kind === "pet" || settings().scene === 0 && settings().widgetBull;
+    const marketScene = visible && moving && showBull && !isWood();
     if (marketScene !== lastMarketScene) {
       lastMarketScene = marketScene;
       api.reportScene(marketScene).catch(() => {
       });
     }
-    bull.configure(visible && kind !== "island" && (kind === "pet" || settings().scene === 0 && settings().widgetBull), moving);
-    mini.configure(visible && kind === "island" && settings().islandBull, moving && settings().islandMotion);
+    bull.configure(visible && showBull, moving);
     if (!visible || settings().muted || isQuietOfficeActive(settings().quietOffice)) stopAudio();
     if (!settings().mamaSound) mamaVoice.stop();
   }
@@ -6292,79 +6285,11 @@
     const totals = `\u4ECA\u65E5 ${data.counts.today.toLocaleString("zh-CN")} \xB7 \u7D2F\u8BA1 ${data.counts.total.toLocaleString("zh-CN")}`;
     setText($("overlay-count-value"), session);
     setText($("overlay-total"), totals);
-    if (kind === "island" && isWood()) {
-      setText($("compact-price"), session);
-      setText($("island-position"), settings().islandCount ? totals : "");
-      setAttributeValue($("island-position"), "title", settings().islandCount ? totals : "");
-      setAttributeValue($("compact-island"), "aria-label", settings().islandCount ? "\u6572\u6728\u9C7C \xB7 \u672C\u8F6E " + session : "\u6572\u6728\u9C7C");
-    }
   }
   function renderQuoteStatus(record, presentation) {
-    const wood = kind === "island" && isWood();
-    const stale = !wood && (record?.error || record?.quote && presentation.warning);
-    setText($("overlay-status"), wood ? "\u70B9\u51FB\u6728\u9C7C\u6572\u51FB" : presentation.compact);
-    setAttributeValue($("overlay-status"), "title", wood ? "\u70B9\u51FB\u6216\u6309\u7A7A\u683C\u6572\u51FB\u6728\u9C7C" : presentation.detail);
-    shell.classList.toggle("quote-warning", Boolean(stale));
-    if (kind !== "island") return;
-    if (wood) {
-      setText($("compact-meta"), settings().islandCount ? "\u672C\u8F6E\u6572\u51FB" : "\u70B9\u51FB\u6572\u51FB");
-      return;
-    }
-    const status = record?.error ? "\u66F4\u65B0\u5931\u8D25" : !record?.quote ? "\u7B49\u5F85\u884C\u60C5" : presentation.warning ? "\u62A5\u4EF7\u5F85\u66F4\u65B0" : record.quote.fallbackFrom ? "\u516C\u5171\u884C\u60C5\u56DE\u9000" : "";
-    setText($("compact-meta"), [status, displaySymbol(code())].filter(Boolean).join(" \xB7 "));
-  }
-  function renderIsland(stock, quote, presentation, name, price, percent) {
-    const wood = isWood(), pinned = Boolean(settings().islandSymbol);
-    const compact = $("compact-island");
-    setHidden($("expand-island"), !collapsed);
-    const collapse = $("collapse-overlay");
-    const collapseLabel = collapsed ? "\u5C55\u5F00\u60AC\u6D6E\u7A97" : "\u6536\u8D77\u60AC\u6D6E\u7A97";
-    setAttributeValue(collapse, "aria-label", collapseLabel);
-    setAttributeValue(collapse, "title", collapseLabel);
-    setAttributeValue(collapse, "aria-expanded", String(!collapsed));
-    setAttributeValue(collapse, "aria-controls", "overlay-content");
-    setText($("compact-name"), wood ? "\u725B\u6765\u6728\u9C7C" : name + (presentation.label ? " \xB7 " + presentation.label : ""));
-    setHidden($("compact-price"), wood ? !settings().islandCount : !settings().islandPrice);
-    setHidden($("compact-percent"), wood || !settings().islandPercent);
-    if (wood) {
-      compact.removeAttribute("aria-expanded");
-      compact.removeAttribute("aria-controls");
-      setAttributeValue(compact, "title", "\u6572\u6728\u9C7C");
-    } else {
-      setText($("compact-price"), price);
-      setText($("compact-percent"), percent);
-      setAttributeValue(compact, "aria-expanded", String(!collapsed));
-      setAttributeValue(compact, "aria-controls", "overlay-content");
-      setAttributeValue(compact, "title", presentation.detail);
-      setAttributeValue(compact, "aria-label", [
-        collapseLabel,
-        name,
-        settings().islandPrice ? price : "",
-        settings().islandPercent ? percent : "",
-        $("compact-meta").textContent,
-        pinned ? "\u5DF2\u56FA\u5B9A\u6807\u7684" : "\u8DDF\u968F\u4E3B\u9762\u677F"
-      ].filter(Boolean).join(" \xB7 "));
-    }
-    setHidden($("island-expanded").querySelector(".island-navigation"), wood);
-    if (collapsed || wood) return;
-    const stocks = data.state.stocks;
-    const index = stocks.findIndex((item) => item.code === code());
-    const disableNavigation = stocks.length < 2 && index >= 0;
-    for (const id of ["previous-stock", "next-stock"]) if ($(id).disabled !== disableNavigation) $(id).disabled = disableNavigation;
-    setText($("island-stock-index"), index < 0 ? "\u2014" : `${index + 1} / ${stocks.length}`);
-    const pin = $("pin-island");
-    setText(pin, pinned ? "\u53D6\u6D88\u56FA\u5B9A" : "\u56FA\u5B9A\u6807\u7684");
-    setAttributeValue(pin, "aria-pressed", String(pinned));
-    setAttributeValue(pin, "title", pinned ? "\u53D6\u6D88\u56FA\u5B9A\uFF0C\u8DDF\u968F\u4E3B\u9762\u677F" : "\u56FA\u5B9A\u5F53\u524D\u6807\u7684");
-    let positionText = presentation.session || marketSession(code());
-    if (settings().islandHoldings) {
-      const held = stock && position(stock, quote);
-      if (!stock?.cost || !stock.shares) positionText = "\u5C1A\u672A\u8BBE\u7F6E\u6301\u4ED3";
-      else if (settings().private) positionText = "\u6301\u4ED3\u91D1\u989D\u5DF2\u9690\u85CF";
-      else positionText = held ? `\u4ECA\u65E5 ${signed(held.today)} \xB7 \u7D2F\u8BA1 ${signed(held.total)} ${currency(code())}` : "\u6301\u4ED3\u5DF2\u4FDD\u5B58\uFF0C\u7B49\u5F85\u884C\u60C5";
-    }
-    setText($("island-position"), positionText);
-    setAttributeValue($("island-position"), "title", positionText);
+    setText($("overlay-status"), presentation.compact);
+    setAttributeValue($("overlay-status"), "title", presentation.detail);
+    shell.classList.toggle("quote-warning", Boolean(record?.error || record?.quote && presentation.warning));
   }
   function render() {
     if (!data?.state) return;
@@ -6373,12 +6298,12 @@
       return;
     }
     const record = entry(), quote = record?.quote, stock = data.state.stocks.find((item) => item.code === code());
-    const presentation = quotePresentation(record, quoteInterval());
-    const theme = kind === "widget" ? settings().widgetTheme : kind === "island" ? settings().islandTheme : settings().theme;
+    const presentation = quotePresentation(record, settings().interval);
+    const theme = kind === "widget" ? settings().widgetTheme : settings().theme;
     applyAppearance(data, theme);
     shell.classList.toggle("collapsed", collapsed);
     shell.classList.toggle("wood-mode", isWood());
-    setText($("overlay-title"), isWood() ? "\u725B\u6765\u6728\u9C7C" : { pet: "\u725B\u6765\u684C\u5BA0", widget: "\u725B\u6765\u5361\u7247", island: "\u60AC\u6D6E\u7A97" }[kind]);
+    setText($("overlay-title"), isWood() ? "\u725B\u6765\u6728\u9C7C" : { pet: "\u725B\u6765\u684C\u5BA0", widget: "\u725B\u6765\u5361\u7247" }[kind]);
     const name = quote?.name || stock?.name || displaySymbol(code());
     setText($("overlay-name"), name);
     setText($("overlay-code"), displaySymbol(code()) + " \xB7 " + currency(code()) + (presentation.label ? " \xB7 " + presentation.label : ""));
@@ -6387,17 +6312,11 @@
     setText($("overlay-price"), price);
     setText($("overlay-percent"), percent);
     setAttributeValue($("overlay-numbers"), "class", tone(quote?.changePct));
-    setAttributeValue($("compact-percent"), "class", tone(quote?.changePct));
     renderQuoteStatus(record, presentation);
-    if (kind === "island") renderIsland(stock, quote, presentation, name, price, percent);
-    setHidden($("compact-island"), kind !== "island");
-    setHidden($("overlay-content"), kind === "island" && collapsed);
-    setHidden($("mini-canvas"), !settings().islandBull);
     setHidden($("scene-tabs"), kind !== "widget");
     setHidden($("overlay-quote"), isWood() || kind === "pet" && !settings().petQuote);
-    setHidden($("overlay-count"), kind === "island" || !isWood() || !settings().muyuCount);
-    setHidden($("island-expanded"), kind !== "island" || collapsed);
-    setHidden($("overlay-pet"), kind === "island" || kind === "widget" && (settings().scene !== 0 || !settings().widgetBull));
+    setHidden($("overlay-count"), !isWood() || !settings().muyuCount);
+    setHidden($("overlay-pet"), kind === "widget" && (settings().scene !== 0 || !settings().widgetBull));
     for (const [id, scene] of [["market-scene", 1], ["position-scene", 2], ["calm-scene", 3]]) setHidden($(id), kind !== "widget" || settings().scene !== scene);
     for (const button of document.querySelectorAll("[data-scene]")) {
       button.classList.toggle("active", Number(button.dataset.scene) === settings().scene);
@@ -6429,13 +6348,10 @@
   function updateMood() {
     if (!data) return;
     const record = entry();
-    const health = quoteHealth(record, quoteInterval());
-    const base = isWood() ? "muyu" : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error || (record?.quote && health.warning ? health.message : null), Date.now(), quoteInterval(), code()) : "idle";
+    const health = quoteHealth(record, settings().interval);
+    const base = isWood() ? "muyu" : settings().autoActions ? moods.update(record?.quote ? { ...record.quote, received: record.received } : null, record?.error || (record?.quote && health.warning ? health.message : null), Date.now(), settings().interval, code()) : "idle";
     const mood = isWood() ? base : desktopMood(base, data, code());
-    if (Date.now() > previewUntil) {
-      bull.state(mood);
-      mini.state(mood);
-    }
+    if (Date.now() > previewUntil) bull.state(mood);
     syncMotion();
     if (kind === "widget" && settings().scene === 3 && calmEnd) {
       const remaining = Math.max(0, Math.ceil((calmEnd - Date.now()) / 1e3));
@@ -6469,15 +6385,7 @@
     const nextIndex = index < 0 ? direction < 0 ? stocks.length - 1 : 0 : (index + direction + stocks.length) % stocks.length;
     const next = stocks[nextIndex]?.code;
     if (!next) return;
-    const pinned = kind === "island" && settings().islandSymbol;
-    void changeStock(() => pinned ? api.settings({ islandSymbol: next }) : api.stock("select", { code: next }));
-    autoCollapse();
-  }
-  function togglePin() {
-    if (!data || kind !== "island" || isWood()) return;
-    const target = settings().islandSymbol ? "" : code();
-    void changeStock(() => api.settings({ islandSymbol: target }));
-    autoCollapse();
+    void changeStock(() => api.stock("select", { code: next }));
   }
   async function toggleCollapse() {
     if (!data || changingCollapse) return;
@@ -6517,19 +6425,9 @@
       });
     }
   }
-  function autoCollapse() {
-    clearTimeout(collapseTimer);
-    if (kind === "island" && data && !collapsed && settings().islandAutoCollapse) {
-      collapseTimer = setTimeout(() => {
-        if (!collapsed) void toggleCollapse();
-      }, 1e4);
-    }
-  }
   api.onSnapshot((next) => {
-    const collapseChanged = data?.state.settings.islandAutoCollapse !== next.state.settings.islandAutoCollapse;
     data = next;
     render();
-    if (collapseChanged) autoCollapse();
   });
   api.onMamaVoice(({ volume }) => {
     if (data && lastMarketScene && settings().mamaSound && !settings().muted && !isQuietOfficeActive(settings().quietOffice)) {
@@ -6539,18 +6437,13 @@
     }
   });
   api.onCollapsed((value) => {
-    const focused = document.activeElement;
-    const restoreFocus = kind === "island" && (value ? $("overlay-content").contains(focused) || focused?.closest(".overlay-window-buttons") : focused === $("expand-island"));
     collapsed = value;
     render();
-    if (restoreFocus) $("compact-island").focus({ preventScroll: true });
-    autoCollapse();
   });
   api.onPreview((id) => {
     if (!catalog.some((spec) => spec.id === id)) return;
     previewUntil = Date.now() + 6e3;
     bull.replay(id);
-    mini.replay(id);
   });
   api.onKnock(({ counts, reset }) => {
     if (!data) return;
@@ -6558,7 +6451,6 @@
     renderCounts();
     if (isWood() && !reset) {
       bull.replay("muyu");
-      mini.replay("muyu");
       if (settings().muyuEffects && settings().motion && kind === "pet") {
         const layer = $("overlay-feedback");
         if (layer.children.length >= 6) layer.firstChild.remove();
@@ -6570,30 +6462,7 @@
   });
   $("open-dashboard").onclick = $("edit-position").onclick = () => api.window("dashboard");
   $("close-overlay").onclick = () => api.window("close");
-  $("expand-island").onclick = $("collapse-overlay").onclick = toggleCollapse;
-  $("compact-island").onclick = () => {
-    if (data && isWood()) {
-      interact();
-      autoCollapse();
-    } else void toggleCollapse();
-  };
-  $("compact-island").ondblclick = () => {
-    if (data && isWood()) void toggleCollapse();
-  };
-  $("previous-stock").onclick = () => switchStock(-1);
-  $("next-stock").onclick = () => switchStock(1);
-  $("pin-island").onclick = togglePin;
-  $("island-expanded").addEventListener("focusin", autoCollapse);
-  shell.addEventListener("keydown", (event) => {
-    if (kind !== "island" || !data || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === "Escape" && !collapsed) {
-      event.preventDefault();
-      void toggleCollapse();
-    } else if (!isWood() && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
-      event.preventDefault();
-      switchStock(event.key === "ArrowLeft" ? -1 : 1);
-    }
-  });
+  $("collapse-overlay").onclick = toggleCollapse;
   shell.addEventListener("wheel", (event) => {
     if (!data || isWood() || !event.deltaY) return;
     event.preventDefault();
@@ -6655,10 +6524,7 @@
   api.bootstrap().then((next) => {
     data = next;
     render();
-    setInterval(() => {
-      if (kind === "island" && !document.hidden) render();
-      else updateMood();
-    }, 1e3);
+    setInterval(updateMood, 1e3);
     window.__NIULAI_RENDERER_READY__ = true;
   });
 })();

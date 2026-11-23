@@ -17,7 +17,7 @@ import { mountOrderbookPanel } from './renderer-modules/orderbook-panel.js';
 import { mountDesktopPlugins } from './renderer-modules/desktop-plugins.js';
 import { applyAppearance } from './renderer-modules/system-appearance.js';
 
-let data, tab = 'home', settingsPanel = 'island', positionCode, toastTimer, searchTimer, searchEpoch = 0;
+let data, tab = 'home', settingsPanel = 'general', positionCode, toastTimer, searchTimer, searchEpoch = 0;
 let tabRevision = 0;
 let liveMood = 'loading', previewUntil = 0, motionPreview = 'loading';
 let featureCode = '', lastFeatureQuote = 0, wasOpen = false;
@@ -66,7 +66,6 @@ api.onNewsArrived(() => { if (data) revealStockNews(); });
 const bull = makeMotion($('bull'));
 const wood = makeMotion($('wood-canvas'));
 const gallery = makeMotion($('motion-canvas'));
-let mini;
 wood.state('muyu');
 const voice = new TapVoice('assets/audio/niulai-tap.wav');
 const mamaVoice = new MamaVoice();
@@ -151,7 +150,6 @@ function syncMotion() {
   bull.configure(visible && tab === 'home' && !modal, moving);
   wood.configure(visible && tab === 'muyu' && !modal, moving);
   gallery.configure(visible && $('motion-dialog').open, moving);
-  mini?.configure(visible && tab === 'settings' && settingsPanel === 'island' && !modal && settings().islandBull, moving && settings().islandMotion);
   if (!visible) stopAudio();
 }
 function updateMood() {
@@ -342,27 +340,6 @@ function syncControls() {
     } else if (document.activeElement !== control && control.value !== value) control.value = value;
   }
 }
-function renderSettingsPreview() {
-  const preview = $('island-preview');
-  if (!preview) return;
-  applyAppearance(data, settings().islandTheme, preview);
-  const code = settings().islandSymbol || data.state.selected;
-  const stock = data.state.stocks.find(item => item.code === code);
-  const entry = data.quotes[code];
-  const quote = entry?.quote;
-  const woodMode = settings().islandContent === 'muyu';
-  const name = quote?.name || stock?.name || displaySymbol(code);
-  const label = quotePresentation(entry, settings().islandInterval).label;
-  setText($('preview-name'), woodMode ? '牛来木鱼' : [name, label].filter(Boolean).join(' · '));
-  setText($('preview-meta'), woodMode ? settings().islandCount ? '本轮敲击' : '点击敲击' : displaySymbol(code));
-  setText($('preview-price'), woodMode ? data.counts.session.toLocaleString('zh-CN') : marketPrice(quote?.price, code));
-  $('preview-price').hidden = woodMode ? !settings().islandCount : !settings().islandPrice;
-  setText($('preview-pct'), Number.isFinite(quote?.changePct) ? signed(quote.changePct) + '%' : '—');
-  $('preview-pct').hidden = woodMode || !settings().islandPercent;
-  setAttributeValue($('preview-pct'), 'class', tone(quote?.changePct));
-  $('preview-canvas').hidden = !settings().islandBull;
-  mini?.state(woodMode ? 'muyu' : liveMood);
-}
 function renderQuoteStatus() {
   if (!data?.state || document.hidden) return;
   const entry = currentEntry(), quote = entry?.quote;
@@ -441,17 +418,14 @@ function render() {
   }
   updateMarketPanels();
   updateMood();
-  if (tab === 'settings' && !document.hidden) renderSettingsPreview();
   processFeatures();
 }
 function applySnapshot(next) {
   if (!next?.state) return;
   const changedStock = data?.state.selected !== next.state.selected;
-  const changedStocks = tab === 'settings' && settingsPanel === 'island' &&
-    JSON.stringify(data?.state.stocks.map(stock => stock.code)) !== JSON.stringify(next.state.stocks.map(stock => stock.code));
   data = next;
   if (changedStock) { moods.reset(); featureCode = ''; stopAudio(); }
-  if (tab === 'settings' && (changedStocks || !$('settings-content').hasChildNodes())) buildSettings();
+  if (tab === 'settings' && !$('settings-content').hasChildNodes()) buildSettings();
   render();
 }
 function changeTab(next) {
@@ -569,7 +543,7 @@ async function search() {
   }
 }
 
-const settingsSections = [['general', '通用'], ['source', '行情来源'], ['island', '灵动岛'], ['pet', '桌宠'], ['widget', '桌面卡片'], ['muyu', '木鱼'], ['alerts', '提醒与记录'], ['about', '关于']];
+const settingsSections = [['general', '通用'], ['source', '行情来源'], ['pet', '桌宠'], ['widget', '桌面卡片'], ['muyu', '木鱼'], ['alerts', '提醒与记录'], ['about', '关于']];
 for (const [key, label] of settingsSections) {
   const button = element('button', label);
   button.dataset.settingsPanel = key;
@@ -584,16 +558,9 @@ function heading(title) { $('settings-content').append(element('h3', title)); }
 function updateSliderValue(input) {
   const key = input.dataset.setting;
   const value = input.valueAsNumber;
-  const label = key === 'volume' ? Math.round(value * 100) + '%' : value + (key === 'islandWidth' ? ' px' : '%');
+  const label = (key === 'volume' ? Math.round(value * 100) : value) + '%';
   setAttributeValue(input, 'aria-valuetext', label);
   if (input.nextElementSibling.value !== label) input.nextElementSibling.value = label;
-  if (key === 'islandWidth') {
-    const preview = $('island-preview');
-    const width = (value - 12) + 'px';
-    if (preview && preview.style.getPropertyValue('--island-preview-width') !== width) {
-      preview.style.setProperty('--island-preview-width', width);
-    }
-  }
 }
 function settingRow(label, key, type = 'checkbox', options = [], note = '') {
   const row = element('label', '', 'setting-row');
@@ -649,7 +616,6 @@ function groupSettingsContent(container) {
 }
 function buildSettings() {
   const sourceEpoch = ++sourceFormEpoch;
-  mini?.close(); mini = null;
   const container = $('settings-content'); container.replaceChildren();
   for (const button of $('settings-nav').querySelectorAll('button')) {
     const active = button.dataset.settingsPanel === settingsPanel;
@@ -661,34 +627,7 @@ function buildSettings() {
   container.append(header);
   const themes = [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
   const intervals = [[.2, '每 200 毫秒（自有源）'], [.5, '每 500 毫秒（自有源）'], [1, '每 1 秒'], [2, '每 2 秒'], [5, '每 5 秒'], [10, '每 10 秒'], [30, '每 30 秒']];
-  const modes = [['market', '股票行情'], ['muyu', '木鱼计数']];
-  if (settingsPanel === 'island') {
-    const preview = element('div', '', 'settings-preview'); preview.id = 'island-preview';
-    const canvas = document.createElement('canvas'); canvas.id = 'preview-canvas'; canvas.width = canvas.height = 100;
-    const name = element('strong'); name.id = 'preview-name';
-    const meta = element('small'); meta.id = 'preview-meta';
-    const identity = element('div', '', 'settings-preview-name'); identity.append(name, meta);
-    const price = element('b'); price.id = 'preview-price';
-    const pct = element('span'); pct.id = 'preview-pct';
-    const values = element('div', '', 'settings-preview-values'); values.append(price, pct);
-    preview.append(canvas, identity, values); container.append(preview);
-    mini = makeMotion(canvas, true);
-    heading('窗口');
-    settingRow('开启悬浮窗', 'islandEnabled');
-    settingRow('显示内容', 'islandContent', 'select', modes);
-    settingRow('外观', 'islandTheme', 'select', themes);
-    settingRow('宽度', 'islandWidth', 'range', [260, 420, 1]);
-    settingRow('展开后 10 秒自动收起', 'islandAutoCollapse');
-    settingRow('使用主面板时隐藏', 'islandHideInApp');
-    heading('行情');
-    settingRow('显示股票', 'islandSymbol', 'select', [['', '跟随主面板'], ...data.state.stocks.map(stock => [stock.code, stock.name])]);
-    settingRow('显示价格', 'islandPrice'); settingRow('显示涨跌幅', 'islandPercent');
-    settingRow('展开显示持仓', 'islandHoldings', 'checkbox', [], '开启隐私模式后隐藏金额');
-    settingRow('行情刷新', 'islandInterval', 'select', intervals);
-    heading('桌宠与木鱼');
-    settingRow('显示牛来', 'islandBull'); settingRow('岛内动画', 'islandMotion');
-    settingRow('显示木鱼计数', 'islandCount');
-  } else if (settingsPanel === 'pet') {
+  if (settingsPanel === 'pet') {
     heading('显示');
     settingRow('开启桌宠', 'petEnabled'); settingRow('桌宠模式', 'petMode', 'select', [['market', '盯盘桌宠'], ['muyu', '牛来木鱼']]);
     settingRow('显示行情卡', 'petQuote');
@@ -701,7 +640,7 @@ function buildSettings() {
     settingRow('音量', 'volume', 'range', [0, 1, .05]);
     settingsButton('查看动作与姿势', openMotions);
   } else if (settingsPanel === 'muyu') {
-    settingRow('敲击音效', 'muyuSound'); settingRow('牛气＋1 动效', 'muyuEffects'); settingRow('显示悬浮计数', 'muyuCount');
+    settingRow('敲击音效', 'muyuSound'); settingRow('牛气＋1 动效', 'muyuEffects'); settingRow('显示桌宠计数', 'muyuCount');
     settingsButton('打开木鱼', () => changeTab('muyu'));
     container.append(element('p', '各窗口共用计数，每次敲击都会记录。', 'footnote'));
   } else if (settingsPanel === 'widget') {
@@ -736,12 +675,12 @@ function buildSettings() {
     heading('使用模式');
     const presets = element('div', '', 'preset-buttons');
     for (const [name, values] of [
-      ['静音', { muted: true, motion: true, interval: 30, islandInterval: 30 }],
-      ['标准', { muted: false, motion: true, interval: .5, islandInterval: .5 }],
-      ['省电', { muted: true, motion: false, interval: 30, islandInterval: 30 }]
+      ['静音', { muted: true, motion: true, interval: 30 }],
+      ['标准', { muted: false, motion: true, interval: .5 }],
+      ['省电', { muted: true, motion: false, interval: 30 }]
     ]) { const button = element('button', name); button.onclick = () => perform(api.settings(values), () => toast('已切换为' + name)); presets.append(button); }
     container.append(presets);
-    settingsButton('所有悬浮窗口归位', () => perform(api.window('reset'), () => toast('悬浮窗口已归位')));
+    settingsButton('桌宠和卡片归位', () => perform(api.window('reset'), () => toast('桌面组件已归位')));
     heading('关闭程序');
     container.append(element('p', '关闭主面板会收起到托盘，桌宠与行情继续运行。可从托盘菜单退出。', 'muted'));
     settingsButton('退出牛来', () => {
@@ -761,7 +700,7 @@ function buildSettings() {
     ]) container.append(element('p', paragraph, 'footnote'));
   }
   if (settingsPanel !== 'source') groupSettingsContent(container);
-  syncControls(); renderSettingsPreview(); syncMotion();
+  syncControls(); syncMotion();
 }
 
 function buildFeatureSettings() {
@@ -860,7 +799,7 @@ function previewMotion(id) {
 function knock() { perform(api.knock()); }
 api.onKnock(({ counts, reset }) => {
   if (!data) return;
-  data.counts = counts; renderCounts(); renderSettingsPreview();
+  data.counts = counts; renderCounts();
   if (!reset) {
     wood.replay('muyu');
     if (tab === 'muyu' && !document.hidden && settings().motion && settings().muyuEffects) {
@@ -905,14 +844,14 @@ $('privacy-toggle').onclick = () => perform(api.settings({ private: !settings().
 $('hide-dashboard').onclick = () => perform(api.window('hide'));
 $('open-quote').onclick = () => perform(api.window('external'));
 $('edit-position').onclick = $('portfolio-edit').onclick = () => openPosition();
-$('reset-overlays').onclick = () => perform(api.window('reset'), () => toast('悬浮窗口已归位'));
+$('reset-overlays').onclick = () => perform(api.window('reset'), () => toast('桌面组件已归位'));
 $('motions-open').onclick = openMotions;
 $('confirm-cancel').onclick = () => $('confirm-dialog').close();
 document.addEventListener('change', event => {
   const control = event.target;
   if (control.dataset.setting) {
     const key = control.dataset.setting;
-    const value = control.type === 'checkbox' ? control.checked : control.type === 'range' || ['interval', 'islandInterval'].includes(key) ? Number(control.value) : control.value;
+    const value = control.type === 'checkbox' ? control.checked : control.type === 'range' || key === 'interval' ? Number(control.value) : control.value;
     perform(api.settings({ [key]: value }));
   }
   if (control.dataset.quiet) {
@@ -971,7 +910,7 @@ $('pet').onclick = () => {
 };
 $('wood-tap').onclick = () => { knock(); if (settings().muyuSound && !settings().muted && !quiet()) { voice.volume = settings().volume; voice.play().catch(() => toast('声音未能播放')); } };
 $('wood-round').onclick = () => perform(api.newRound());
-$('wood-floating').onclick = () => perform(api.settings({ petEnabled: true, petMode: 'muyu' }), () => toast('悬浮木鱼已开启'));
+$('wood-floating').onclick = () => perform(api.settings({ petEnabled: true, petMode: 'muyu' }), () => toast('桌宠木鱼已开启'));
 for (const spec of catalog) {
   const button = element('button', '', 'motion-option'); button.dataset.motion = spec.id;
   button.append(element('strong', spec.label), element('small', spec.action));

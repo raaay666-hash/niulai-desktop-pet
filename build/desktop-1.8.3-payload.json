@@ -489,18 +489,18 @@
     },
     {
       "name": "desktop.css",
-      "bytes": 22449,
-      "sha256": "696f82f87ebcb090663b2e863a974e612ffc214c93cc1d37b741e26fbe3ff60a"
+      "bytes": 22427,
+      "sha256": "505ad021ff5f65f13973310ad97988b3bb648e1a64b7ab560626c6c0d2559acb"
     },
     {
       "name": "docs/电脑版使用说明.md",
-      "bytes": 8106,
-      "sha256": "122140f0ef6fc3e4b075d7142af20c77f3aca2307801834f494e81f6ebe8c0b5"
+      "bytes": 9026,
+      "sha256": "145561b5cadc280c40afdd42828b0f2c9f562f96727f8a73ec7be08188f3f46e"
     },
     {
       "name": "index.html",
-      "bytes": 22052,
-      "sha256": "ad9e8ba3af4a68067bf05abe037fdb6ed66f1a4819ba8c184af35046300f9ee7"
+      "bytes": 21902,
+      "sha256": "d91b043e3930d33143ec5cfd4870468aa9d646e1f43741c1eca8a8bdbb8c2451"
     },
     {
       "name": "main-modules/crying-reaction.cjs",
@@ -514,8 +514,8 @@
     },
     {
       "name": "main-modules/desktop-state.cjs",
-      "bytes": 6916,
-      "sha256": "bc93a13eb0a704199afbe6055b7f5564f2d2319727341477130d2609fae17dc4"
+      "bytes": 6302,
+      "sha256": "0bfd9f124105915a73fecd39383c8fc980afb0025d3974a9af5b509f56711d4c"
     },
     {
       "name": "main-modules/feedback.cjs",
@@ -579,23 +579,23 @@
     },
     {
       "name": "main.js",
-      "bytes": 59845,
-      "sha256": "6b89382e656f321cfff6a7279fdbda8bf11a16dedaecf184239490bf9824fdbc"
+      "bytes": 59078,
+      "sha256": "e04b758d5de07e9922032b1d77b3d205e429c74564c92602db368aa17a1a8f6f"
     },
     {
       "name": "overlay.bundle.js",
-      "bytes": 160544,
-      "sha256": "5cc798778b02321c66e7f34a0834859f5a30612300ba4fb651e5a37d34d84340"
+      "bytes": 152735,
+      "sha256": "b6ad6414394a2e4087216b5fbb887da03882f5d32cb681e8649bb341ca92fbc5"
     },
     {
       "name": "overlay.css",
-      "bytes": 8003,
-      "sha256": "e0c0f36638f31727ca589d97e10cb301ddb85d39eed7aa8d8649fd76d56a1bd1"
+      "bytes": 4885,
+      "sha256": "1fad5dbac38b8f639c50f519b5a4e03fc4e5914b391f73f992fdcdd9f417c696"
     },
     {
       "name": "overlay.html",
-      "bytes": 3933,
-      "sha256": "b7b635beba5ccc013e946927197ec983dd28c513fe32e1bd734657adf7dd65ac"
+      "bytes": 2644,
+      "sha256": "109ecb44091a855962aa32ef5b86422ccebb61dd43fe066da99411a1bd9a6148"
     },
     {
       "name": "package.json",
@@ -614,8 +614,8 @@
     },
     {
       "name": "renderer-modules/desktop-settings.css",
-      "bytes": 9662,
-      "sha256": "379384d49a8850a277e8f2b2c14adc8633049a2698e3c948f91f9032bc3d4038"
+      "bytes": 7991,
+      "sha256": "a0bf0b4ab5977f1e9585155a6018f03950a122da405d9dc85889d73463229e3d"
     },
     {
       "name": "renderer-modules/feedback-form.css",
@@ -644,8 +644,8 @@
     },
     {
       "name": "renderer.bundle.js",
-      "bytes": 327215,
-      "sha256": "e4b0fc7bc6d945cc2a6aa896fc1edb5ff13f1e10b199cee3181cdf20fadd0e19"
+      "bytes": 321566,
+      "sha256": "a61b2fee56f7e00a1da30b0081668e19a2bcbfd8498bd1a34c65bbed2587b6ec"
     }
   ]
 }

@@ -138,7 +138,7 @@ async function verifyMixedSourcesAndPush() {
         return Promise.resolve(new Response(codes.map(code => 'var hq_str_' + code + '="QA Index,3000,0,0,100,100";').join('\n')));
       };
     });
-    await page.evaluate(() => window.desktopPet.settings({ interval: .2, islandInterval: .2 }));
+    await page.evaluate(() => window.desktopPet.settings({ interval: .2 }));
     await source('save', mixed);
     await page.evaluate(async () => {
       const api = window.desktopPet;
@@ -276,22 +276,21 @@ try {
   await page.evaluate(async () => {
     await window.desktopPet.stock('add', { code: 'gb_mp' });
     await window.desktopPet.stock('position', { code: 'gb_mp', cost: 30, shares: 5 });
-    await window.desktopPet.settings({ private: false, petHideInApp: false, islandHideInApp: false, islandEnabled: true, widgetEnabled: true, smartScene: false, scene: 1 });
+    await window.desktopPet.settings({ private: false, petHideInApp: false, widgetEnabled: true, smartScene: false, scene: 1 });
   });
-  const island = await overlay('island'), widget = await overlay('widget'), pet = await overlay('pet');
+  const widget = await overlay('widget'), pet = await overlay('pet');
   await refresh(preNow + 1000, fixture());
   await page.waitForFunction(() => document.getElementById('price').textContent === '37.88');
   assert.match(await page.locator('#session').textContent(), /盘前/);
   assert.match(await page.locator('#connection').textContent(), /08:47 美东/);
   assert.match(await page.locator('#home-position').textContent(), /5\.75/);
-  for (const surface of [island, widget, pet]) {
+  for (const surface of [widget, pet]) {
     await surface.waitForFunction(() => document.getElementById('overlay-price').textContent === '37.88');
     assert.match(await surface.locator('#overlay-code').textContent(), /盘前/);
   }
-  assert.match(await island.locator('#compact-name').textContent(), /盘前/);
   await page.screenshot({ path: path.join(output, 'premarket.png') });
-  await island.screenshot({ path: path.join(output, 'premarket-island.png') });
-  pass('MP premarket quote, actual trade time, P&L and all three overlay surfaces');
+  await widget.screenshot({ path: path.join(output, 'premarket-widget.png') });
+  pass('MP premarket quote, actual trade time and P&L agree across the dashboard, pet and desktop card');
   await page.locator('[data-tab=watchlist]').click();
   const mpRow = page.locator('#watch-stocks .stock-row').filter({ hasText: 'MP' });
   assert.match(await mpRow.textContent(), /盘前/);
@@ -363,7 +362,7 @@ try {
   await page.locator('[data-tab=home]').click();
   await page.waitForFunction(() => document.getElementById('price').textContent === '41.00');
   assert.match(await page.locator('#connection').textContent(), /我的付费行情/);
-  for (const surface of [island, widget, pet]) {
+  for (const surface of [widget, pet]) {
     await surface.waitForFunction(() => document.getElementById('overlay-price').textContent === '41.00');
     assert.match(await surface.locator('#overlay-status').textContent(), /我的付费行情/);
   }
@@ -409,7 +408,7 @@ try {
     const api = window.desktopPet;
     const { state } = await api.bootstrap();
     for (const stock of state.stocks) if (stock.code !== 'gb_mp') await api.stock('remove', { code: stock.code });
-    await api.settings({ interval: .5, islandInterval: .5, islandSymbol: '' });
+    await api.settings({ interval: .5 });
     await api.quoteSource('save', { mode: 'custom', name: '毫秒级测试源', url, markets: ['us'], interval: .5, fallback: false });
   }, `http://127.0.0.1:${server.address().port}/quote?symbol={symbol}`);
   const first = receivedAt.length;

@@ -87,10 +87,8 @@ export function element(tag, value = '', className = '') {
   node.className = className;
   return node;
 }
-export function makeMotion(canvas, mini = false) {
-  const motion = new DesktopBullMotion(canvas, null, { assetBase: 'assets/2d/frames/webp/' });
-  motion.mini = mini;
-  return motion;
+export function makeMotion(canvas) {
+  return new DesktopBullMotion(canvas, null, { assetBase: 'assets/2d/frames/webp/' });
 }
 export function desktopMood(base, data, code) {
   if (!data.state.settings.autoActions || data.suspended || ['offline', 'loading', 'preopen', 'closed', 'weekend', 'lunch'].includes(base)) return base;
@@ -133,7 +131,6 @@ const paths = {
   eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   refresh: '<path d="M20 10a8 8 0 10-1 7M20 3v7h-7"/>',
   pet: '<path d="M5 9L3 4l6 3m10 2 2-5-6 3M5 11c0-4 14-4 14 0v6c0 6-14 6-14 0zM8 13v1m8-1v1M9 18h6"/>',
-  island: '<rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="7" cy="12" r="1"/><path d="M12 12h5"/>',
   card: '<rect x="3" y="3" width="18" height="16" rx="3"/><path d="M7 7h5M7 12h10M7 22h10"/>',
   search: '<circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/>'
 };

@@ -43,7 +43,7 @@
   --minute-shade: #98a9ff55;
   --minute-shade-end: #98a9ff02;
 }
-:root.system-accent, .settings-preview.system-accent {
+:root.system-accent {
   --blue: var(--system-accent);
   --blue-soft: color-mix(in srgb, var(--surface), var(--system-accent) 12%);
   --action: var(--system-accent);
@@ -136,7 +136,7 @@ svg { width: 20px; height: 20px; display: block; fill: none; stroke: currentColo
 .chart-card .section-heading { margin-bottom: 9px; }
 .chart-card .muted { font-size: 10px; }
 .floating-controls .section-heading { margin-bottom: 14px; }
-.overlay-toggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.overlay-toggles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .overlay-toggles label { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; align-items: center; gap: 7px; font-size: 11px; }
 .overlay-toggles label > span:first-child { color: var(--muted); }
 .overlay-toggles input { margin-left: auto; transform: scale(.85); transform-origin: right center; }

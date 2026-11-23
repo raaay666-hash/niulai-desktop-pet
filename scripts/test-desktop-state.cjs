@@ -23,11 +23,22 @@ assert.equal(single.stocks[0].cost, 1600);
 assert.equal(single.selected, 's_sh600519');
 assert.equal(migrateLegacy({ 'niulai:pet-settings': 'broken' }).settings.sound, false);
 assert.equal(normalizeState({ stocks: [null, { code: 'oops!' }] }).stocks.length, 3);
-assert.equal(normalizeSettings({ islandWidth: 999, interval: 0, volume: -1 }).islandWidth, 420);
+assert.equal(normalizeSettings({ interval: 0 }).interval, .5);
+assert.equal(normalizeSettings({ volume: -1 }).volume, 0);
 assert.equal(normalizeSettings({ quietOffice: { start: '99:99' } }).quietOffice.start, '09:30');
-const upgraded = normalizeState({ version: 2, settings: { interval: 10, islandInterval: 30 } });
+const oldStock = { code: 'gb_aapl', name: '苹果', cost: 180, shares: 1.25 };
+const upgraded = normalizeState({
+  version: 2,
+  stocks: [oldStock],
+  selected: oldStock.code,
+  settings: { interval: 10, islandEnabled: true, islandInterval: 30, islandWidth: 400, islandSymbol: 's_sh600519', petEnabled: false, widgetEnabled: true }
+});
 assert.equal(upgraded.settings.interval, .5);
-assert.equal(upgraded.settings.islandInterval, 30);
+assert.equal(upgraded.settings.petEnabled, false);
+assert.equal(upgraded.settings.widgetEnabled, true);
+assert.equal(upgraded.selected, oldStock.code);
+assert.deepEqual(upgraded.stocks, [oldStock]);
+assert.equal(Object.keys(upgraded.settings).some(key => key.startsWith('island')), false);
 assert.equal(normalizeState({ ...upgraded, settings: { ...upgraded.settings, interval: 10 } }).settings.interval, 10);
 const fifty = Array.from({ length: 50 }, (_, i) => ({ symbol: 's_sh' + String(600000 + i), cost: i + 1, shares: 10 }));
 assert.equal(migrateLegacy({ 'niulai:saved-stocks-v1': JSON.stringify(fifty) }).stocks.length, 50);

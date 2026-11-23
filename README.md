@@ -1,6 +1,8 @@
 # 牛来盯盘
 
-当前工程构建版本为 Windows/macOS `1.8.1`、Android `1.6.2`。牛来提供二维桌宠和 A 股、港股、美股盯盘。正式发布版本见 [官网](https://niulai.raaay.art/download/) 和 [更新记录](https://niulai.raaay.art/download/updates/)。
+牛来支持 Windows、macOS 和 Android，提供二维桌宠和 A 股、港股、美股盯盘。正式版本及安装包见 [GitHub Releases](https://github.com/raaay666-hash/niulai-desktop-pet/releases)。
+
+[官网下载](https://niulai.raaay.art/download/) · [更新记录](https://niulai.raaay.art/download/updates/)
 
 ## 功能
 
@@ -8,14 +10,14 @@
 - 桌面盯盘包含常规分时、日/周/月 K 线、前复权与不复权、盘口指标和 A 股公开五档。K 线下方随股票更新个股新闻，支持国际媒体筛选、外语标题翻译和关注通知。
 - 15 组高清逐帧角色动画，覆盖 27 种行情与互动状态；统一颜色、无损分页、插帧与高分屏绘制。
 - 软件内更新提示、手动检查和可控制的系统通知；先安装本版后获得后续正式版本提醒。
-- 木鱼支持点击、空格、本轮、今日与累计计数，所有窗口共享。
-- 桌宠、悬浮窗和四场景卡片可独立开启。
+- 木鱼支持点击、空格、本轮、今日与累计计数。主面板与悬浮木鱼共享计数。
+- 桌宠与四场景桌面卡片可独立开启。
 - 深浅主题、静音与省电模式、持仓隐私、托盘驻留、窗口位置记忆。
 - 情绪记忆、安静办公、收盘总结与自定义提醒。
 - 明显下跌时的哭泣动作可播放原版“妈妈”音效，默认关闭，带报价确认、渐入和冷却。
 - 升级迁移旧版自选、持仓和声音设置，发行版移除 3D 牛与 Three.js。
 
-详细操作见 [电脑版使用说明](docs/电脑版使用说明.md)，布局与平台适配见 [电脑版设计](docs/电脑版1.5.0设计.md)。
+详细操作见 [电脑版使用说明](docs/电脑版使用说明.md)，早期布局见 [1.5.0 设计记录](docs/电脑版1.5.0设计.md)。
 
 ## 开发
 
@@ -54,7 +56,7 @@ npm run dist:mac:x64
 - `main-modules/desktop-state.cjs` 规范化设置、迁移旧数据、管理木鱼计数。
 - `main-modules/crying-reaction.cjs` 管理哭泣确认、恢复、启动保护和音频冷却。
 - `renderer.js`、`index.html`、`desktop.css` 实现主面板。
-- `overlay.js`、`overlay.html`、`overlay.css` 实现桌宠、悬浮窗和卡片。
+- `overlay.js`、`overlay.html`、`overlay.css` 实现桌宠与桌面卡片。
 - `renderer-modules/desktop-ui.js` 复用格式、图标、画布与二维动画入口。
 - `niulai-android/web` 提供共用的二维帧播放器、行情动作、市场时段和音频逻辑。
 - `scripts/build-renderer.js` 构建两份浏览器脚本，并检查被移除的依赖。

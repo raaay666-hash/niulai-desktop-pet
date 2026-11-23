@@ -5,10 +5,6 @@ const DEFAULTS = Object.freeze({
   private: true, scene: 0, smartScene: true, autoActions: true, updateNotifications: true,
   petEnabled: true, petMode: 'market', petQuote: true, petHideInApp: false,
   petScale: 100, muyuSound: false, muyuEffects: true, muyuCount: true,
-  islandEnabled: false, islandContent: 'market', islandTheme: 'system',
-  islandPrice: true, islandPercent: true, islandBull: true, islandCount: true,
-  islandHoldings: false, islandMotion: true, islandAutoCollapse: true,
-  islandHideInApp: false, islandSymbol: '', islandWidth: 320, islandInterval: .5,
   widgetEnabled: false, widgetTheme: 'system', widgetSparkline: true, widgetBull: true,
   emotionMemory: false, closeSummary: false,
   quoteSourceMode: 'public', quoteSourceFallback: false,
@@ -30,16 +26,15 @@ function normalizeSettings(raw = {}) {
   for (const [key, fallback] of Object.entries(DEFAULTS)) {
     if (typeof fallback === 'boolean' && typeof raw[key] === 'boolean') result[key] = raw[key];
   }
-  for (const key of ['theme', 'islandTheme', 'widgetTheme']) {
+  for (const key of ['theme', 'widgetTheme']) {
     if (['system', 'light', 'dark'].includes(raw[key])) result[key] = raw[key];
   }
-  for (const key of ['petMode', 'islandContent']) result[key] = raw[key] === 'muyu' ? 'muyu' : 'market';
-  for (const key of ['interval', 'islandInterval']) result[key] = [.2, .5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
+  result.petMode = raw.petMode === 'muyu' ? 'muyu' : 'market';
+  const interval = Number(raw.interval);
+  result.interval = [.2, .5, 1, 2, 5, 10, 30].includes(interval) ? interval : DEFAULTS.interval;
   result.volume = clamp(raw.volume, 0, 1, DEFAULTS.volume);
   result.petScale = clamp(raw.petScale, 75, 125, DEFAULTS.petScale);
-  result.islandWidth = Math.round(clamp(raw.islandWidth, 260, 420, DEFAULTS.islandWidth));
   result.scene = [0, 1, 2, 3].includes(Number(raw.scene)) ? Number(raw.scene) : 0;
-  result.islandSymbol = raw.islandSymbol ? normalizeMarketSymbol(raw.islandSymbol) || '' : '';
   const quiet = raw.quietOffice || {};
   const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value));
   result.quietOffice = {
@@ -66,9 +61,7 @@ function normalizeState(raw = {}) {
     ...item, presentation: item.presentation === '3d' ? '2d' : item.presentation
   }));
   const settings = normalizeSettings(raw.settings);
-  if (raw.version === 2) {
-    for (const key of ['interval', 'islandInterval']) if (settings[key] === 10) settings[key] = DEFAULTS[key];
-  }
+  if (raw.version === 2 && settings.interval === 10) settings.interval = DEFAULTS.interval;
   return {
     version: 3, stocks, selected: stocks.some(stock => stock.code === selected) ? selected : stocks[0].code,
     settings, alerts,

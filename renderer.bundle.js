@@ -400,20 +400,6 @@
         muyuSound: false,
         muyuEffects: true,
         muyuCount: true,
-        islandEnabled: false,
-        islandContent: "market",
-        islandTheme: "system",
-        islandPrice: true,
-        islandPercent: true,
-        islandBull: true,
-        islandCount: true,
-        islandHoldings: false,
-        islandMotion: true,
-        islandAutoCollapse: true,
-        islandHideInApp: false,
-        islandSymbol: "",
-        islandWidth: 320,
-        islandInterval: 0.5,
         widgetEnabled: false,
         widgetTheme: "system",
         widgetSparkline: true,
@@ -439,16 +425,15 @@
         for (const [key, fallback] of Object.entries(DEFAULTS)) {
           if (typeof fallback === "boolean" && typeof raw[key] === "boolean") result[key] = raw[key];
         }
-        for (const key of ["theme", "islandTheme", "widgetTheme"]) {
+        for (const key of ["theme", "widgetTheme"]) {
           if (["system", "light", "dark"].includes(raw[key])) result[key] = raw[key];
         }
-        for (const key of ["petMode", "islandContent"]) result[key] = raw[key] === "muyu" ? "muyu" : "market";
-        for (const key of ["interval", "islandInterval"]) result[key] = [0.2, 0.5, 1, 2, 5, 10, 30].includes(Number(raw[key])) ? Number(raw[key]) : DEFAULTS[key];
+        result.petMode = raw.petMode === "muyu" ? "muyu" : "market";
+        const interval = Number(raw.interval);
+        result.interval = [0.2, 0.5, 1, 2, 5, 10, 30].includes(interval) ? interval : DEFAULTS.interval;
         result.volume = clamp2(raw.volume, 0, 1, DEFAULTS.volume);
         result.petScale = clamp2(raw.petScale, 75, 125, DEFAULTS.petScale);
-        result.islandWidth = Math.round(clamp2(raw.islandWidth, 260, 420, DEFAULTS.islandWidth));
         result.scene = [0, 1, 2, 3].includes(Number(raw.scene)) ? Number(raw.scene) : 0;
-        result.islandSymbol = raw.islandSymbol ? normalizeMarketSymbol2(raw.islandSymbol) || "" : "";
         const quiet2 = raw.quietOffice || {};
         const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value));
         result.quietOffice = {
@@ -475,9 +460,7 @@
           presentation: item.presentation === "3d" ? "2d" : item.presentation
         }));
         const settings2 = normalizeSettings(raw.settings);
-        if (raw.version === 2) {
-          for (const key of ["interval", "islandInterval"]) if (settings2[key] === 10) settings2[key] = DEFAULTS[key];
-        }
+        if (raw.version === 2 && settings2.interval === 10) settings2.interval = DEFAULTS.interval;
         return {
           version: 3,
           stocks,
@@ -6132,10 +6115,8 @@
     node.className = className;
     return node;
   }
-  function makeMotion(canvas, mini2 = false) {
-    const motion = new DesktopBullMotion(canvas, null, { assetBase: "assets/2d/frames/webp/" });
-    motion.mini = mini2;
-    return motion;
+  function makeMotion(canvas) {
+    return new DesktopBullMotion(canvas, null, { assetBase: "assets/2d/frames/webp/" });
   }
   function desktopMood(base, data2, code) {
     if (!data2.state.settings.autoActions || data2.suspended || ["offline", "loading", "preopen", "closed", "weekend", "lunch"].includes(base)) return base;
@@ -6176,7 +6157,6 @@
     eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     refresh: '<path d="M20 10a8 8 0 10-1 7M20 3v7h-7"/>',
     pet: '<path d="M5 9L3 4l6 3m10 2 2-5-6 3M5 11c0-4 14-4 14 0v6c0 6-14 6-14 0zM8 13v1m8-1v1M9 18h6"/>',
-    island: '<rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="7" cy="12" r="1"/><path d="M12 12h5"/>',
     card: '<rect x="3" y="3" width="18" height="16" rx="3"/><path d="M7 7h5M7 12h10M7 22h10"/>',
     search: '<circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/>'
   };
@@ -8616,7 +8596,7 @@
   // renderer.js
   var data;
   var tab = "home";
-  var settingsPanel = "island";
+  var settingsPanel = "general";
   var positionCode;
   var toastTimer;
   var searchTimer;
@@ -8681,7 +8661,6 @@
   var bull = makeMotion($("bull"));
   var wood = makeMotion($("wood-canvas"));
   var gallery = makeMotion($("motion-canvas"));
-  var mini;
   wood.state("muyu");
   var voice = new TapVoice("assets/audio/niulai-tap.wav");
   var mamaVoice = new MamaVoice();
@@ -8785,7 +8764,6 @@
     bull.configure(visible && tab === "home" && !modal, moving);
     wood.configure(visible && tab === "muyu" && !modal, moving);
     gallery.configure(visible && $("motion-dialog").open, moving);
-    mini?.configure(visible && tab === "settings" && settingsPanel === "island" && !modal && settings().islandBull, moving && settings().islandMotion);
     if (!visible) stopAudio();
   }
   function updateMood() {
@@ -9007,27 +8985,6 @@
       } else if (document.activeElement !== control && control.value !== value) control.value = value;
     }
   }
-  function renderSettingsPreview() {
-    const preview = $("island-preview");
-    if (!preview) return;
-    applyAppearance(data, settings().islandTheme, preview);
-    const code = settings().islandSymbol || data.state.selected;
-    const stock = data.state.stocks.find((item) => item.code === code);
-    const entry = data.quotes[code];
-    const quote = entry?.quote;
-    const woodMode = settings().islandContent === "muyu";
-    const name = quote?.name || stock?.name || displaySymbol(code);
-    const label = quotePresentation(entry, settings().islandInterval).label;
-    setText($("preview-name"), woodMode ? "\u725B\u6765\u6728\u9C7C" : [name, label].filter(Boolean).join(" \xB7 "));
-    setText($("preview-meta"), woodMode ? settings().islandCount ? "\u672C\u8F6E\u6572\u51FB" : "\u70B9\u51FB\u6572\u51FB" : displaySymbol(code));
-    setText($("preview-price"), woodMode ? data.counts.session.toLocaleString("zh-CN") : marketPrice(quote?.price, code));
-    $("preview-price").hidden = woodMode ? !settings().islandCount : !settings().islandPrice;
-    setText($("preview-pct"), Number.isFinite(quote?.changePct) ? signed(quote.changePct) + "%" : "\u2014");
-    $("preview-pct").hidden = woodMode || !settings().islandPercent;
-    setAttributeValue($("preview-pct"), "class", tone(quote?.changePct));
-    $("preview-canvas").hidden = !settings().islandBull;
-    mini?.state(woodMode ? "muyu" : liveMood);
-  }
   function renderQuoteStatus() {
     if (!data?.state || document.hidden) return;
     const entry = currentEntry(), quote = entry?.quote;
@@ -9108,20 +9065,18 @@
     }
     updateMarketPanels();
     updateMood();
-    if (tab === "settings" && !document.hidden) renderSettingsPreview();
     processFeatures();
   }
   function applySnapshot(next) {
     if (!next?.state) return;
     const changedStock = data?.state.selected !== next.state.selected;
-    const changedStocks = tab === "settings" && settingsPanel === "island" && JSON.stringify(data?.state.stocks.map((stock) => stock.code)) !== JSON.stringify(next.state.stocks.map((stock) => stock.code));
     data = next;
     if (changedStock) {
       moods.reset();
       featureCode = "";
       stopAudio();
     }
-    if (tab === "settings" && (changedStocks || !$("settings-content").hasChildNodes())) buildSettings();
+    if (tab === "settings" && !$("settings-content").hasChildNodes()) buildSettings();
     render();
   }
   function changeTab(next) {
@@ -9246,7 +9201,7 @@
       if (epoch === searchEpoch) $("search-message").textContent = direct ? "\u540D\u79F0\u641C\u7D22\u6682\u4E0D\u53EF\u7528\uFF0C\u53EF\u6309\u4EE3\u7801\u9A8C\u8BC1\u6DFB\u52A0" : "\u641C\u7D22\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
     }
   }
-  var settingsSections = [["general", "\u901A\u7528"], ["source", "\u884C\u60C5\u6765\u6E90"], ["island", "\u7075\u52A8\u5C9B"], ["pet", "\u684C\u5BA0"], ["widget", "\u684C\u9762\u5361\u7247"], ["muyu", "\u6728\u9C7C"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
+  var settingsSections = [["general", "\u901A\u7528"], ["source", "\u884C\u60C5\u6765\u6E90"], ["pet", "\u684C\u5BA0"], ["widget", "\u684C\u9762\u5361\u7247"], ["muyu", "\u6728\u9C7C"], ["alerts", "\u63D0\u9192\u4E0E\u8BB0\u5F55"], ["about", "\u5173\u4E8E"]];
   for (const [key, label] of settingsSections) {
     const button = element("button", label);
     button.dataset.settingsPanel = key;
@@ -9263,16 +9218,9 @@
   function updateSliderValue(input) {
     const key = input.dataset.setting;
     const value = input.valueAsNumber;
-    const label = key === "volume" ? Math.round(value * 100) + "%" : value + (key === "islandWidth" ? " px" : "%");
+    const label = (key === "volume" ? Math.round(value * 100) : value) + "%";
     setAttributeValue(input, "aria-valuetext", label);
     if (input.nextElementSibling.value !== label) input.nextElementSibling.value = label;
-    if (key === "islandWidth") {
-      const preview = $("island-preview");
-      const width = value - 12 + "px";
-      if (preview && preview.style.getPropertyValue("--island-preview-width") !== width) {
-        preview.style.setProperty("--island-preview-width", width);
-      }
-    }
   }
   function settingRow(label, key, type = "checkbox", options = [], note = "") {
     const row = element("label", "", "setting-row");
@@ -9332,8 +9280,6 @@
   }
   function buildSettings() {
     const sourceEpoch = ++sourceFormEpoch;
-    mini?.close();
-    mini = null;
     const container = $("settings-content");
     container.replaceChildren();
     for (const button of $("settings-nav").querySelectorAll("button")) {
@@ -9346,46 +9292,7 @@
     container.append(header);
     const themes = [["system", "\u8DDF\u968F\u7CFB\u7EDF"], ["light", "\u6D45\u8272"], ["dark", "\u6DF1\u8272"]];
     const intervals = [[0.2, "\u6BCF 200 \u6BEB\u79D2\uFF08\u81EA\u6709\u6E90\uFF09"], [0.5, "\u6BCF 500 \u6BEB\u79D2\uFF08\u81EA\u6709\u6E90\uFF09"], [1, "\u6BCF 1 \u79D2"], [2, "\u6BCF 2 \u79D2"], [5, "\u6BCF 5 \u79D2"], [10, "\u6BCF 10 \u79D2"], [30, "\u6BCF 30 \u79D2"]];
-    const modes = [["market", "\u80A1\u7968\u884C\u60C5"], ["muyu", "\u6728\u9C7C\u8BA1\u6570"]];
-    if (settingsPanel === "island") {
-      const preview = element("div", "", "settings-preview");
-      preview.id = "island-preview";
-      const canvas = document.createElement("canvas");
-      canvas.id = "preview-canvas";
-      canvas.width = canvas.height = 100;
-      const name = element("strong");
-      name.id = "preview-name";
-      const meta = element("small");
-      meta.id = "preview-meta";
-      const identity = element("div", "", "settings-preview-name");
-      identity.append(name, meta);
-      const price = element("b");
-      price.id = "preview-price";
-      const pct = element("span");
-      pct.id = "preview-pct";
-      const values = element("div", "", "settings-preview-values");
-      values.append(price, pct);
-      preview.append(canvas, identity, values);
-      container.append(preview);
-      mini = makeMotion(canvas, true);
-      heading("\u7A97\u53E3");
-      settingRow("\u5F00\u542F\u60AC\u6D6E\u7A97", "islandEnabled");
-      settingRow("\u663E\u793A\u5185\u5BB9", "islandContent", "select", modes);
-      settingRow("\u5916\u89C2", "islandTheme", "select", themes);
-      settingRow("\u5BBD\u5EA6", "islandWidth", "range", [260, 420, 1]);
-      settingRow("\u5C55\u5F00\u540E 10 \u79D2\u81EA\u52A8\u6536\u8D77", "islandAutoCollapse");
-      settingRow("\u4F7F\u7528\u4E3B\u9762\u677F\u65F6\u9690\u85CF", "islandHideInApp");
-      heading("\u884C\u60C5");
-      settingRow("\u663E\u793A\u80A1\u7968", "islandSymbol", "select", [["", "\u8DDF\u968F\u4E3B\u9762\u677F"], ...data.state.stocks.map((stock) => [stock.code, stock.name])]);
-      settingRow("\u663E\u793A\u4EF7\u683C", "islandPrice");
-      settingRow("\u663E\u793A\u6DA8\u8DCC\u5E45", "islandPercent");
-      settingRow("\u5C55\u5F00\u663E\u793A\u6301\u4ED3", "islandHoldings", "checkbox", [], "\u5F00\u542F\u9690\u79C1\u6A21\u5F0F\u540E\u9690\u85CF\u91D1\u989D");
-      settingRow("\u884C\u60C5\u5237\u65B0", "islandInterval", "select", intervals);
-      heading("\u684C\u5BA0\u4E0E\u6728\u9C7C");
-      settingRow("\u663E\u793A\u725B\u6765", "islandBull");
-      settingRow("\u5C9B\u5185\u52A8\u753B", "islandMotion");
-      settingRow("\u663E\u793A\u6728\u9C7C\u8BA1\u6570", "islandCount");
-    } else if (settingsPanel === "pet") {
+    if (settingsPanel === "pet") {
       heading("\u663E\u793A");
       settingRow("\u5F00\u542F\u684C\u5BA0", "petEnabled");
       settingRow("\u684C\u5BA0\u6A21\u5F0F", "petMode", "select", [["market", "\u76EF\u76D8\u684C\u5BA0"], ["muyu", "\u725B\u6765\u6728\u9C7C"]]);
@@ -9402,7 +9309,7 @@
     } else if (settingsPanel === "muyu") {
       settingRow("\u6572\u51FB\u97F3\u6548", "muyuSound");
       settingRow("\u725B\u6C14\uFF0B1 \u52A8\u6548", "muyuEffects");
-      settingRow("\u663E\u793A\u60AC\u6D6E\u8BA1\u6570", "muyuCount");
+      settingRow("\u663E\u793A\u684C\u5BA0\u8BA1\u6570", "muyuCount");
       settingsButton("\u6253\u5F00\u6728\u9C7C", () => changeTab("muyu"));
       container.append(element("p", "\u5404\u7A97\u53E3\u5171\u7528\u8BA1\u6570\uFF0C\u6BCF\u6B21\u6572\u51FB\u90FD\u4F1A\u8BB0\u5F55\u3002", "footnote"));
     } else if (settingsPanel === "widget") {
@@ -9444,16 +9351,16 @@
       heading("\u4F7F\u7528\u6A21\u5F0F");
       const presets = element("div", "", "preset-buttons");
       for (const [name, values] of [
-        ["\u9759\u97F3", { muted: true, motion: true, interval: 30, islandInterval: 30 }],
-        ["\u6807\u51C6", { muted: false, motion: true, interval: 0.5, islandInterval: 0.5 }],
-        ["\u7701\u7535", { muted: true, motion: false, interval: 30, islandInterval: 30 }]
+        ["\u9759\u97F3", { muted: true, motion: true, interval: 30 }],
+        ["\u6807\u51C6", { muted: false, motion: true, interval: 0.5 }],
+        ["\u7701\u7535", { muted: true, motion: false, interval: 30 }]
       ]) {
         const button = element("button", name);
         button.onclick = () => perform(api.settings(values), () => toast("\u5DF2\u5207\u6362\u4E3A" + name));
         presets.append(button);
       }
       container.append(presets);
-      settingsButton("\u6240\u6709\u60AC\u6D6E\u7A97\u53E3\u5F52\u4F4D", () => perform(api.window("reset"), () => toast("\u60AC\u6D6E\u7A97\u53E3\u5DF2\u5F52\u4F4D")));
+      settingsButton("\u684C\u5BA0\u548C\u5361\u7247\u5F52\u4F4D", () => perform(api.window("reset"), () => toast("\u684C\u9762\u7EC4\u4EF6\u5DF2\u5F52\u4F4D")));
       heading("\u5173\u95ED\u7A0B\u5E8F");
       container.append(element("p", "\u5173\u95ED\u4E3B\u9762\u677F\u4F1A\u6536\u8D77\u5230\u6258\u76D8\uFF0C\u684C\u5BA0\u4E0E\u884C\u60C5\u7EE7\u7EED\u8FD0\u884C\u3002\u53EF\u4ECE\u6258\u76D8\u83DC\u5355\u9000\u51FA\u3002", "muted"));
       settingsButton("\u9000\u51FA\u725B\u6765", () => {
@@ -9476,7 +9383,6 @@
     }
     if (settingsPanel !== "source") groupSettingsContent(container);
     syncControls();
-    renderSettingsPreview();
     syncMotion();
   }
   function buildFeatureSettings() {
@@ -9634,7 +9540,6 @@
     if (!data) return;
     data.counts = counts;
     renderCounts();
-    renderSettingsPreview();
     if (!reset) {
       wood.replay("muyu");
       if (tab === "muyu" && !document.hidden && settings().motion && settings().muyuEffects) {
@@ -9686,14 +9591,14 @@
   $("hide-dashboard").onclick = () => perform(api.window("hide"));
   $("open-quote").onclick = () => perform(api.window("external"));
   $("edit-position").onclick = $("portfolio-edit").onclick = () => openPosition();
-  $("reset-overlays").onclick = () => perform(api.window("reset"), () => toast("\u60AC\u6D6E\u7A97\u53E3\u5DF2\u5F52\u4F4D"));
+  $("reset-overlays").onclick = () => perform(api.window("reset"), () => toast("\u684C\u9762\u7EC4\u4EF6\u5DF2\u5F52\u4F4D"));
   $("motions-open").onclick = openMotions;
   $("confirm-cancel").onclick = () => $("confirm-dialog").close();
   document.addEventListener("change", (event) => {
     const control = event.target;
     if (control.dataset.setting) {
       const key = control.dataset.setting;
-      const value = control.type === "checkbox" ? control.checked : control.type === "range" || ["interval", "islandInterval"].includes(key) ? Number(control.value) : control.value;
+      const value = control.type === "checkbox" ? control.checked : control.type === "range" || key === "interval" ? Number(control.value) : control.value;
       perform(api.settings({ [key]: value }));
     }
     if (control.dataset.quiet) {
@@ -9785,7 +9690,7 @@
     }
   };
   $("wood-round").onclick = () => perform(api.newRound());
-  $("wood-floating").onclick = () => perform(api.settings({ petEnabled: true, petMode: "muyu" }), () => toast("\u60AC\u6D6E\u6728\u9C7C\u5DF2\u5F00\u542F"));
+  $("wood-floating").onclick = () => perform(api.settings({ petEnabled: true, petMode: "muyu" }), () => toast("\u684C\u5BA0\u6728\u9C7C\u5DF2\u5F00\u542F"));
   for (const spec of catalog) {
     const button = element("button", "", "motion-option");
     button.dataset.motion = spec.id;
