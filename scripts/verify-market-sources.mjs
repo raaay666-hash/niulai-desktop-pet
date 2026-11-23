@@ -381,9 +381,9 @@ try {
   await clocks(fallbackNow);
   await app.evaluate((_electron, body) => globalThis.__sourceQaBody = body, fixture({ 1: '38.1', 21: '39.5', 24: 'Nov 12 04:10PM EST', 25: 'Nov 12 04:00PM EST', 26: '36.73', 3: '2026-11-13 05:10:30' }));
   await page.locator('#source-save').click();
-  await page.waitForFunction(async () => (await window.desktopPet.bootstrap()).quotes.gb_mp?.quote.fallbackFrom === '我的付费行情');
+  await waitFor(state, value => value.quotes.gb_mp?.quote?.fallbackFrom === '我的付费行情', 'Public fallback quote did not arrive');
   await page.locator('[data-tab=home]').click();
-  assert.match(await page.locator('#connection').textContent(), /新浪（自有源回退）/);
+  await page.waitForFunction(() => document.getElementById('connection').textContent.includes('新浪（自有源回退）'));
   pass('explicit fallback permission uses public data with visible source attribution');
 
   if (encrypted) {
