@@ -19,14 +19,14 @@ function parseSinaQuote(text, symbol, now = Date.now()) {
   const price = Number.parseFloat(parts[layout.price]);
   const change = Number.parseFloat(parts[layout.change]);
   const changePct = Number.parseFloat(parts[layout.changePct]);
-  if (![price, change, changePct].every(Number.isFinite)) return null;
+  if (!(price > 0) || ![price, change, changePct].every(Number.isFinite)) return null;
   const providedPrevClose = Number.parseFloat(parts[layout.prevClose]);
   const quote = {
     code: symbol,
     name: parts[layout.name] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ''),
     price,
     change,
-    prevClose: Number.isFinite(providedPrevClose) ? providedPrevClose : price - change,
+    prevClose: Number.isFinite(providedPrevClose) && providedPrevClose > 0 ? providedPrevClose : price - change,
     changePct,
     volume: parts[layout.volume] || '',
     amount: parts[layout.amount] || '',
@@ -77,14 +77,14 @@ function parseTencentQuote(text, symbol) {
   const price = Number.parseFloat(parts[3]);
   const change = Number.parseFloat(parts[detailed ? 31 : 4]);
   const changePct = Number.parseFloat(parts[detailed ? 32 : 5]);
-  if (![price, change, changePct].every(Number.isFinite)) return null;
+  if (!(price > 0) || ![price, change, changePct].every(Number.isFinite)) return null;
   const providedPrevClose = Number.parseFloat(parts[4]);
   const quote = {
     code: symbol,
     name: parts[1] || String(symbol).replace(/^(s_|rt_hk|gb_)/, ''),
     price,
     change,
-    prevClose: detailed && Number.isFinite(providedPrevClose) ? providedPrevClose : price - change,
+    prevClose: detailed && Number.isFinite(providedPrevClose) && providedPrevClose > 0 ? providedPrevClose : price - change,
     changePct,
     volume: parts[6] || '',
     amount: parts[detailed ? 37 : 7] || '',

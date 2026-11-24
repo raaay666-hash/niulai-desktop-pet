@@ -27,6 +27,33 @@ test('native and web choose the same full drawings, pauses and burst recovery',(
  assert.deepEqual(java('FrameHarness',commands),expected);
 });
 
+test('native FramePlayer sleeps during rest and stops when motionless', () => {
+ const out = java('FrameHarness', [
+  'state idle 2400 1600 0 1',
+  'delay 100 1 144',
+  'delay 2500 1 144',
+  'delay 2500 0 144',
+  'state muyu 400 0 3000 0',
+  'delay 3100 1 24'
+ ]);
+ assert.equal(out[0], '16');
+ assert.equal(out[1], '1500');
+ assert.equal(out[2], '-1');
+ assert.equal(out[3], '-1');
+});
+
+test('IslandGeometry clamps negative offsetY height and unfuses when pushed clear of hole', () => {
+ const [neg, pos] = java('IslandGeometryHarness', [
+  '1080 2400 3 0 96 0 72 510 18 570 78 792 132 0 -72 1',
+  '1080 2400 3 0 96 0 72 510 18 570 78 792 132 0 180 1'
+ ]).map(row => row.split(' '));
+ assert.equal(Number(neg[1]), 0);
+ assert.equal(Number(neg[3]), 132);
+ assert.equal(pos[6], 'false');
+ assert.equal(Number(pos[4]), 0);
+ assert.equal(Number(pos[5]), 0);
+});
+
 test('center, corner, wide notch, landscape, fold windows and absent cutouts remain bounded',()=>{
  const cases=[
  [1080,2400,3,0,96,0,72,510,18,570,78,792,132,0,0,1],

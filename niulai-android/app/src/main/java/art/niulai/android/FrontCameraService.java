@@ -10,7 +10,10 @@ public class FrontCameraService extends AccessibilityService {
 
     @Override protected void onServiceConnected() { connected = this; refresh(); }
     private void refresh() {
-        if (PetService.running) startService(new Intent(this, PetService.class).setAction(PetService.CONFIG));
+        try {
+            if (PetService.running) startService(new Intent(this, PetService.class).setAction(PetService.CONFIG));
+        } catch (RuntimeException ignored) {}
+        sendBroadcast(new Intent(PetService.CHANGED).setPackage(getPackageName()).putExtra(PetService.ISLAND_STATUS_ONLY, true));
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) { }
     @Override public void onInterrupt() { }

@@ -1,7 +1,16 @@
 (function () {
   'use strict';
-  if (!Object.fromEntries) Object.fromEntries = function (entries) { var result = {}; entries.forEach(function (entry) { result[entry[0]] = entry[1]; }); return result; };
+  if (!Object.fromEntries) Object.fromEntries = function (entries) { var result = {}; Array.from(entries).forEach(function (entry) { result[entry[0]] = entry[1]; }); return result; };
   if (!Object.hasOwn) Object.hasOwn = function (target, key) { return Object.prototype.hasOwnProperty.call(target, key); };
+  if (!Promise.prototype.finally) {
+    Promise.prototype.finally = function (onFinally) {
+      var P = this.constructor || Promise;
+      return this.then(
+        function (value) { return P.resolve(typeof onFinally === 'function' ? onFinally() : undefined).then(function () { return value; }); },
+        function (reason) { return P.resolve(typeof onFinally === 'function' ? onFinally() : undefined).then(function () { throw reason; }); }
+      );
+    };
+  }
   if (!Element.prototype.append) Element.prototype.append = function () { for (var i = 0; i < arguments.length; i++) this.appendChild(typeof arguments[i] === 'string' ? document.createTextNode(arguments[i]) : arguments[i]); };
   if (!Element.prototype.replaceChildren) Element.prototype.replaceChildren = function () { while (this.firstChild) this.removeChild(this.firstChild); this.append.apply(this, arguments); };
   // Some OEM WebViews expose a dialog element without the modal methods.

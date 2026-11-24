@@ -14,12 +14,20 @@ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFac
 const errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));
 const pass=name=>{checks.push({name,passed:true});console.log('PASS '+name);};
 await page.addInitScript(()=>{
+  Promise.prototype.finally = undefined;
+  Object.fromEntries = undefined;
   if (!localStorage.getItem('niulai:android:v1')) localStorage.setItem('niulai:android:v1', JSON.stringify({interval:30}));
   window.__qaDark = false;
   window.__qaFeatures = [];
   window.__qaIslandActions = [];
   window.__qaQuoteStep = 0;
+  window.__qaHeldQuotes = {};
   window.__qaIsland = {sdk:35, supported:false, notifications:true, overlayPermission:true};
+  const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+  CanvasRenderingContext2D.prototype.drawImage = function(image, ...args) {
+    if (this.canvas.id === 'island-mini' && image instanceof HTMLImageElement) window.__qaDrewIslandFrame = true;
+    return drawImage.call(this, image, ...args);
+  };
   window.NiulaiNative = {
     systemDark(){return window.__qaDark;}, appearance(){}, configurePet(){}, publishQuote(){},
     petStatus(){return 'ready';}, haptic(){},
@@ -37,10 +45,12 @@ await page.addInitScript(()=>{
     cameraInteractionSettings(){window.__qaIslandActions.push('camera');},
     previewIsland(){window.__qaIslandActions.push('preview');},
     request(id, kind, value){
-      const names = {s_sh000001:'上证样例', s_sz399001:'深证样例', s_sz399006:'创业板样例'};
+      const names = {s_sh000001:'上证样例', s_sz399001:'深证样例', s_sz399006:'创业板样例', s_sh600519:'贵州茅台', s_sh601318:'中国平安'};
       const responses = kind === 'quote' ? value.split(',').map((code, index) =>
         `var hq_str_${code}="${names[code]},${100 + 100 * index + window.__qaQuoteStep},1,1,0,0";`).join('') : '';
-      setTimeout(() => window.__niulaiResult(id, responses, null), 0);
+      const finish = () => window.__niulaiResult(id, responses, null);
+      if (kind === 'quote' && ['s_sh600519', 's_sh601318'].includes(value)) window.__qaHeldQuotes[value] = finish;
+      else setTimeout(finish, 0);
     }
   };
 });
@@ -51,6 +61,8 @@ const islandStatus = updates => page.evaluate(value => {
 try{
   await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.waitForSelector('.pet.ready');
   await page.locator('#settings-open').click();
+  await page.waitForFunction(() => window.__qaDrewIslandFrame, undefined, { timeout: 3000 });
+  pass('the first Island settings opening renders an actual mascot animation frame without waiting for a quote refresh');
   const backgroundFrame = await page.locator('#bull').evaluate(e => e.toDataURL());
   await page.waitForTimeout(350);
   assert.equal(await page.locator('#bull').evaluate(e => e.toDataURL()), backgroundFrame);
@@ -155,6 +167,28 @@ try{
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('niulai:android:v1')).islandSymbol), '');
   pass('removing the pinned stock restores following the current watch selection');
   await page.locator('#settings-dialog .close-dialog').click();
+
+  await page.getByRole('button', {name:'添加自选'}).click();
+  const search = page.locator('#search-dialog');
+  const query = search.locator('#search-input');
+  const button = search.getByRole('button', {name:'搜索', exact:true});
+  await query.fill('600519');
+  await search.getByRole('button', {name:/验证并添加/}).click();
+  await page.waitForFunction(() => Boolean(window.__qaHeldQuotes.s_sh600519));
+  assert(await button.isDisabled());
+  await query.fill('601318');
+  assert(await button.isEnabled());
+  await search.getByRole('button', {name:/验证并添加/}).click();
+  await page.waitForFunction(() => Boolean(window.__qaHeldQuotes.s_sh601318));
+  await page.evaluate(() => window.__qaHeldQuotes.s_sh600519());
+  assert(await button.isDisabled());
+  await page.evaluate(() => window.__qaHeldQuotes.s_sh601318());
+  await search.waitFor({state:'hidden'});
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('niulai:android:v1')).stocks.map(stock => stock.code));
+  assert(saved.includes('s_sh601318'));
+  assert(!saved.includes('s_sh600519'));
+  pass('retyping a quote validation starts the new search and discards the earlier reply');
+
   await page.locator('[data-tab=muyu]').click();
   for(let i=0;i<5;i++)await page.locator('#wood-tap').click();
   assert.equal(await page.locator('#wood-count').textContent(),'5');

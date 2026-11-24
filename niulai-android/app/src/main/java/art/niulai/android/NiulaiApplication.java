@@ -5,4 +5,6 @@ import android.content.res.Configuration;
 public class NiulaiApplication extends Application {
     @Override public void onCreate(){super.onCreate();IntentFilter filter=new IntentFilter();filter.addAction(Intent.ACTION_DATE_CHANGED);filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);AndroidCompat.receiver(this,new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){MuyuStore.read(context);context.sendBroadcast(new Intent(MuyuStore.CHANGED).setPackage(context.getPackageName()));StackWidgetProvider.refreshAll(context);}},filter);}
     @Override public void onConfigurationChanged(Configuration configuration){super.onConfigurationChanged(configuration);StackWidgetProvider.refreshAll(this);}
+    @Override public void onTrimMemory(int level){super.onTrimMemory(level);if(level!=TRIM_MEMORY_UI_HIDDEN&&level>=TRIM_MEMORY_RUNNING_LOW){HQFrames.trim();NativeBullView.trim();BullBitmap.trim();}}
+    @Override public void onLowMemory(){super.onLowMemory();HQFrames.trim();NativeBullView.trim();BullBitmap.trim();}
 }

@@ -30,7 +30,7 @@ export function parseChartResponse(text, symbol, period) {
   }
   const bars = [...unique.values()].sort((a, b) => a.date.localeCompare(b.date));
   const exchangeSymbol = data.qt?.[symbol]?.[2];
-  const resolved = symbol.startsWith('us') && typeof exchangeSymbol === 'string' && /^[A-Z][A-Z0-9.-]{0,20}\.(?:OQ|N|AMEX)$/.test(exchangeSymbol)
+  const resolved = symbol.startsWith('us') && typeof exchangeSymbol === 'string' && /^[A-Z][A-Z0-9.-]{0,20}\.(?:OQ|O|N|A|AMEX|PS|K)$/.test(exchangeSymbol)
     ? 'us' + exchangeSymbol : symbol;
   return { bars, adjusted, resolved, volumeUnit: /^(sh|sz)/.test(symbol) ? '手' : '股' };
 }

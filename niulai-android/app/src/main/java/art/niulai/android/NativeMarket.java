@@ -15,7 +15,8 @@ final class NativeMarket {
     static final class Stock {final String code,name;Stock(String code,String name){this.code=code;this.name=name;}}
     static boolean valid(String value){return value!=null&&value.matches("s_(?:sh|sz)[0-9]{6}|rt_hk[0-9]{5}|gb_[a-z][a-z0-9.-]{0,11}");}
     static String normalize(String input){
-        String s=input==null?"":input.trim().replaceAll("\\s+","").toLowerCase(Locale.US);
+        String raw=input==null?"":input.trim().replaceAll("\\s+","");
+        String s=raw.toLowerCase(Locale.US);
         if(s.equals("上证")||s.equals("上证指数"))return "s_sh000001";
         if(s.equals("深成")||s.equals("深证成指"))return "s_sz399001";
         if(s.equals("创业板")||s.equals("创业板指"))return "s_sz399006";
@@ -24,8 +25,8 @@ final class NativeMarket {
         Matcher hk=Pattern.compile("(?:(?:rt_)?hk([0-9]{1,5})|([0-9]{1,5})\\.hk)").matcher(s);
         if(hk.matches())return "rt_hk"+String.format(Locale.US,"%05d",Integer.parseInt(hk.group(1)!=null?hk.group(1):hk.group(2)));
         if(s.matches("[0-9]{5}"))return "rt_hk"+s;
-        s=s.replaceFirst("^\\$","").replaceFirst("\\.us$","").replaceFirst("^us","");
-        return s.matches("[a-z][a-z0-9.-]{0,11}")?"gb_"+s:null;
+        String us=raw.replaceFirst("^\\$","").replaceFirst("(?i)\\.us$","").replaceFirst("(?i)^us[:._-]","").replaceFirst("^us(?=[A-Z][A-Z0-9.-]*$)","").toLowerCase(Locale.US);
+        return us.matches("[a-z][a-z0-9.-]{0,11}")?"gb_"+us:null;
     }
     static String display(String code){return code.startsWith("gb_")?code.substring(3).toUpperCase(Locale.US):code.startsWith("rt_hk")?"HK "+code.substring(5):code.replaceFirst("^s_","");}
     static String currency(String code){return code.startsWith("gb_")?"USD":code.startsWith("rt_hk")?"HKD":"CNY";}
@@ -93,8 +94,8 @@ final class NativeMarket {
     static List<Stock> suggestions(String body){
         List<Stock> result=new ArrayList<>();Matcher m=Pattern.compile("v_hint=\"([\\s\\S]*?)\"").matcher(body==null?"":body);if(!m.find())return result;
         Matcher escaped=Pattern.compile("\\\\u([0-9a-fA-F]{4})").matcher(m.group(1));StringBuffer decoded=new StringBuffer();while(escaped.find())escaped.appendReplacement(decoded,Matcher.quoteReplacement(String.valueOf((char)Integer.parseInt(escaped.group(1),16))));escaped.appendTail(decoded);
-        Set<String> seen=new HashSet<>();for(String row:decoded.toString().split("\\^")){String[] p=row.split("~",-1);if(p.length<5||!p[4].equals("GP"))continue;String code=null;
-            if(p[0].equals("sh")||p[0].equals("sz"))code="s_"+p[0]+p[1];else if(p[0].equals("hk"))code=normalize("hk"+p[1]);else if(p[0].equals("us"))code=normalize(p[1].replaceFirst("(?i)\\.(oq|o|n|a|ps|k)$",""));
+        Set<String> seen=new HashSet<>();for(String row:decoded.toString().split("\\^")){String[] p=row.split("~",-1);if(p.length<5||!p[4].matches("GP(?:-[AB])?|ZS|JJ|ETF|LOF"))continue;String code=null;
+            if((p[0].equals("sh")||p[0].equals("sz"))&&p[1].matches("[0-9]{6}"))code="s_"+p[0]+p[1];else if(p[0].equals("hk"))code=normalize("hk"+p[1]);else if(p[0].equals("us"))code=normalize(p[1].replaceFirst("(?i)\\.(oq|o|n|a|ps|k)$",""));
             if(valid(code)&&seen.add(code))result.add(new Stock(code,p[2].isEmpty()?display(code):p[2]));if(result.size()==12)break;
         }return result;
     }

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
 import { loadState, saveState, position, marketSession, normalizeMarketSymbol, parseSinaQuote, parseTencentQuote, parseTencentSuggestions, quoteProviderSymbol, currency } from '../web/core.mjs';
 
 test('corrupt or invalid persisted data recovers without accepting an arbitrary request symbol', () => {
@@ -39,4 +41,27 @@ test('desktop parsers preserve A/HK/US mappings and reject invalid quote bodies'
   assert.equal(parseSinaQuote('var hq_str_s_sh000001="";', 's_sh000001'), null);
   assert.equal(parseTencentQuote('v_s_sh000001="1~上证指数~000001~3000~-30~-0.99~10~20";', 's_sh000001').price, 3000);
   assert.equal(parseTencentSuggestions('v_hint="sh~600519~贵州茅台~gzmt~GP^hk~00700~腾讯控股~txkg~GP";').length, 2);
+});
+test('compat.js polyfills Promise.prototype.finally and Object.fromEntries for Chrome 58–62', async () => {
+  const source = fs.readFileSync(new URL('../web/compat.js', import.meta.url), 'utf8');
+  const context = vm.createContext({
+    document: { createElement: () => ({ showModal() {} }), addEventListener() {} },
+    Element: { prototype: {} }
+  });
+  vm.runInContext('delete Promise.prototype.finally; delete Object.fromEntries; delete Object.hasOwn;', context);
+  vm.runInContext(source, context);
+  const res = await vm.runInContext(`(async () => {
+    const events = [];
+    const ok = await Promise.resolve(42).finally(() => { events.push('ok'); });
+    let caught = '';
+    try { await Promise.reject(new Error('boom')).finally(() => { events.push('err'); }); }
+    catch (e) { caught = e.message; }
+    const fromMap = Object.fromEntries(new Map([['a', 1], ['b', 2]]));
+    return { ok, caught, events, fromMap, hasOwn: Object.hasOwn(fromMap, 'a') };
+  })()`, context);
+  assert.equal(res.ok, 42);
+  assert.equal(res.caught, 'boom');
+  assert.deepEqual([...res.events], ['ok', 'err']);
+  assert.deepEqual({ ...res.fromMap }, { a: 1, b: 2 });
+  assert.equal(res.hasOwn, true);
 });

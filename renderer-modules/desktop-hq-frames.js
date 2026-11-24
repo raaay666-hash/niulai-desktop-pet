@@ -16,7 +16,7 @@ function pageRecord(name, index, assetBase) {
     const image = new Image();
     image.onload = async () => {
       try {
-        await image.decode();
+        if (image.decode) await image.decode();
         record.image = image;
         imageMetadata.set(image, { name, page: index });
         resolve(image);

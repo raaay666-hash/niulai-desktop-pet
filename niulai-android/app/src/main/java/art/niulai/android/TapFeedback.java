@@ -39,10 +39,14 @@ final class TapFeedback extends View {
             paint.setAlpha(Math.round(alpha * 255));
             paint.setStyle(Paint.Style.FILL);
             paint.setTextAlign(Paint.Align.RIGHT);
-            paint.setTextSize(Math.min(density * 14, getWidth() / 7.7f));
+            paint.setTextSize(Math.min(density * 14, Math.min(getWidth() / 7.7f, Math.max(density * 10, getHeight() * .34f))));
             paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-            float baseline = Math.max(density * 16, getHeight() * .23f) + density * pulse.y;
-            canvas.drawText("牛气➕1 📈", getWidth() - density * 7, baseline - density * 30 * progress, paint);
+            boolean compact = getHeight() < density * 72;
+            float baseline = compact
+                ? getHeight() - density * 9 + (pulse.y % 6) * density * .4f
+                : Math.max(density * 16, getHeight() * .23f) + density * pulse.y;
+            float rise = compact ? Math.min(density * 18, Math.max(density * 8, getHeight() * .38f)) : density * 30;
+            canvas.drawText("牛气➕1 📈", getWidth() - density * 7, baseline - rise * progress, paint);
         }
         if (!pulses.isEmpty() && isShown()) postInvalidateDelayed(32);
     }

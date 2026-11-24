@@ -18,7 +18,7 @@ const appContent = $('app-content');
 const nativeCover = location.hash === '#cover';
 const openFeedback = createFeedbackForm({
   submit: value => request('feedback', JSON.stringify(value)),
-  context: () => (JSON.parse(window.NiulaiNative?.updateStatus?.() || '{}').current || '1.6.3') + ' · Android',
+  context: () => (JSON.parse(window.NiulaiNative?.updateStatus?.() || '{}').current || '1.6.5') + ' · Android',
   open: () => {
     for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
     $('feedback-dialog').showModal();
@@ -28,10 +28,13 @@ const openFeedback = createFeedbackForm({
 $('feedback-open').onclick = openFeedback;
 $('about-feedback').onclick = openFeedback;
 window.__niulaiUpdate = value => {
+  const version = value.current || '1.6.5';
+  const aboutVersion = $('about-version');
+  if (aboutVersion) aboutVersion.textContent = '牛来盯盘 Android · ' + version;
   $('update-banner').hidden = !value.available;
   $('update-title').textContent = '牛来盯盘 ' + (value.version || '') + ' 已发布';
   $('update-note').textContent = (value.notes || []).slice(0, 2).join(' · ');
-  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + (value.current || '1.6.3'));
+  $('update-status').textContent = value.checking ? '正在检查更新…' : value.error || (value.available ? '发现新版本 ' + value.version : value.checkedAt ? '当前已是最新版本' : '当前版本 ' + version);
   $('check-update').disabled = Boolean(value.checking);
   $('update-notifications').checked = value.enabled !== false;
   $('update-permission').textContent = value.permission ? '系统通知设置' : '开启系统通知';
@@ -69,11 +72,20 @@ const moods=new MarketMood();let bullMotion=null,galleryMotion=null,previewUntil
 let woodMotion = null, miniMotion = null;
 let settingsPanel = 'island';
 function syncMotionVisibility() {
+  const woodOn = active && tab === 'muyu' && !coverVisible() && !dialogOpen();
+  const miniOn = active && $('settings-dialog').open && settingsPanel === 'island' && !$('island-demo-panel').hidden && !$('island-mini').hidden;
+  const coverOn = active && coverVisible();
+  if (woodOn && woodMotion && !woodMotion.target) woodMotion.state('muyu');
+  if (coverOn && coverMotion && !coverMotion.target) coverMotion.state(coverMode === 'wood' ? 'muyu' : 'idle');
+  if (miniOn && miniMotion) {
+    const stock = islandPreviewStock();
+    miniMotion.state(state.islandContent === 'muyu' ? 'muyu' : stock?.code === state.selected ? liveMood : 'idle');
+  }
   bullMotion?.configure(petVisible(), state.motion);
   galleryMotion?.configure(active && $('motion-dialog').open, state.motion);
-  woodMotion?.configure(active && tab === 'muyu' && !coverVisible() && !dialogOpen(), state.motion);
-  miniMotion?.configure(active && $('settings-dialog').open && settingsPanel === 'island' && !$('island-demo-panel').hidden && !$('island-mini').hidden, state.motion && state.islandMotion);
-  coverMotion?.configure(active && coverVisible(), false);
+  woodMotion?.configure(woodOn, state.motion);
+  miniMotion?.configure(miniOn, state.motion && state.islandMotion);
+  coverMotion?.configure(coverOn, false);
 }
 function selectSettings(panel) {
   settingsPanel = panel;
@@ -99,6 +111,7 @@ const fmt = (n, digits = 2) => Number.isFinite(n) ? n.toLocaleString('en-US', { 
 const signed = (n, digits = 2) => Number.isFinite(n) ? `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(n), digits)}` : '—';
 const tone = n => n > 0 ? 'rise' : n < 0 ? 'fall' : 'neutral';
 const selectedStock = () => state.stocks.find(s => s.code === state.selected);
+const islandPreviewStock = () => state.stocks.find(stock => stock.code === state.islandSymbol) || selectedStock();
 function persist() { try { saveState(localStorage, state);window.NiulaiNative?.storeAppState?.(JSON.stringify(state)); } catch { toast('本机存储已满，设置暂未保存'); } }
 function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 3000); }
 function text(tag, value, className) { const e = document.createElement(tag); e.textContent = value; if (className) e.className = className; return e; }
@@ -106,7 +119,7 @@ function applySettings() {
   const dark = state.theme === 'dark' || (state.theme === 'system' && systemIsDark());
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.classList.toggle('no-motion', !state.motion);
-  document.querySelector('meta[name="theme-color"]').content = dark ? '#15181e' : '#f4f5f7';
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#191f1b' : '#f1f2ec';
   syncMotionVisibility();
   window.NiulaiNative?.appearance(dark || coverVisible());
   for (const key of ['theme', 'interval']) $(key).value = state[key];
@@ -177,10 +190,10 @@ function renderLists() {
       button.setAttribute('aria-pressed', String(stock.code === state.selected));
       name.firstElementChild.textContent = q?.name || stock.name;
       price.className = `stock-price ${q ? tone(q.changePct) : 'neutral'}`;
-      price.firstElementChild.textContent = q ? fmt(q.price, marketForSymbol(stock.code) === 'hk' ? 3 : 2) : '—';
+      price.firstElementChild.textContent = q ? marketPrice(q.price, stock.code) : '—';
       price.lastElementChild.hidden = !entry || !(entry.error || Date.now() - entry.received > state.interval * 1000 + 20000);
       percent.className = `stock-pct ${q ? tone(q.changePct) : ''}`;
-      percent.textContent = q ? `${signed(q.changePct)}%` : '—';
+      percent.textContent = q && Number.isFinite(q.changePct) ? `${signed(q.changePct)}%` : '—';
       if (removable) row.lastElementChild.setAttribute('aria-label', `移出 ${stock.name}`);
     }
   }
@@ -219,7 +232,7 @@ function render() {
   $('session').textContent = marketSession(stock.code);
   $('price').textContent = marketPrice(q?.price, stock.code);
   $('change').textContent = q ? signed(q.change, 3) : '—';
-  $('percent').textContent = q ? `${signed(q.changePct)}%` : '—';
+  $('percent').textContent = q && Number.isFinite(q.changePct) ? `${signed(q.changePct)}%` : '—';
   $('quote-number').className = `quote-number ${q ? tone(q.changePct) : 'neutral'}`;
   const delayed = entry && (entry.error || Date.now() - entry.received > state.interval * 1000 + 20000);
   const failure = entry?.error === '行情源暂时限流' ? entry.error : '更新失败';
@@ -236,9 +249,10 @@ function render() {
 }
 function syncPet(){
   const stock=selectedStock();if(!stock)return;
-  const quote=quotes.get(stock.code)?.quote,p=position(stock,quote);
+  const quote=quotes.get(stock.code)?.quote;
+  const hasPosition = stock.cost > 0 && stock.shares > 0;
   const overlayInterval = Math.max(5, state.interval);
-  const config=JSON.stringify({...cleanFeatures(state),theme:state.theme,symbol:stock.code,name:quote?.name||stock.name,sound:state.sound,haptic:state.haptic,motion:state.motion,interval:overlayInterval,private:state.private,scene:state.scene,...(!state.private&&p?{cost:stock.cost,shares:stock.shares}:{})});
+  const config=JSON.stringify({...cleanFeatures(state),theme:state.theme,symbol:stock.code,name:quote?.name||stock.name,sound:state.sound,haptic:state.haptic,motion:state.motion,interval:overlayInterval,private:state.private,scene:state.scene,...(!state.private&&hasPosition?{cost:stock.cost,shares:stock.shares}:{})});
   if(config!==petConfigSent){window.NiulaiNative?.configurePet?.(config);petConfigSent=config;}
   const entry=quotes.get(stock.code);if(entry?.quote)window.NiulaiNative?.publishQuote?.(JSON.stringify({...entry.quote,received:entry.received}));
 }
@@ -469,8 +483,7 @@ function changeTab(next) {
   for (const e of document.querySelectorAll('.view')) e.hidden = e.id !== `view-${next}`;
   if (!coverVisible()) appContent.scrollTop = tabScroll.get(next) || 0;
   render();
-  bullMotion?.configure(petVisible(),state.motion);
-  woodMotion?.configure(active && tab === 'muyu' && !coverVisible(), state.motion);
+  syncMotionVisibility();
   if (next === 'muyu') refreshCounts();
 }
 function select(code) {
@@ -489,6 +502,7 @@ function select(code) {
 function removeStock(code) {
   if (state.stocks.length === 1) { toast('至少保留一只自选'); return; }
   const stock = state.stocks.find(s => s.code === code);
+  if (!stock) return;
   // A separate explicit action prevents watchlist removal from destroying position records.
   if (stock.cost || stock.shares) { toast('该股票有持仓，请先清除持仓后再移出自选'); return; }
   state.stocks = state.stocks.filter(s => s.code !== code); quotes.delete(code);
@@ -524,24 +538,36 @@ async function search() {
     $('search-message').textContent = direct ? '名称搜索暂不可用，可点击下方验证代码。' : '搜索连接失败，请检查网络后重试。';
   }
 }
+function setSearchBusy(busy) {
+  adding = busy;
+  for (const button of document.querySelectorAll('#search-dialog .result, #search-dialog [data-code], #search-form button')) button.disabled = busy;
+}
+function cancelSearch() {
+  ++searchEpoch;
+  clearTimeout(searchTimer);
+  if (!adding) return;
+  $('search-results').replaceChildren();
+  setSearchBusy(false);
+}
 async function addStock(stock) {
   if (adding) return;
   if (state.stocks.some(s => s.code === stock.code)) { select(stock.code); $('search-dialog').close(); return; }
   if (state.stocks.length >= 20) { toast('自选已满 20 只，请先移出一只'); return; }
-  adding = true; const searchTicket = ++searchEpoch;
-  for (const button of document.querySelectorAll('#search-dialog .result, #search-dialog [data-code], #search-form button')) button.disabled = true;
+  setSearchBusy(true); const searchTicket = ++searchEpoch;
   $('search-message').textContent = '正在验证股票行情…';
   const epoch = requestEpoch;
+  const current = () => active && epoch === requestEpoch && searchTicket === searchEpoch && $('search-dialog').open;
   try {
     let quote;
     try { quote = parseSinaQuote(await request('quote', stock.code), stock.code); } catch {}
+    if (!current()) return;
     if (!quote || quote.price <= 0) quote = parseTencentQuote(await request('fallback', quoteProviderSymbol(stock.code, 'tencent')), stock.code);
-    if (!active || epoch !== requestEpoch || searchTicket !== searchEpoch || !$('search-dialog').open) return;
+    if (!current()) return;
     if (!quote || quote.price <= 0) throw new Error('暂未获取到有效行情，请检查代码或稍后再试');
     state.stocks.push({ code: stock.code, name: quote.name, cost: 0, shares: 0 });
     rememberQuote(stock.code, quote, Date.now()); persist(); select(stock.code); $('search-dialog').close(); toast('已加入自选');
   } catch (error) { if (searchTicket === searchEpoch) $('search-message').textContent = error.message; }
-  finally { adding = false; for (const button of document.querySelectorAll('#search-dialog .result, #search-dialog [data-code], #search-form button')) button.disabled = false; }
+  finally { if (searchTicket === searchEpoch) setSearchBusy(false); }
 }
 function openPosition(code = state.selected) {
   const stock = state.stocks.find(s => s.code === code); if (!stock) return;
@@ -585,9 +611,9 @@ for (const dialog of document.querySelectorAll('dialog')) {
   dialog.querySelector('.close-dialog').onclick = () => dialog.close();
   dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
 }
-$('search-dialog').addEventListener('close', () => { ++searchEpoch; searchComposing = false; clearTimeout(searchTimer); });
-$('search-input').oninput = () => { ++searchEpoch; clearTimeout(searchTimer); if (!searchComposing) searchTimer = setTimeout(search, 350); };
-$('search-input').addEventListener('compositionstart', () => { searchComposing = true; ++searchEpoch; clearTimeout(searchTimer); });
+$('search-dialog').addEventListener('close', () => { cancelSearch(); searchComposing = false; });
+$('search-input').oninput = () => { cancelSearch(); if (!searchComposing) searchTimer = setTimeout(search, 350); };
+$('search-input').addEventListener('compositionstart', () => { searchComposing = true; cancelSearch(); });
 $('search-input').addEventListener('compositionend', () => { searchComposing = false; clearTimeout(searchTimer); searchTimer = setTimeout(search, 350); });
 $('search-form').onsubmit = e => { e.preventDefault(); if (searchComposing) return; clearTimeout(searchTimer); search(); };
 $('search-dialog').addEventListener('keydown', e => {
@@ -652,8 +678,9 @@ window.__niulaiLifecycle = foreground => {
   if (foreground) restoreCoverSelection();
   if (active === foreground) return;
   active = foreground; document.documentElement.classList.toggle('paused', !active);
-  ++requestEpoch; ++searchEpoch; clearTimeout(refreshTimer); clearTimeout(searchTimer); cancelRequests(); quoteRefresh = null; adding = false; stopAudio();
+  ++requestEpoch; cancelSearch(); clearTimeout(refreshTimer); cancelRequests(); quoteRefresh = null; stopAudio();
   clearInterval(calmTimer);
+  if (!active) $('calm-message').textContent = '休息计时';
   clearInterval(moodTimer);syncMotionVisibility();
   woodAudio.stop();
   if(active)moodTimer=setInterval(updateMood,1000);else previewUntil=0;
@@ -669,22 +696,23 @@ watchFoldLayout();
 if (nativeCover) {
   setCoverPreview(false);
   try { if (localStorage.getItem('niulai:cover:mode') === 'wood') setCoverMode('wood'); } catch {}
+} else {
+  applySettings();
+  setScene(state.scene);
+  recommendScene();
 }
-else applySettings();
-setScene(state.scene);recommendScene();window.__niulaiPetChanged();render();
+window.__niulaiPetChanged();render();
 const bull = new Bull2DController({ root: $('pet'), canvas: $('bull'), assetUrl: path => `assets/${path.split('/').pop()}` });
 bull.loadSprite().then(ok => {
   if (!ok) { $('pet-bubble').textContent = '图片加载失败，请重新打开应用';return; }
   const sprite=cropSprite($('bull'));$('bull').width=$('bull').height=384;
-  bullMotion=new BullMotion($('bull'),sprite);galleryMotion=new BullMotion($('motion-canvas'),sprite);
-  miniMotion = new BullMotion($('island-mini'), sprite);miniMotion.mini=true;miniMotion.configure(false,state.motion);
-  woodMotion = new BullMotion($('wood-canvas'), sprite);
-  coverMotion = new BullMotion($('cover-canvas'), sprite, { highQuality: false });
+  bullMotion = new BullMotion($('bull'), sprite, { active: petVisible(), initialState: liveMood });
+  galleryMotion = new BullMotion($('motion-canvas'), sprite, { active: false, initialState: null });
+  miniMotion = new BullMotion($('island-mini'), sprite, { active: false, initialState: null }); miniMotion.mini = true;
+  woodMotion = new BullMotion($('wood-canvas'), sprite, { active: false, initialState: null });
+  coverMotion = new BullMotion($('cover-canvas'), sprite, { highQuality: false, active: false, initialState: null });
   coverMotion.mini = true;
-  woodMotion.state('muyu');
-  bullMotion.state(liveMood);
   syncMotionVisibility();
-  if (coverVisible()) coverMotion.state(coverMode === 'wood' ? 'muyu' : 'idle');
 });
 for(const s of catalog){const b=text('button','','motion-option');b.dataset.motion=s.id;b.dataset.tone=s.tone;b.append(text('strong',s.label),text('small',s.action));b.onclick=()=>previewMotion(s.id);$('motion-list').append(b);}
 $('motion-dialog').addEventListener('close',()=>{galleryMotion?.configure(false,state.motion);bullMotion?.configure(petVisible(),state.motion);});
@@ -725,7 +753,7 @@ function knockWood(fromCover = false) {
 }
 
 function paintIslandPreview() {
-  const stock = state.stocks.find(item => item.code === state.islandSymbol) || selectedStock();
+  const stock = islandPreviewStock();
   const entry = quotes.get(stock?.code), quote = entry?.quote;
   const wood = state.islandContent === 'muyu';
   const style = wood ? 'quote' : state.islandStyle;
@@ -750,7 +778,6 @@ function paintIslandPreview() {
   const samples = entry?.samples || [];
   chart.hidden = style !== 'trend' || state.islandWidth < 240 || samples.length < 2;
   if (!chart.hidden) drawSparkline(chart, samples, light ? '#324e95' : '#adbfff');
-  miniMotion?.state(wood ? 'muyu' : stock?.code === state.selected ? liveMood : 'idle');
   syncMotionVisibility();
 }
 

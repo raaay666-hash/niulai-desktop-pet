@@ -9,9 +9,9 @@ export const api = window.desktopPet;
 const numberFormats = new Map();
 const priceFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const hkPriceFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 4 });
-const localClock = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const localClock = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, hourCycle: 'h23' });
 const receiptClock = new Intl.DateTimeFormat('zh-CN', {
-  month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hourCycle: 'h23'
+  month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hour12: false, hourCycle: 'h23'
 });
 const sourceClocks = new Map();
 export function fmt(value, digits = 2) {
@@ -46,7 +46,7 @@ function sourceTimestamp(quote, us, isPush) {
     isPush && quote.timePrecision === 'millisecond' ? 'millisecond' : 'second';
   const key = `${zone}/${precision}`;
   if (!sourceClocks.has(key)) sourceClocks.set(key, new Intl.DateTimeFormat('zh-CN', {
-    timeZone: zone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    timeZone: zone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23',
     second: precision === 'minute' ? undefined : '2-digit', fractionalSecondDigits: precision === 'millisecond' ? 3 : undefined
   }));
   return sourceClocks.get(key).format(quote.quotedAt) + (us ? ' 美东' : '');

@@ -17,10 +17,11 @@ $java = Split-Path (Get-Command javac.exe -ErrorAction Stop).Source -Parent
 $buildDir = if ($BuildDirectory) { [IO.Path]::GetFullPath($BuildDirectory) } else { Join-Path $env:LOCALAPPDATA 'NiulaiAndroidBuild' }
 $classes = Join-Path $buildDir 'classes'
 $dex = Join-Path $buildDir 'dex'
-$res = Join-Path $buildDir 'res/drawable'
+$resRoot = Join-Path $buildDir 'res'
+$res = Join-Path $resRoot 'drawable'
 $stage = Join-Path $buildDir 'apk-stage'
 New-Item -ItemType Directory -Force $classes,$dex,$res,$stage | Out-Null
-foreach($target in @($classes,$dex,$res,$stage,(Join-Path $buildDir 'web'),(Join-Path $buildDir 'assets'))){
+foreach($target in @($classes,$dex,$resRoot,$stage,(Join-Path $buildDir 'web'),(Join-Path $buildDir 'assets'),(Join-Path $buildDir 'resources.zip'),(Join-Path $buildDir 'unsigned.apk'),(Join-Path $buildDir 'aligned.apk'))){
     $absolute=[IO.Path]::GetFullPath($target);$allowed=[IO.Path]::GetFullPath($buildDir)+[IO.Path]::DirectorySeparatorChar
     if(-not $absolute.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)){throw 'Build cleanup target escaped the staging directory'}
     if(Test-Path -LiteralPath $absolute){Remove-Item -LiteralPath $absolute -Recurse -Force}

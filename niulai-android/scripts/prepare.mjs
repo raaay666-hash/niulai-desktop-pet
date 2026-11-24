@@ -5,8 +5,13 @@ import { build } from 'esbuild';
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(project, '..');
 const output = path.join(project, 'build/web');
+const { version } = JSON.parse(await fs.readFile(path.join(project, 'package.json'), 'utf8'));
 await fs.mkdir(path.join(output, 'assets'), { recursive: true });
-for (const file of ['index.html', 'styles.css', 'compat.js', 'market-mobile.css', 'adaptive.css']) await fs.copyFile(path.join(project, 'web', file), path.join(output, file));
+for (const file of ['styles.css', 'compat.js', 'market-mobile.css', 'adaptive.css']) await fs.copyFile(path.join(project, 'web', file), path.join(output, file));
+const indexHtml = (await fs.readFile(path.join(project, 'web/index.html'), 'utf8'))
+  .replace(/当前版本 \d+\.\d+\.\d+/g, '当前版本 ' + version)
+  .replace(/牛来盯盘 Android · \d+\.\d+\.\d+/g, '牛来盯盘 Android · ' + version);
+await fs.writeFile(path.join(output, 'index.html'), indexHtml, 'utf8');
 await fs.copyFile(path.join(root, 'renderer-modules/market-chart.css'), path.join(output, 'market-chart.css'));
 await fs.copyFile(path.join(root, 'renderer-modules/market-panels.css'), path.join(output, 'market-panels.css'));
 await fs.copyFile(path.join(root, 'renderer-modules/feedback-form.css'), path.join(output, 'feedback-form.css'));
@@ -23,7 +28,11 @@ for (const [from, to] of [
 await fs.mkdir(path.join(output, 'assets/frames'), { recursive: true });
 await fs.mkdir(path.join(output, 'assets/hq'), { recursive: true });
 const hqSource = path.join(root, 'assets/2d/frames/mobile-hq');
-for (const file of await fs.readdir(hqSource)) {
+const hqFiles = new Set(await fs.readdir(hqSource));
+for (const file of await fs.readdir(path.join(output, 'assets/hq'))) {
+  if (!hqFiles.has(file)) await fs.rm(path.join(output, 'assets/hq', file));
+}
+for (const file of hqFiles) {
   await fs.copyFile(path.join(hqSource, file), path.join(output, 'assets/hq', file));
 }
 const animation = JSON.parse(await fs.readFile(path.join(project, 'web/bull-frames.json'), 'utf8'));

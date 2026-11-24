@@ -3,7 +3,6 @@ package art.niulai.android;
 import android.app.*;
 import android.appwidget.*;
 import android.content.*;
-import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
 import android.os.*;
@@ -11,26 +10,30 @@ import android.view.View;
 import android.widget.RemoteViews;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import org.json.*;
 
 public class StackWidgetProvider extends AppWidgetProvider {
-    private static long lastUpdate;
-    private static boolean counterPending;
+    private static final AtomicLong lastUpdate = new AtomicLong();
+    private static final AtomicBoolean counterPending = new AtomicBoolean();
     private static MuyuSound clickSound;
     private static final Handler handler = new Handler(Looper.getMainLooper());
     private static final String NEXT = "art.niulai.WIDGET_NEXT", PREV = "art.niulai.WIDGET_PREV", KNOCK = "art.niulai.WIDGET_KNOCK",
         STOCK = "art.niulai.WIDGET_COVER_STOCK";
 
     static void refreshThrottled(Context context) {
-        long now = System.currentTimeMillis();
-        if (now - lastUpdate > 30000) { lastUpdate = now; refreshAll(context); }
+        long now = System.currentTimeMillis(), previous = lastUpdate.get();
+        if (now - previous > 30000 && lastUpdate.compareAndSet(previous, now)) {
+            Context application = context.getApplicationContext();
+            handler.post(() -> refreshAll(application));
+        }
     }
 
     static void refreshCounter(Context context) {
-        if (counterPending) return;
-        counterPending = true;
+        if (!counterPending.compareAndSet(false, true)) return;
         Context application = context.getApplicationContext();
-        handler.postDelayed(() -> { counterPending = false; refreshAll(application); }, 500);
+        handler.postDelayed(() -> { counterPending.set(false); refreshAll(application); }, 500);
     }
 
     static void refreshAll(Context context) {
@@ -112,9 +115,9 @@ public class StackWidgetProvider extends AppWidgetProvider {
         try {
             JSONObject state = AppState.load(context), config = new JSONObject(PetConfig.json(context));
             boolean cover = provider == CoverWidgetProvider.class;
-            String symbol = cover ? coverSymbol(context,state,id) : config.optString("symbol", "s_sh000001");
+            String symbol = cover ? coverSymbol(context,state,id) : state.optString("selected", config.optString("symbol", "s_sh000001"));
             JSONObject stock = AppState.stock(state,symbol);
-            JSONObject quote = cover ? PetConfig.snapshot(context,symbol) : new JSONObject(PetConfig.prefs(context).getString("quote", "{}"));
+            JSONObject quote = PetConfig.snapshot(context,symbol);
             if (!symbol.equals(quote.optString("code"))) quote = new JSONObject();
             int scene = Math.floorMod(PetConfig.prefs(context).getInt("widget_scene_" + id, 0),4);
             if (cover && scene != 3) scene = 1;
@@ -126,10 +129,9 @@ public class StackWidgetProvider extends AppWidgetProvider {
             boolean compact=cover&&(availableWidth<290||availableHeight<220);
             String layout=cover?(compact?"widget_cover_compact":"widget_cover"):"widget_stack";
             RemoteViews view = new RemoteViews(context.getPackageName(), res(context, "layout", layout));
-            ColorStateList lightSurface = ColorStateList.valueOf(0xfffafbf5), darkSurface = ColorStateList.valueOf(0xff20231f);
-            ColorStateList tint = theme.equals("system") ? null : Appearance.dark(context, theme) ? darkSurface : lightSurface;
-            if (!cover && Build.VERSION.SDK_INT >= 31) {
-                view.setColorStateList(res(context, "id", "widget_root"), "setBackgroundTintList", tint);
+            if (!cover) {
+                String bgDrawable = theme.equals("system") ? "widget_background" : Appearance.dark(context, theme) ? "widget_background_dark" : "widget_background_light";
+                view.setInt(res(context, "id", "widget_root"), "setBackgroundResource", res(context, "drawable", bgDrawable));
             }
             if (!cover) {
                 for (String name : new String[]{"widget_scene", "widget_time", "widget_note"}) textColor(context, view, name, theme, "widget_muted", 0xff74766f, 0xffa0a498);
@@ -141,22 +143,26 @@ public class StackWidgetProvider extends AppWidgetProvider {
             }
             String[] titles = {"牛来 · 桌宠", "牛来 · 行情", "牛来 · 持仓", "牛来 · 木鱼"};
             view.setTextViewText(res(context, "id", "widget_scene"), titles[scene]);
-            double price = quote.optDouble("price", 0), percent = quote.optDouble("changePct", 0);
-            String name = cover && stock != null ? stock.optString("name") : config.optString("name", "牛来盯盘");
-            String valueColor = percent < 0 ? "widget_fall" : "widget_rise";
+            double price = quote.optDouble("price", 0), percent = quote.optDouble("changePct", Double.NaN);
+            boolean hasPercent = price > 0 && Double.isFinite(percent);
+            String name = stock != null ? stock.optString("name", NativeMarket.display(symbol)) : config.optString("name", "牛来盯盘");
+            String valueColor = !hasPercent || percent == 0 ? "widget_ink" : percent < 0 ? "widget_fall" : "widget_rise";
             java.text.NumberFormat priceFormat=java.text.NumberFormat.getNumberInstance(Locale.US);
             priceFormat.setMinimumFractionDigits(symbol.startsWith("rt_hk")?3:2);
             priceFormat.setMaximumFractionDigits(4);
             String value = price > 0 ? priceFormat.format(price) : "—";
-            String note = price > 0 && quote.has("changePct") ? String.format(Locale.US, "%+.2f%%  ·  %s", percent, NativeMarket.currency(symbol))
+            String note = hasPercent ? String.format(Locale.US, "%+.2f%%  ·  %s", percent, NativeMarket.currency(symbol))
                 : price>0 ? NativeMarket.currency(symbol) : "点开连接行情";
-            int lightColor = percent < 0 ? 0xff22836d : 0xffcc4148;
-            int darkColor = percent < 0 ? 0xff63c5a6 : 0xfffa8086;
-            int pose = percent >= 5 ? 2 : percent >= 2 ? 3 : percent > .15 ? 4 : percent >= -.15 ? 0 : percent > -1 ? 5 : percent > -3 ? 1 : percent > -5 ? 6 : 7;
+            int lightColor = !hasPercent || percent == 0 ? 0xff282925 : percent < 0 ? 0xff22836d : 0xffcc4148;
+            int darkColor = !hasPercent || percent == 0 ? 0xffeeefe8 : percent < 0 ? 0xff63c5a6 : 0xfffa8086;
+            double pctVal = hasPercent ? percent : 0;
+            int pose = pctVal >= 5 ? 2 : pctVal >= 2 ? 3 : pctVal > .15 ? 4 : pctVal >= -.15 ? 0 : pctVal > -1 ? 5 : pctVal > -3 ? 1 : pctVal > -5 ? 6 : 7;
             if (scene == 2) {
                 boolean hide = state.optBoolean("private", true);
-                value = hide ? "••••" : config.optDouble("shares") > 0 && price > 0
-                    ? String.format(Locale.US, "%+,.2f", (price - config.optDouble("cost")) * config.optDouble("shares")) : "未设置";
+                double stockCost = stock != null ? stock.optDouble("cost", 0) : config.optDouble("cost", 0);
+                double stockShares = stock != null ? stock.optDouble("shares", 0) : config.optDouble("shares", 0);
+                value = hide ? "••••" : stockCost > 0 && stockShares > 0 && price > 0
+                    ? String.format(Locale.US, "%+,.2f", (price - stockCost) * stockShares) : "未设置";
                 note = hide ? "持仓金额已隐藏" : "累计盈亏 · " + NativeMarket.currency(symbol);
                 lightColor = 0xff282925; darkColor = 0xffeeefe8; valueColor = "widget_ink";
             }
@@ -185,10 +191,12 @@ public class StackWidgetProvider extends AppWidgetProvider {
                 && availableHeight >= (cover ? 240 : 140);
             view.setViewVisibility(res(context, "id", "widget_chart"), graph ? View.VISIBLE : View.GONE);
             if (graph) {
-                Bitmap light = WidgetChart.draw(history, lightColor), dark = WidgetChart.draw(history, darkColor);
-                if (Build.VERSION.SDK_INT >= 31 && theme.equals("system"))
+                if (Build.VERSION.SDK_INT >= 31 && theme.equals("system")) {
+                    Bitmap light = WidgetChart.draw(history, lightColor), dark = WidgetChart.draw(history, darkColor);
                     view.setIcon(res(context, "id", "widget_chart"), "setImageIcon", Icon.createWithBitmap(light), Icon.createWithBitmap(dark));
-                else view.setImageViewBitmap(res(context, "id", "widget_chart"), Appearance.dark(context, theme) ? dark : light);
+                } else {
+                    view.setImageViewBitmap(res(context, "id", "widget_chart"), WidgetChart.draw(history, Appearance.dark(context, theme) ? darkColor : lightColor));
+                }
             }
             Intent target=new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             if(cover&&scene==1)target.setAction(MainActivity.OPEN_WIDGET_STOCK).putExtra("widget_stock",symbol);

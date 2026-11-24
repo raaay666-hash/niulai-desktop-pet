@@ -124,15 +124,24 @@ final class SystemIsland {
 
     static Notification create(Context context, JSONObject config, NativeMarket.Quote quote, String error, boolean requestPromotion) {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
-        NotificationChannel channel = new NotificationChannel(CHANNEL, "系统灵动岛行情", NotificationManager.IMPORTANCE_DEFAULT);
-        channel.setDescription("用户开启盯盘期间的实时行情与关闭操作");
-        channel.setSound(null, null);
-        channel.enableVibration(false);
-        manager.createNotificationChannel(channel);
+        if (manager.getNotificationChannel(CHANNEL) == null) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL, "系统灵动岛行情", NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription("用户开启盯盘期间的实时行情与关闭操作");
+            channel.setSound(null, null);
+            channel.enableVibration(false);
+            manager.createNotificationChannel(channel);
+        }
         boolean wood = "muyu".equals(config.optString("islandContent"));
         String selected = config.optString("islandSymbol");
         if (!NativeMarket.valid(selected)) selected = config.optString("symbol", "s_sh000001");
-        String name = quote == null ? NativeMarket.display(selected) : quote.name;
+        String savedName = null;
+        if (quote == null && !selected.equals(config.optString("symbol"))) {
+            JSONObject pinnedStock = AppState.stock(AppState.load(context), selected);
+            if (pinnedStock != null) savedName = pinnedStock.optString("name", "");
+        }
+        String name = quote != null ? quote.name : selected.equals(config.optString("symbol"))
+            ? config.optString("name", NativeMarket.display(selected))
+            : savedName != null && !savedName.isEmpty() ? savedName : NativeMarket.display(selected);
         String value = quote == null ? (error == null ? "等待行情" : "获取失败") : NativeMarket.priceText(quote);
         String change = quote == null || !Double.isFinite(quote.pct) ? "" : String.format(Locale.US, "%+.2f%%", quote.pct);
         if (!config.optBoolean("islandPrice", true)) value = "盯盘中";
@@ -146,7 +155,7 @@ final class SystemIsland {
         String source = wood ? "点击通知打开牛来" : quote == null ? "正在获取公开行情" : ("tencent".equals(quote.source) ? "腾讯" : "新浪") + " · 获取于 " + new java.text.SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(new java.util.Date(quote.received));
         if (!wood && error != null) source = quote == null ? "行情暂不可用" : "更新失败，保留上次报价";
         int icon = context.getResources().getIdentifier("pet_notification", "drawable", context.getPackageName());
-        PendingIntent open = PendingIntent.getActivity(context, 70, new Intent(context, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent open = PendingIntent.getActivity(context, 70, new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = new Notification.Builder(context, CHANNEL)
             .setSmallIcon(icon)
             .setContentTitle(name)
@@ -171,7 +180,7 @@ final class SystemIsland {
             liveUpdate.putBoolean(REQUEST_PROMOTION, true);
             builder.addExtras(liveUpdate);
             try {
-                String critical = wood ? "木鱼" : error != null ? "行情延迟" : change.isEmpty() ? value : change;
+                String critical = wood ? "木鱼" : error != null ? "延迟" : change.isEmpty() ? value : change;
                 if (critical.length() > 7) critical = "盯盘中";
                 Notification.Builder.class.getMethod("setShortCriticalText", String.class).invoke(builder, critical);
             } catch (ReflectiveOperationException reflectionError) {

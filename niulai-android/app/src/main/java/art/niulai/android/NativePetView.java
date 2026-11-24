@@ -19,6 +19,7 @@ final class NativePetView extends FrameLayout {
     private final LinearLayout quote;
     private final TapFeedback feedback;
     private final MuyuSound woodSound;
+    private final boolean ownsSound;
     private final MarketMood moods = new MarketMood();
     private JSONObject config = new JSONObject();
     private NativeMarket.Quote current;
@@ -33,11 +34,14 @@ final class NativePetView extends FrameLayout {
         public void run() { refreshMood(); if (active) postDelayed(this, 1000); }
     };
 
-    NativePetView(Context context, Actions actions) {
+    NativePetView(Context context, Actions actions) { this(context, null, actions); }
+
+    NativePetView(Context context, MuyuSound sharedSound, Actions actions) {
         super(context);
         setClipChildren(false);
         scale = Math.min(1.3f, Math.max(1f, getResources().getConfiguration().fontScale));
-        woodSound = new MuyuSound(context);
+        ownsSound = sharedSound == null;
+        woodSound = sharedSound != null ? sharedSound : new MuyuSound(context);
         LinearLayout toolbar = new LinearLayout(context);
         toolbar.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         toolbar.setPadding(dp(4), 0, dp(4), 0);
@@ -146,7 +150,7 @@ final class NativePetView extends FrameLayout {
 
     void active(boolean value) {
         active = value;
-        if (!value) { stopAudio(); woodSound.stop(); feedback.clear(); }
+        if (!value) { stopAudio(); if (ownsSound) woodSound.stop(); feedback.clear(); }
         updateAnimation();
     }
 
@@ -174,10 +178,11 @@ final class NativePetView extends FrameLayout {
         if (!config.optBoolean("autoActions", true)) id = "idle";
         if (System.currentTimeMillis() >= previewUntil) bull.state(id);
         name.setText(valid ? current.name : config.optString("name", "牛来盯盘"));
-        price.setText(!valid ? "—" : String.format(Locale.US,
-            current.code.startsWith("rt_hk") ? "%,.3f %+.2f%%" : "%,.2f %+.2f%%", current.price, current.pct));
+        boolean hasPct = valid && Double.isFinite(current.pct);
+        price.setText(!valid ? "—" : NativeMarket.priceText(current) + (hasPct ? String.format(Locale.US, " %+.2f%%", current.pct) : ""));
         boolean dark = Appearance.dark(getContext(), config.optString("theme", "system"));
-        price.setTextColor(valid && current.pct < 0 ? dark ? 0xff63c5a6 : 0xff22836d : dark ? 0xfffa8086 : 0xffcc4148);
+        int ink = dark ? 0xffeeefe8 : 0xff282925;
+        price.setTextColor(!hasPct || current.pct == 0 ? ink : current.pct < 0 ? (dark ? 0xff63c5a6 : 0xff22836d) : (dark ? 0xfffa8086 : 0xffcc4148));
         String label = NativeBullView.label(getContext(), id);
         status.setText(!valid ? label : label + " · 获取 " + new SimpleDateFormat("HH:mm", Locale.CHINA).format(new Date(current.received)));
     }
@@ -226,6 +231,6 @@ final class NativePetView extends FrameLayout {
     private void stopAudio() { if (player != null) { player.release(); player = null; } }
     void close() {
         active = false; removeCallbacks(moodTick); removeCallbacks(hideBubble);
-        stopAudio(); woodSound.close(); feedback.clear(); bull.configure(false, false);
+        stopAudio(); if (ownsSound) woodSound.close(); feedback.clear(); bull.configure(false, false);
     }
 }

@@ -66,8 +66,9 @@ main { padding: 0 18px 100px; }
 .status-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); margin-right: 6px; flex-shrink: 0; }
 .connection.ok .status-dot { background: var(--green); } .connection.error .status-dot { background: var(--red); }
 .pet-actions { display: flex; padding: 7px 0 13px; }
-.pet-actions button { flex: 1; background: transparent; font-size: 11px; color: var(--muted); padding: 4px; min-height: 38px; }
+.pet-actions button { display: inline-flex; align-items: center; justify-content: center; flex: 1; background: transparent; font-size: 11px; color: var(--muted); padding: 4px; min-height: 38px; }
 .pet-actions button span { font-size: 15px; margin-right: 6px; color: var(--ink); }
+.pet-actions button svg { width: 16px; height: 16px; margin-right: 5px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
 .desktop-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; padding: 16px 17px 4px; margin-bottom: 18px; }
 .desktop-card > div:first-child { flex: 1; min-width: 125px; padding-right: 8px; }
 .desktop-card h2 { font-size: 15px; }
@@ -196,7 +197,7 @@ html[data-scene="2"] .scene-extra { min-height: 165px; }
 .wood-tap { position: relative; display: block; width: 100%; height: 285px; padding: 0; margin: 0 auto; background: radial-gradient(ellipse at center, var(--stage), transparent 70%); touch-action: manipulation; }
 .wood-tap canvas { width: 290px; height: 290px; max-width: 100%; pointer-events: none; }
 .wood-feedback { position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; }
-.wood-pulse { position: absolute; right: 3%; top: 17%; color: #e3444b; font-size: clamp(14px, 4.2vw, 19px); font-weight: 650; white-space: nowrap; animation: wood-tap-feedback .72s cubic-bezier(.16,.7,.3,1) forwards; }
+.wood-pulse { position: absolute; right: 3%; top: 17%; color: #e3444b; font-size: 16px; font-size: clamp(14px, 4.2vw, 19px); font-weight: 650; white-space: nowrap; animation: wood-tap-feedback .72s cubic-bezier(.16,.7,.3,1) forwards; }
 @keyframes wood-tap-feedback { 0% { opacity: 0; transform: translate(0,8px) scale(.92); } 15% { opacity: 1; transform: translate(0,0) scale(1); } 65% { opacity: 1; } 100% { opacity: 0; transform: translate(4px,-42px) scale(1); } }
 .wood-totals { display: flex; border-top: 1px solid var(--line); padding-top: 17px; margin-top: 4px; }
 .wood-totals > div { flex: 1; min-width: 0; } .wood-totals > div + div { border-left: 1px solid var(--line); }
@@ -236,7 +237,7 @@ html.no-motion *, html.paused * { animation: none !important; transition: none !
 @media (prefers-reduced-motion: reduce) { *, *:before, *:after { animation: none !important; transition: none !important; } }
 #motion-dialog[open]{display:flex;flex-direction:column;height:88vh;height:88dvh;overflow:hidden}
 #motion-dialog .sheet-head{flex-shrink:0}
-#motion-dialog .motion-stage{flex-shrink:0;min-height:0;height:clamp(130px,27vh,210px)}
+#motion-dialog .motion-stage{flex-shrink:0;min-height:0;height:27vh;height:clamp(130px,27vh,210px)}
 #motion-dialog .motion-stage canvas{height:calc(100% - 30px);width:auto;max-width:100%;margin:0 0 30px}
 #motion-dialog .motion-list{flex:1;min-height:70px;overflow-y:auto;overscroll-behavior:contain;align-content:start}
 #motion-dialog #floating-preview{flex-shrink:0;margin:0 0 8px;min-height:36px}

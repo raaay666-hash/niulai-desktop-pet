@@ -49,7 +49,7 @@ function normalizeMarketSymbol(input, markets) {
   if (/^gb_[a-z][a-z0-9.-]{0,11}$/.test(lower)) {
     return allowed.includes(MARKET.US) ? lower : null;
   }
-  value = value.replace(/^\$/, '').replace(/\.us$/i, '').replace(/^us/i, '');
+  value = value.replace(/^\$/, '').replace(/\.us$/i, '').replace(/^us[:._-]/i, '').replace(/^us(?=[A-Z][A-Z0-9.-]*$)/, '');
   if (/^[a-z][a-z0-9.-]{0,11}$/i.test(value) && /[a-z]/i.test(value)) {
     const ticker = value.replace(/[^a-z0-9.-]/gi, '').toLowerCase();
     return ticker && allowed.includes(MARKET.US) ? `gb_${ticker}` : null;
@@ -87,13 +87,13 @@ function parseTencentSuggestions(text, markets) {
   const results = [];
   for (const row of decodeJavascriptString(match[1]).split('^')) {
     const [prefix, rawCode, name, , type] = row.split('~');
-    if (!prefix || !rawCode || type !== 'GP') continue;
+    if (!prefix || !rawCode || !/^(?:GP(?:-[AB])?|ZS|JJ|ETF|LOF)$/.test(type || '')) continue;
     let code = null;
-    if (prefix === 'sh' || prefix === 'sz') code = `s_${prefix}${rawCode}`;
-    else if (prefix === 'hk') code = `rt_hk${String(rawCode).padStart(5, '0')}`;
+    if ((prefix === 'sh' || prefix === 'sz') && /^\d{6}$/.test(rawCode)) code = `s_${prefix}${rawCode}`;
+    else if (prefix === 'hk' && /^\d{1,5}$/.test(rawCode)) code = `rt_hk${String(rawCode).padStart(5, '0')}`;
     else if (prefix === 'us') {
       const ticker = String(rawCode).replace(/\.(oq|o|n|a|ps|k)$/i, '').toLowerCase();
-      code = `gb_${ticker}`;
+      if (/^[a-z][a-z0-9.-]{0,11}$/.test(ticker)) code = `gb_${ticker}`;
     }
     if (!code || !allowed.includes(marketForSymbol(code)) || seen.has(code)) continue;
     seen.add(code);

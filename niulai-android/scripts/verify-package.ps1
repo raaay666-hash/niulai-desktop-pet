@@ -25,6 +25,8 @@ try{
     $actual=(Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
     if($expected -ne $actual){throw 'Published SHA-256 mismatch'}
     $checks+='APK SHA-256 matches delivery checksum'
-    [ordered]@{checkedAt=[DateTime]::UtcNow.ToString('o');apk=$apk;bytes=(Get-Item $apk).Length;sha256=$actual;checks=$checks;assetCount=@($files|Where-Object FullName -Like 'assets/web/*').Count}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $repo "outputs/android/compat-$version/package-verification.json") -Encoding UTF8
+    $outDir = Join-Path $repo "outputs/android/compat-$version"
+    New-Item -ItemType Directory -Force $outDir | Out-Null
+    [ordered]@{checkedAt=[DateTime]::UtcNow.ToString('o');apk=$apk;bytes=(Get-Item $apk).Length;sha256=$actual;checks=$checks;assetCount=@($files|Where-Object FullName -Like 'assets/web/*').Count}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $outDir "package-verification.json") -Encoding UTF8
     $checks|ForEach-Object{Write-Output "PASS $_"}
 }finally{$zip.Dispose()}

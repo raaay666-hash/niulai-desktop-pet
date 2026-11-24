@@ -1,7 +1,12 @@
 import { marketForSymbol } from './core.mjs';
+const moodFormats = new Map();
 export function sessionPhase(code, now) {
   const us=marketForSymbol(code)==='us',hk=marketForSymbol(code)==='hk';
-  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:us?'America/New_York':'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date(now)).map(p=>[p.type,p.value]));
+  const zone = us ? 'America/New_York' : 'Asia/Shanghai';
+  if (!moodFormats.has(zone)) {
+    moodFormats.set(zone, new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }));
+  }
+  const p=Object.fromEntries(moodFormats.get(zone).formatToParts(new Date(now)).map(p=>[p.type,p.value]));
   const m=(Number(p.hour)%24)*60+Number(p.minute),day=`${p.year}-${p.month}-${p.day}`;
   let phase='closed';
   if(p.weekday==='Sat'||p.weekday==='Sun')phase='weekend';

@@ -14,6 +14,12 @@ assert.equal(normalizeMarketSymbol('hk700'), 'rt_hk00700');
 assert.equal(normalizeMarketSymbol('00700.HK'), 'rt_hk00700');
 assert.equal(normalizeMarketSymbol('AAPL'), 'gb_aapl');
 assert.equal(normalizeMarketSymbol('$TSLA'), 'gb_tsla');
+assert.equal(normalizeMarketSymbol('USB'), 'gb_usb');
+assert.equal(normalizeMarketSymbol('usb'), 'gb_usb');
+assert.equal(normalizeMarketSymbol('USO'), 'gb_uso');
+assert.equal(normalizeMarketSymbol('USFD'), 'gb_usfd');
+assert.equal(normalizeMarketSymbol('usAAPL'), 'gb_aapl');
+assert.equal(normalizeMarketSymbol('us:AAPL'), 'gb_aapl');
 assert.equal(normalizeMarketSymbol('BRK.B'), 'gb_brk.b');
 assert.equal(normalizeMarketSymbol('AAPL', ['cn', 'hk']), null);
 assert.equal(marketForSymbol('rt_hk00700'), 'hk');
@@ -25,13 +31,15 @@ assert.equal(quoteProviderSymbol('gb_aapl', 'tencent'), 'usAAPL');
 assert.equal(externalQuoteUrl('gb_aapl'), 'https://gu.qq.com/usAAPL/gp');
 
 const suggestions = parseTencentSuggestions(
-  'v_hint="hk~00700~\\u817e\\u8baf\\u63a7\\u80a1~txkg~GP^us~aapl.oq~Apple~apple~GP^sh~600519~\\u8d35\\u5dde\\u8305\\u53f0~gzmt~GP";',
+  'v_hint="hk~00700~\\u817e\\u8baf\\u63a7\\u80a1~txkg~GP^us~aapl.oq~Apple~apple~GP^sh~600519~\\u8d35\\u5dde\\u8305\\u53f0~gzmt~GP^sh~510300~\\u6caa\\u6df1300ETF~hs300~ETF^sh~000300~\\u6caa\\u6df1300~hs300~ZS";',
   ['cn', 'hk', 'us']
 );
 assert.deepEqual(suggestions.map((item) => item.code), [
   'rt_hk00700',
   'gb_aapl',
-  's_sh600519'
+  's_sh600519',
+  's_sh510300',
+  's_sh000300'
 ]);
 assert.equal(suggestions[0].name, '腾讯控股');
 
@@ -60,5 +68,19 @@ const hkTencent = parseTencentQuote(
 assert.equal(hkTencent.price, 440);
 assert.equal(hkTencent.prevClose, 457);
 assert.equal(hkTencent.market, 'hk');
+
+// Zero/invalid prices are rejected; zero prevClose falls back to price - change.
+assert.equal(parseSinaQuote('var hq_str_s_sh600519="贵州茅台,0.00,0.00,0.00,0,0";', 's_sh600519'), null);
+assert.equal(parseSinaQuote(
+  'var hq_str_gb_aapl="苹果,0,0,2026-08-24 20:11:03,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,310.50,0.37,1.15,Aug 24 08:30AM EDT,Aug 21 04:00PM EDT,0";',
+  'gb_aapl',
+  Date.parse('2026-08-24T12:35:00Z')
+), null);
+assert.equal(parseTencentQuote('v_s_sh600519="1~贵州茅台~600519~0.00~0.00~0.00~0~0";', 's_sh600519'), null);
+const zeroPrevCloseSina = parseSinaQuote(
+  'var hq_str_rt_hk00700="TENCENT,腾讯控股,450.000,0.000,451.400,438.400,440.000,-17.000,-3.720,439.800,440.000,12881851919.788,29180102,15.995,0.000,675.134,411.000,2026/08/24,16:08:26";',
+  'rt_hk00700'
+);
+assert.equal(zeroPrevCloseSina.prevClose, 457);
 
 console.log('market symbol tests passed');

@@ -50,10 +50,14 @@ export function position(stock, quote) {
     percent: (quote.price / stock.cost - 1) * 100, value: quote.price * stock.shares };
 }
 export function currency(code) { return { cn: 'CNY', hk: 'HKD', us: 'USD' }[marketForSymbol(code)]; }
+const sessionFormats = new Map();
 export function marketSession(code, now = new Date()) {
   const market = marketForSymbol(code);
   const zone = market === 'us' ? 'America/New_York' : 'Asia/Shanghai';
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now).map(p => [p.type, p.value]));
+  if (!sessionFormats.has(zone)) {
+    sessionFormats.set(zone, new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }));
+  }
+  const parts = Object.fromEntries(sessionFormats.get(zone).formatToParts(now).map(p => [p.type, p.value]));
   const minute = (Number(parts.hour) % 24) * 60 + Number(parts.minute);
   if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return '周末休市';
   if (market === 'us') return minute >= 570 && minute < 960 ? '常规交易时段' : '常规时段外';

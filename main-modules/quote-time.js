@@ -10,11 +10,13 @@ function marketClock(code, now = Date.now()) {
   if (!clockFormats.has(zone)) {
     clockFormats.set(zone, new Intl.DateTimeFormat('en-US', {
       timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, hourCycle: 'h23'
     }));
   }
   const parts = Object.fromEntries(clockFormats.get(zone).formatToParts(new Date(now)).map(part => [part.type, part.value]));
-  const minute = Number(parts.hour) * 60 + Number(parts.minute);
+  const hour = Number(parts.hour) % 24;
+  parts.hour = String(hour).padStart(2, '0');
+  const minute = hour * 60 + Number(parts.minute);
   const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
   let phase = 'closed';
   if (['Sat', 'Sun'].includes(parts.weekday)) phase = 'weekend';

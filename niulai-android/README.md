@@ -1,10 +1,10 @@
-# 牛来盯盘 Android · 1.6.3
+# 牛来盯盘 Android · 1.6.6
 
 安卓安装版，以 **2D 悬浮桌宠** 为主。应用和桌面图标直接复用 Windows 版 `build/icon.png`；不包含 Three.js、GLB 或 3D 牛。
 
 ## 安装与桌宠
 
-安装包位于仓库 `release/android/Niulai-Android-1.6.3.apk`，最低 Android 8.0（API 26）。无需 Google 服务或登录。缺少可用 WebView 时自动使用原生兼容界面，桌宠本身不依赖 WebView。
+安装包位于仓库 `release/android/Niulai-Android-1.6.6.apk`，最低 Android 8.0（API 26）。无需 Google 服务或登录。缺少可用 WebView 时自动使用原生兼容界面，桌宠本身不依赖 WebView。
 
 公开下载入口为 https://niulai.raaay.art/download/ ，按页面标注的版本选择。
 

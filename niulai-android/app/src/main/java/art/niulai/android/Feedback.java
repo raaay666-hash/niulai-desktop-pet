@@ -19,6 +19,7 @@ final class Feedback {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private boolean busy, closed;
     private AlertDialog dialog;
+    private TextView statusView;
     private String nativeSignature = "", nativeId = "";
 
     Feedback(Activity activity) { this.activity = activity; }
@@ -84,7 +85,7 @@ final class Feedback {
     }
 
     void show() {
-        if (dialog != null) { dialog.show(); return; }
+        if (dialog != null) { if (!busy && statusView != null) statusView.setText(""); dialog.show(); return; }
         int padding = Math.round(24 * activity.getResources().getDisplayMetrics().density);
         LinearLayout form = new LinearLayout(activity);
         form.setOrientation(LinearLayout.VERTICAL);
@@ -103,6 +104,7 @@ final class Feedback {
         TextView metadata = new TextView(activity);
         metadata.setText("随反馈附上 牛来盯盘 " + context());
         TextView status = new TextView(activity);
+        statusView = status;
         status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         form.addView(kind); form.addView(message); form.addView(contact); form.addView(metadata); form.addView(status);
         ScrollView scroll = new ScrollView(activity);

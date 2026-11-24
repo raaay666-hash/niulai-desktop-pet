@@ -32,7 +32,7 @@ function loadSheet(name, assetBase, prepareSheet) {
 }
 
 export class BullMotion {
-  constructor(canvas, fallback, { assetBase = 'assets/frames/', player = new FramePlayer(), fps = 60, miniFps = 30, transitionMs = 0, breathing = false, prepareSheet = null, highQuality = false } = {}) {
+  constructor(canvas, fallback, { assetBase = 'assets/frames/', player = new FramePlayer(), fps = 60, miniFps = 30, transitionMs = 0, breathing = false, prepareSheet = null, highQuality = false, active = true, initialState = 'idle' } = {}) {
     this.canvas = canvas;
     this.fallback = fallback;
     this.assetBase = assetBase;
@@ -43,7 +43,7 @@ export class BullMotion {
     this.breathing = breathing;
     this.prepareSheet = prepareSheet;
     this.highQuality = highQuality;
-    this.active = true;
+    this.active = active;
     this.motion = true;
     this.mini = false;
     this.raf = 0;
@@ -51,7 +51,7 @@ export class BullMotion {
     this.requested = 0;
     this.sheet = null;
     this.draw = this.draw.bind(this);
-    this.state('idle');
+    if (initialState) this.state(initialState);
   }
 
   async select(id, replay, options) {
@@ -124,7 +124,7 @@ export class BullMotion {
     const x = (w - width) / 2, y = h - height - h * .01;
     const blend = this.transition ? smooth((clock - this.transition.started) / this.transitionMs) : 1;
     if (blend >= 1) this.transition = null;
-    const continuous = breath > 0 || this.transition || this.hasContinuousEffects();
+    const continuous = breath > 0 || this.transition || this.hasContinuousEffects(frame);
     const key = [this.sheetName, frame.index, w, h, this.mini, this.motion, continuous ? clock : 0, drawing.key].join(':');
     const ticking = this.motion && (this.player.id !== 'muyu' || this.player.knocking || this.transition);
     if (key === this.renderKey) { if (ticking) this.raf = requestAnimationFrame(this.draw); return; }
@@ -173,6 +173,7 @@ export function cropSprite(canvas) {
   for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (data[(y * w + x) * 4 + 3] > 20) {
     left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y);
   }
+  if (right < left || bottom < top) return canvas;
   const sprite = document.createElement('canvas');
   sprite.width = 420;
   sprite.height = Math.round(420 * (bottom - top + 3) / (right - left + 3));

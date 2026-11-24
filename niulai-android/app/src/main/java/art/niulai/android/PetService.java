@@ -42,6 +42,7 @@ public class PetService extends Service {
     private boolean needsPromotionRecheck;
     private String islandMode = "";
     private String notificationKey = "";
+    private String appliedConfigKey = "";
     private long petPreviewUntil, islandPreviewUntil;
     private MuyuSound woodSound;
     private android.animation.ValueAnimator islandAnimator;
@@ -90,7 +91,7 @@ public class PetService extends Service {
                 DisplayCutout next = insets.getDisplayCutout();
                 if (!java.util.Objects.equals(next, detectedCutout)) {
                     detectedCutout = next;
-                    handler.post(() -> { if (island != null) { cancelIslandAnimation(); placeIsland(); updateIslandWindow(); } });
+                    handler.post(() -> { if (island != null) { cancelIslandAnimation(); placeIsland(); updateIslandWindow(); if (cameraBridge != null && bridgeShowing && islandVisible) cameraBridge.setVisibility(View.VISIBLE); } });
                 }
                 return insets;
             });
@@ -99,7 +100,7 @@ public class PetService extends Service {
         }
         woodSound = new MuyuSound(this);
         root = new DragFrame();
-        pet = new NativePetView(this, new NativePetView.Actions() {
+        pet = new NativePetView(this, woodSound, new NativePetView.Actions() {
             public void open() { openApp(); }
             public void collapse() { togglePet(); }
             public void stop() { closeFeature("petEnabled"); }
@@ -154,18 +155,29 @@ public class PetService extends Service {
         if (feed == null) return;
         try {
             JSONObject state = AppState.load(this);
-            JSONArray stocks = state.getJSONArray("stocks");
+            JSONArray stocks = state.optJSONArray("stocks");
+            if (stocks == null || stocks.length() == 0) return;
             JSONObject stock = stocks.getJSONObject(0);
             for (int i = 0; i < stocks.length(); i++) if (stocks.getJSONObject(i).getString("code").equals(state.optString("selected"))) stock = stocks.getJSONObject(i);
-            state.put("symbol", stock.getString("code"));
-            state.put("name", stock.optString("name"));
+            JSONObject compact = new JSONObject();
+            compact.put("symbol", stock.getString("code"));
+            compact.put("name", stock.optString("name"));
+            compact.put("sound", state.optBoolean("sound", false));
+            compact.put("haptic", state.optBoolean("haptic", true));
+            compact.put("motion", state.optBoolean("motion", true));
+            compact.put("interval", state.optInt("interval", 10));
+            compact.put("private", state.optBoolean("private", true));
+            compact.put("scene", state.optInt("scene", 0));
+            compact.put("theme", state.optString("theme", "system"));
+            FeatureOptions.copy(state, compact);
             if (!state.optBoolean("private", true)) {
-                state.put("cost", stock.optDouble("cost", 0));
-                state.put("shares", stock.optDouble("shares", 0));
+                compact.put("cost", stock.optDouble("cost", 0));
+                compact.put("shares", stock.optDouble("shares", 0));
             }
-            PetConfig.configure(this, state.toString());
+            PetConfig.configure(this, compact);
             boolean autoCollapse = config.optBoolean("islandAutoCollapse", true);
-            config = new JSONObject(PetConfig.json(this));
+            String rawConfig = PetConfig.json(this);
+            config = new JSONObject(rawConfig);
             String nextMode = config.optString("islandMode", "auto");
             boolean nextSystemIsland = config.optBoolean("islandEnabled") && SystemIsland.use(this, config);
             boolean nextPromotionEligible = nextSystemIsland && SystemIsland.canRequestPromotion(this);
@@ -191,14 +203,23 @@ public class PetService extends Service {
             String nextIsland = NativeMarket.valid(pinned) ? pinned : symbol;
             if (!islandSymbol.equals(nextIsland)) { secondaryQuote = null; secondaryError = null; }
             islandSymbol = nextIsland;
-            pet.configure(config);
-            island.configure(config);
-            island.update(islandSymbol.equals(symbol) ? primaryQuote : secondaryQuote,
-                islandSymbol.equals(symbol) ? primaryError : secondaryError);
-            feed.configure(symbol, config.optInt("interval", 10));
-            islandFeed.configure(islandSymbol, config.optInt("islandInterval", 5));
-            if (islandSymbol.equals(symbol) && config.optBoolean("islandEnabled"))
-                feed.configure(symbol, Math.min(config.optInt("interval", 10), config.optInt("islandInterval", 5)));
+            JSONObject islandStock = AppState.stock(state, islandSymbol);
+            String islandHoldingKey = islandStock == null ? "" : islandStock.optString("name") + ":" + islandStock.optDouble("cost", 0) + ":" + islandStock.optDouble("shares", 0);
+            String configKey = rawConfig + "|" + islandHoldingKey + "|" + Appearance.systemDark(this) + "|" + getResources().getConfiguration().orientation;
+            if (!configKey.equals(appliedConfigKey)) {
+                appliedConfigKey = configKey;
+                pet.configure(config);
+                island.configure(config);
+                island.update(islandSymbol.equals(symbol) ? primaryQuote : secondaryQuote,
+                    islandSymbol.equals(symbol) ? primaryError : secondaryError);
+            }
+            int interval = config.optInt("interval", 10);
+            int islandInterval = config.optInt("islandInterval", 5);
+            if (islandSymbol.equals(symbol) && config.optBoolean("islandEnabled") && !"muyu".equals(config.optString("islandContent"))) {
+                interval = Math.min(interval, islandInterval);
+            }
+            feed.configure(symbol, interval);
+            islandFeed.configure(islandSymbol, islandInterval);
             clampPet();
             placeIsland();
             updatePetWindow();
@@ -430,8 +451,10 @@ public class PetService extends Service {
         updateSystemNotification();
         if (systemIslandVisible && promotionEligible && !islandFallback && !usingOemRoute) schedulePromotionCheck();
         else cancelPromotionCheck();
-        if (!screen) woodSound.stop();
-        if (!canOverlay && !systemIsland) stopSelf();
+        if (!petVisible && !islandVisible) woodSound.stop();
+        boolean petWanted = config.optBoolean("petEnabled") && canOverlay;
+        boolean islandWanted = config.optBoolean("islandEnabled") && (canOverlay || (systemIsland && SystemIsland.notifications(this)));
+        if (!petWanted && !islandWanted) stopSelf();
         if (wasMounted != islandShowing || wasVisible != islandVisible || wasSystemVisible != systemIslandVisible
                 || wasChecking != islandCheckingPromotion) notifyIslandStatus();
         android.util.Log.i("NiulaiPet", "visible=" + petVisible + ";island=" + islandVisible);
@@ -541,6 +564,7 @@ public class PetService extends Service {
         placeIsland();
         int targetWidth = islandParams.width, targetHeight = islandParams.height, targetX = islandParams.x, targetY = islandParams.y;
         if (config.optBoolean("islandMotion", true) && config.optBoolean("motion", true)) {
+            if (cameraBridge != null) cameraBridge.setVisibility(View.INVISIBLE);
             islandAnimator = android.animation.ValueAnimator.ofFloat(0, 1);
             islandAnimator.setDuration(220);
             islandAnimator.addUpdateListener(animation -> {
@@ -550,11 +574,18 @@ public class PetService extends Service {
                 islandParams.x = Math.round(oldX + (targetX - oldX) * fraction);
                 islandParams.y = Math.round(oldY + (targetY - oldY) * fraction);
                 island.cameraWindowX(islandParams.x);
-                updateIslandWindow();
+                if (islandShowing && AndroidCompat.overlays(this)) {
+                    try { islandWm.updateViewLayout(island, islandParams); }
+                    catch (RuntimeException error) { updateIslandWindow(); }
+                }
             });
             islandAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override public void onAnimationEnd(android.animation.Animator animation) {
-                    if (islandAnimator == animation) islandAnimator = null;
+                    if (islandAnimator == animation) {
+                        islandAnimator = null;
+                        updateIslandWindow();
+                        if (cameraBridge != null && bridgeShowing && islandVisible) cameraBridge.setVisibility(View.VISIBLE);
+                    }
                 }
             });
             islandAnimator.start();
@@ -626,23 +657,33 @@ public class PetService extends Service {
 
     private final class DragFrame extends FrameLayout {
         private float downX, downY;
-        private int startX, startY;
+        private int startX, startY, activePointerId = MotionEvent.INVALID_POINTER_ID;
         private boolean dragging;
         DragFrame() { super(PetService.this); }
         @Override public boolean onInterceptTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                activePointerId = event.getPointerId(0);
                 downX = event.getRawX(); downY = event.getRawY(); startX = petParams.x; startY = petParams.y; dragging = false;
+            } else if (action == MotionEvent.ACTION_MOVE && activePointerId != MotionEvent.INVALID_POINTER_ID && event.findPointerIndex(activePointerId) == 0) {
+                if (Math.hypot(event.getRawX() - downX, event.getRawY() - downY) > dp(6)) dragging = true;
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
+                    || (action == MotionEvent.ACTION_POINTER_UP && event.getPointerId(event.getActionIndex()) == activePointerId)) {
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                dragging = false;
             }
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE && Math.hypot(event.getRawX() - downX, event.getRawY() - downY) > dp(6)) dragging = true;
             return dragging;
         }
         @Override public boolean onTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_MOVE && activePointerId != MotionEvent.INVALID_POINTER_ID && event.findPointerIndex(activePointerId) == 0) {
                 petParams.x = startX + (int)(event.getRawX() - downX); petParams.y = startY + (int)(event.getRawY() - downY);
                 clampPet(); updatePetWindow();
-            }
-            if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                PetConfig.prefs(PetService.this).edit().putInt("x", petParams.x).putInt("y", petParams.y).apply(); dragging = false;
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
+                    || (action == MotionEvent.ACTION_POINTER_UP && event.getPointerId(event.getActionIndex()) == activePointerId)) {
+                PetConfig.prefs(PetService.this).edit().putInt("x", petParams.x).putInt("y", petParams.y).apply();
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                dragging = false;
             }
             return true;
         }

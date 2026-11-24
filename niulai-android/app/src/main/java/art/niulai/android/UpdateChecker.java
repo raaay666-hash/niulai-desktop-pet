@@ -16,7 +16,7 @@ final class UpdateChecker {
     private final Context app; private final android.content.SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable changed; private volatile JSONObject status = new JSONObject();
-    private volatile boolean busy, closed; private long checkedAt;
+    private volatile boolean busy, closed; private long checkedAt, failedAt;
     UpdateChecker(Context context, Runnable listener) { app=context.getApplicationContext(); prefs=app.getSharedPreferences("updates",0); changed=listener; }
     String current() { try { return app.getPackageManager().getPackageInfo(app.getPackageName(),0).versionName; } catch(Exception e) { return "0.0.0"; } }
     String status() {
@@ -31,7 +31,8 @@ final class UpdateChecker {
         String[] x=a.split("\\."),y=b.split("\\.");for(int i=0;i<3;i++){int delta=Integer.compare(Integer.parseInt(x[i]),Integer.parseInt(y[i]));if(delta!=0)return delta;}return 0;
     }
     void check(boolean manual) {
-        if (closed || busy || !manual && checkedAt>0 && System.currentTimeMillis()-checkedAt<21600000) return;
+        long now = System.currentTimeMillis();
+        if (closed || busy || !manual && (checkedAt > 0 && now - checkedAt < 21600000 || failedAt > 0 && now - failedAt < 300000)) return;
         busy=true; changed.run();
         new Thread(()->{
             JSONObject result=new JSONObject(); HttpURLConnection connection=null;
@@ -48,7 +49,7 @@ final class UpdateChecker {
             } catch(Exception e){try{result=new JSONObject(status.toString());result.put("error","暂时无法检查更新，请稍后重试");}catch(Exception ignored){}}
             finally{if(connection!=null)connection.disconnect();}
             final JSONObject ready=result;
-            main.post(()->{if(closed)return;busy=false;checkedAt=System.currentTimeMillis();status=ready;changed.run();if(!manual&&!ready.has("error"))notifyRelease(ready);});
+            main.post(()->{if(closed)return;busy=false;if(!ready.has("error")){checkedAt=System.currentTimeMillis();failedAt=0;}else failedAt=System.currentTimeMillis();status=ready;changed.run();if(!manual&&!ready.has("error"))notifyRelease(ready);});
         },"Niulai-update").start();
     }
     private void notifyRelease(JSONObject info) {
@@ -56,8 +57,10 @@ final class UpdateChecker {
         if(!info.optBoolean("available")||!enabled()||version.equals(prefs.getString("notified",""))||!AlertChannel.UPDATES.enabled(app))return;
         NotificationChannel channel=AlertChannel.UPDATES.get(app);
         if(channel==null)return;
+        org.json.JSONArray notes=info.optJSONArray("notes");
+        String summary=notes!=null&&notes.length()>0?notes.optString(0,"点击查看新版本详情"):"点击查看新版本详情";
         PendingIntent open=PendingIntent.getActivity(app,1600,new Intent(Intent.ACTION_VIEW,Uri.parse(DOWNLOAD)),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        Notification notification=new Notification.Builder(app,channel.getId()).setSmallIcon(app.getResources().getIdentifier("pet_notification","drawable",app.getPackageName())).setContentTitle("牛来盯盘 "+version+" 已发布").setContentText(info.optJSONArray("notes").optString(0)).setContentIntent(open).setAutoCancel(true).build();
+        Notification notification=new Notification.Builder(app,channel.getId()).setSmallIcon(app.getResources().getIdentifier("pet_notification","drawable",app.getPackageName())).setContentTitle("牛来盯盘 "+version+" 已发布").setContentText(summary).setContentIntent(open).setAutoCancel(true).build();
         try {manager.notify(1600,notification);prefs.edit().putString("notified",version).apply();}catch(SecurityException ignored){}
     }
     void close(){closed=true;main.removeCallbacksAndMessages(null);}

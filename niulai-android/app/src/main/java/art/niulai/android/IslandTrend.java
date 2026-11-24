@@ -42,6 +42,7 @@ final class IslandTrend implements Iterable<IslandTrend.Sample> {
     }
 
     boolean ready() { return samples.size() >= 2; }
+    int size() { return samples.size(); }
     Sample first() { return samples.peekFirst(); }
     Sample last() { return samples.peekLast(); }
     @Override public Iterator<Sample> iterator() { return samples.iterator(); }

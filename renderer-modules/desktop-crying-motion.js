@@ -50,9 +50,9 @@ export class DesktopBullMotion extends BullMotion {
     return super.replay(id === 'slump' ? 'cover' : id, options);
   }
   interact(id) { return this.replay(id, { finishCurrent: true }); }
-  hasContinuousEffects() { return this.motion && this.player.id === 'cover'; }
+  hasContinuousEffects(frame) { return this.motion && this.player.id === 'cover' && (!frame || frame.elapsed >= 280 && frame.elapsed < 1400); }
   drawEffects(context, { frame, clock, x: left, y: top, width, height }) {
-    if (!this.hasContinuousEffects()) return;
+    if (!this.hasContinuousEffects(frame)) return;
     const onset = Math.min(1, Math.max(0, (frame.elapsed - 280) / 180));
     const release = Math.min(1, Math.max(0, (1400 - frame.elapsed) / 200));
     context.save();

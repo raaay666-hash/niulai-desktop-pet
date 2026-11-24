@@ -8,7 +8,9 @@ export function createFeedbackForm({ submit, context, open }) {
   const fields = [...form.querySelectorAll('input, textarea, select')];
   let busy = false;
   let clientId;
-  form.addEventListener('input', () => { if (!busy) clientId = undefined; });
+  const resetClientId = () => { if (!busy) clientId = undefined; };
+  form.addEventListener('input', resetClientId);
+  form.addEventListener('change', resetClientId);
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;

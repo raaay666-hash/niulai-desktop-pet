@@ -125,6 +125,7 @@ export class MarketChart {
   point(event) {
     if (!this.geometry) return;
     const { left, width } = this.canvas.getBoundingClientRect();
+    if (!(width > 0)) return;
     const { start, size, plotWidth } = this.geometry;
     const x = (event.clientX - left) * this.geometry.width / width;
     this.hover = this.geometry.nearest
@@ -178,10 +179,12 @@ export class MarketChart {
     const width = this.canvas.clientWidth;
     if (!width) return;
     const height = this.canvas.clientHeight, ratio = Math.min(devicePixelRatio || 1, 3);
-    this.canvas.width = Math.round(width * ratio);
-    this.canvas.height = Math.round(height * ratio);
+    const backingWidth = Math.round(width * ratio), backingHeight = Math.round(height * ratio);
+    if (this.canvas.width !== backingWidth) this.canvas.width = backingWidth;
+    if (this.canvas.height !== backingHeight) this.canvas.height = backingHeight;
     const ctx = this.canvas.getContext('2d');
-    ctx.scale(ratio, ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
     this.geometry = null;
     const stats = this.root.querySelector('.market-chart-stats');
     const ma = this.root.querySelector('.market-ma');
@@ -198,20 +201,20 @@ export class MarketChart {
       const index = Math.max(0, Math.min(this.hover ?? result.points.length - 1, result.points.length - 1));
       const point = result.points[index], timestamp = minuteText(point.minute);
       const change = result.previousClose ? (point.price / result.previousClose - 1) * 100 : null;
-      this.paintStats(stats, [['交易日', result.date], ['时间', timestamp], ['价格', price(point.price)], ['较昨收', percent(change)], ['昨收', price(result.previousClose)], ['分时量', volume(point.volume, result.volumeUnit)]]);
+      this.paintStats(stats, [['交易日', result.date], ['时间', timestamp], ['价格', price(point.price, this.code)], ['较昨收', percent(change)], ['昨收', price(result.previousClose, this.code)], ['分时量', volume(point.volume, result.volumeUnit)]]);
       this.geometry = drawMinuteChart(ctx, width, height, result, this.hover === null ? null : index, color);
-      this.canvas.setAttribute('aria-label', `${this.code} 分时，${result.date} ${timestamp}，价格 ${price(point.price)}，较昨收 ${percent(change)}。左右方向键查看，Home 和 End 跳至首尾`);
+      this.canvas.setAttribute('aria-label', `${this.code} 分时，${result.date} ${timestamp}，价格 ${price(point.price, this.code)}，较昨收 ${percent(change)}。左右方向键查看，Home 和 End 跳至首尾`);
       return;
     }
     const end = bars.length - this.offset, start = Math.max(0, end - this.count);
     const visible = bars.slice(start, end), size = visible.length;
     const selected = Math.max(start, Math.min(end - 1, this.hover ?? end - 1));
     const bar = bars[selected];
-    this.paintStats(stats, [['日期', bar.date], ['开', price(bar.open)], ['高', price(bar.high)], ['低', price(bar.low)], ['收', price(bar.close)], ['涨跌', percent(chartChange(bars, selected))], ['量', volume(bar.volume, this.result.volumeUnit)]]);
+    this.paintStats(stats, [['日期', bar.date], ['开', price(bar.open, this.code)], ['高', price(bar.high, this.code)], ['低', price(bar.low, this.code)], ['收', price(bar.close, this.code)], ['涨跌', percent(chartChange(bars, selected))], ['量', volume(bar.volume, this.result.volumeUnit)]]);
     ma.replaceChildren();
     for (const [index, length] of [5, 10, 20].entries()) {
       const label = document.createElement('span'); label.className = 'market-ma-' + index;
-      label.textContent = 'MA' + length + ' ' + price(movingAverage(bars, selected, length));
+      label.textContent = 'MA' + length + ' ' + price(movingAverage(bars, selected, length), this.code);
       ma.append(label);
     }
     const ink = color('--chart-ink'), muted = color('--muted'), line = color('--line');
@@ -268,7 +271,7 @@ export class MarketChart {
     ctx.fillStyle = muted;
     ctx.fillText(visible[0].date, left, height - 7);
     ctx.textAlign = 'right'; ctx.fillText(visible[visible.length - 1].date, left + plotWidth, height - 7);
-    this.canvas.setAttribute('aria-label', `${this.code} ${chartPeriods[this.period]}，${bar.date}，开 ${price(bar.open)}，高 ${price(bar.high)}，低 ${price(bar.low)}，收 ${price(bar.close)}，成交量 ${volume(bar.volume, this.result.volumeUnit)}。左右方向键查看，Home 和 End 跳至首尾`);
+    this.canvas.setAttribute('aria-label', `${this.code} ${chartPeriods[this.period]}，${bar.date}，开 ${price(bar.open, this.code)}，高 ${price(bar.high, this.code)}，低 ${price(bar.low, this.code)}，收 ${price(bar.close, this.code)}，成交量 ${volume(bar.volume, this.result.volumeUnit)}。左右方向键查看，Home 和 End 跳至首尾`);
     this.geometry = { start, size, plotWidth, width };
   }
 

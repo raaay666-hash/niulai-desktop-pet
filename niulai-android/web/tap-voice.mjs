@@ -11,17 +11,18 @@ export class TapVoice {
     const now = performance.now();
     if (now - this.lastPlayed < 480) return;
     this.lastPlayed = now;
+    const epoch = this.epoch || 0;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     this.context ??= new AudioContext();
     const context = this.context;
     await context.resume();
+    if (epoch !== (this.epoch || 0)) return;
     this.loading ??= fetch(this.url).then(response => {
       if (!response.ok) throw new Error('声音加载失败');
       return response.arrayBuffer();
-    }).then(buffer => context.decodeAudioData(buffer)).catch(error => { this.loading = null; throw error; });
-    const epoch = this.epoch;
+    }).then(buffer => context.decodeAudioData(buffer)).catch(error => { this.loading = null; this.lastPlayed = -Infinity; throw error; });
     const buffer = await this.loading;
-    if (epoch !== this.epoch) return;
+    if (epoch !== (this.epoch || 0)) return;
     for (const voice of this.sources) voice.gain.gain.setTargetAtTime(this.volume * .4, context.currentTime, .02);
     if (this.sources.size >= 2) this.sources.values().next().value.source.stop();
     const source = context.createBufferSource(), gain = context.createGain();
@@ -38,5 +39,8 @@ export class TapVoice {
     this.epoch = (this.epoch || 0) + 1;
     for (const voice of this.sources) { try { voice.source.stop(); } catch { } }
     this.sources.clear();
+    if (this.context && this.context.state === 'running') {
+      try { this.context.suspend().catch(() => {}); } catch { }
+    }
   }
 }

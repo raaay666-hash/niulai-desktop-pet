@@ -36,8 +36,12 @@ test('native and existing desktop parsers agree on all three markets and both qu
   fixtures.forEach(([code,backup,body],i)=>{const expected=(backup?parseTencentQuote:parseSinaQuote)(body,code);if(!expected||expected.price<=0){assert.equal(results[i],'-');return;}const fields=results[i].split('\t');for(const [j,key]of ['price','change','changePct','prevClose'].entries())assert(Math.abs(Number(fields[j])-expected[key])<1e-8,`${code} ${key}`);assert.equal(Buffer.from(fields[4],'base64').toString('utf8'),expected.name);assert.equal(Buffer.from(fields[5]||'','base64').toString('utf8'),expected.time);});
 });
 test('native symbol entry uses the same A/HK/US canonical codes',()=>{
-  const inputs=['600519','sh000001','sz000001','上证','00700','hk700','700.hk','AAPL','$AAPL','AAPL.US','gb_msft','https://bad.example','12345678'];
+  const inputs=['600519','sh000001','sz000001','上证','00700','hk700','700.hk','AAPL','$AAPL','AAPL.US','USB','usb','USO','USFD','usAAPL','us:AAPL','gb_msft','https://bad.example','12345678'];
   const results=java(inputs.map(s=>'N\t'+b64(s)));inputs.forEach((s,i)=>assert.equal(results[i],normalizeMarketSymbol(s)||'-',s));
+  assert.equal(normalizeMarketSymbol('USB'),'gb_usb');
+  assert.equal(normalizeMarketSymbol('USO'),'gb_uso');
+  assert.equal(normalizeMarketSymbol('USFD'),'gb_usfd');
+  assert.equal(normalizeMarketSymbol('usAAPL'),'gb_aapl');
 });
 test('Island trend stays within its symbol and session and preserves small prices', () => {
   const trend = path.join(path.dirname(source), 'IslandTrend.java');

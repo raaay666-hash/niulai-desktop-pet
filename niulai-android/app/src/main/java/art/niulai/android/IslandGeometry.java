@@ -28,7 +28,7 @@ final class IslandGeometry {
                 if (requestedHeight <= Math.round(48 * density)) {
                     result.width = Math.min(result.width, Math.max(Math.round(176 * density), screenWidth - Math.round(164 * density)));
                 }
-                result.y = Math.max(0, hole[1] - Math.round(4 * density)) + offsetY;
+                result.y = Math.max(0, hole[1] - Math.round(4 * density) + offsetY);
                 result.height = Math.max(result.height, hole[3] - result.y + Math.round(6 * density));
             } else if (top) {
                 center = central ? screenWidth / 2 : cx < screenWidth / 2 ? safe[0] + margin + result.width / 2 : screenWidth - safe[2] - margin - result.width / 2;
@@ -50,7 +50,10 @@ final class IslandGeometry {
         if (result.fused && result.bridge == null) {
             result.gapLeft = clamp(hole[0] - result.x - Math.round(7 * density), 0, result.width);
             result.gapRight = clamp(hole[2] - result.x + Math.round(7 * density), result.gapLeft, result.width);
-            if (hole[3] <= result.y || hole[1] >= result.y + result.height) { result.gapLeft = 0; result.gapRight = 0; }
+            if (hole[3] <= result.y || hole[1] >= result.y + result.height) {
+                result.gapLeft = 0; result.gapRight = 0;
+                if (offsetY > 0) result.fused = false;
+            }
         }
         return result;
     }

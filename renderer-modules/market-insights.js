@@ -37,7 +37,7 @@ function shortDate(value, timeZone, detailed = false) {
   const key = timeZone + '/' + detailed;
   if (!shortDateFormats.has(key)) shortDateFormats.set(key, new Intl.DateTimeFormat('zh-CN', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-    second: detailed ? '2-digit' : undefined, hourCycle: 'h23'
+    second: detailed ? '2-digit' : undefined, hour12: false, hourCycle: 'h23'
   }));
   return shortDateFormats.get(key).format(value);
 }
@@ -165,6 +165,7 @@ export class MarketNews {
     this.scope = 'stock';
     this.visible = 5;
     this.translations = new Map();
+    this.translationBackoff = new Map();
     this.translating = new Set();
     this.title = root.querySelector('.market-news-context');
     this.status = root.querySelector('.market-news-status');
@@ -191,7 +192,7 @@ export class MarketNews {
       this.visible = this.visible >= this.visibleArticles().length ? 5 : this.visible + 5;
       this.paintArticles(this.articles);
     };
-    this.refresh.onclick = () => this.load(true);
+    this.refresh.onclick = () => { this.translationBackoff.clear(); this.load(true); };
   }
 
   setScope(scope) {
@@ -281,7 +282,7 @@ export class MarketNews {
       };
       if (this.preferences?.autoTranslate && item.language !== 'zh') {
         if (this.translations.has(item.id)) showTranslation(this.translations.get(item.id));
-        else if (!this.translating.has(item.id)) translations.push(item.id);
+        else if (!this.translating.has(item.id) && (this.translationBackoff.get(item.id) || 0) <= Date.now()) translations.push(item.id);
       }
       button.append(meta, headline, original);
       button.onclick = () => this.open(item.id);
@@ -295,14 +296,28 @@ export class MarketNews {
     if (batch.length) {
       for (const id of batch) this.translating.add(id);
       this.translate(batch).then(result => {
-        for (const id of batch) this.translations.set(id, result[id] || '');
+        let updated = false;
+        const retryAt = Date.now() + 15000;
+        for (const id of batch) {
+          if (result && result[id]) {
+            this.translations.set(id, result[id]);
+            this.translationBackoff.delete(id);
+            updated = true;
+          } else {
+            this.translationBackoff.set(id, retryAt);
+          }
+        }
         while (this.translations.size > 180) this.translations.delete(this.translations.keys().next().value);
-        if (this.active && this.preferences.autoTranslate) {
+        while (this.translationBackoff.size > 180) this.translationBackoff.delete(this.translationBackoff.keys().next().value);
+        if (updated && this.active && this.preferences.autoTranslate) {
           const focused = this.list.querySelector('button:focus')?.dataset.article;
           this.paintArticles(this.articles);
           if (focused) this.list.querySelector('[data-article="' + focused + '"]')?.focus({ preventScroll: true });
         }
-      }, () => {}).finally(() => { for (const id of batch) this.translating.delete(id); });
+      }, () => {
+        const retryAt = Date.now() + 15000;
+        for (const id of batch) this.translationBackoff.set(id, retryAt);
+      }).finally(() => { for (const id of batch) this.translating.delete(id); });
     }
   }
 

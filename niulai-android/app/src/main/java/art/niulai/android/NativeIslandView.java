@@ -30,7 +30,7 @@ final class NativeIslandView extends FrameLayout {
     private NativeMarket.Quote quote;
     private String error;
     private boolean expanded, active = true;
-    private TextView title, compactPrice, compactDelta, mainValue, detail, source, holding;
+    private TextView title, compactPrice, compactDelta, toggleButton, mainValue, detail, source, holding;
     private NativeBullView bull, miniBull;
     private TrendView trendView, expandedTrend;
     private int ink, muted, surface, accent;
@@ -41,6 +41,9 @@ final class NativeIslandView extends FrameLayout {
     private int gapLeft, gapRight, windowX, windowWidth;
     private float downX, downY;
     private long downTime;
+    private final Runnable staleTick = new Runnable() {
+        public void run() { updateText(); if (active) postDelayed(this, 15000); }
+    };
 
     void cameraLayout(IslandGeometry.Layout layout) {
         boolean changed = fused != layout.fused;
@@ -57,10 +60,11 @@ final class NativeIslandView extends FrameLayout {
     private void layoutHeader() {
         if (headerLeft == null || headerGap == null) return;
         int gap = Math.max(0, gapRight - gapLeft);
+        if (toggleButton != null) toggleButton.setVisibility(!expanded && fused && gap > 0 && !muyu() ? GONE : VISIBLE);
         if (gap == 0) {
             headerGap.setVisibility(GONE);
             headerLeft.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1));
-            int valueWidth = compactDelta != null && compactDelta.getVisibility() == GONE ? 44 : 96;
+            int valueWidth = compactDelta != null && compactDelta.getVisibility() == GONE ? 44 : 108;
             headerRight.setLayoutParams(new LinearLayout.LayoutParams(dp(valueWidth), -1));
         } else {
             headerGap.setVisibility(VISIBLE);
@@ -169,8 +173,8 @@ final class NativeIslandView extends FrameLayout {
         headerRight = new LinearLayout(getContext()); headerRight.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
         header.addView(headerRight, new LinearLayout.LayoutParams(-2, -1));
         if ("quote".equals(style) && config.optBoolean("islandBull", true)) {
-            NativeBullView icon = new NativeBullView(getContext());
-            icon.mini(true);miniBull=icon;
+            NativeBullView icon = new NativeBullView(getContext(), true);
+            miniBull = icon;
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(fused && gapRight > gapLeft ? 24 : 32), dp(34));
             iconParams.rightMargin = dp(3);
             headerLeft.addView(icon, iconParams);
@@ -202,8 +206,8 @@ final class NativeIslandView extends FrameLayout {
         compactDelta.setGravity(Gravity.CENTER);
         compactDelta.setTypeface(null, 1);
         headerRight.addView(compactDelta, new LinearLayout.LayoutParams(0, -1, 1));
-        TextView toggle = button(expanded ? "⌃" : "⌄", expanded ? "收起灵动岛" : "展开灵动岛", actions::expand);
-        headerRight.addView(toggle, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        toggleButton = button(expanded ? "⌃" : "⌄", expanded ? "收起灵动岛" : "展开灵动岛", actions::expand);
+        headerRight.addView(toggleButton, new LinearLayout.LayoutParams(dp(36), dp(44)));
         header.setOnClickListener(v -> { if (muyu()) actions.knock(); else actions.expand(); });
         content.addView(header, new LinearLayout.LayoutParams(-1, dp(44)));
         layoutHeader();
@@ -281,10 +285,17 @@ final class NativeIslandView extends FrameLayout {
         boolean wood = muyu();
         JSONObject counts = wood ? MuyuStore.read(getContext()) : null;
         long now = System.currentTimeMillis();
-        boolean stale = error != null || quote != null && now - quote.received > 45000;
+        long staleLimit = Math.max(45000L, config.optInt("islandInterval", 5) * 2500L);
+        boolean stale = error != null || quote != null && now - quote.received > staleLimit;
         String code = symbol();
+        String savedName = null;
+        if (quote == null && !code.equals(config.optString("symbol"))) {
+            JSONObject pinnedStock = AppState.stock(AppState.load(getContext()), code);
+            if (pinnedStock != null) savedName = pinnedStock.optString("name", "");
+        }
         String name = quote != null ? quote.name : code.equals(config.optString("symbol"))
-            ? config.optString("name", NativeMarket.display(code)) : NativeMarket.display(code);
+            ? config.optString("name", NativeMarket.display(code))
+            : savedName != null && !savedName.isEmpty() ? savedName : NativeMarket.display(code);
         boolean minimal = !wood && "minimal".equals(config.optString("islandStyle"));
         title.setText(wood ? "牛来木鱼" : minimal ? NativeMarket.display(code) : name);
         String price = quote != null ? NativeMarket.priceText(quote) : error == null ? "等待行情" : "获取失败";
@@ -311,8 +322,9 @@ final class NativeIslandView extends FrameLayout {
             : stale ? (quote == null ? "行情暂不可用" : "更新延迟 · 保留上次报价")
             : quote != null && Double.isFinite(quote.change) ? String.format(Locale.US, "%+.3f  ·  %s", quote.change, NativeMarket.currency(code)) : "等待报价");
         detail.setVisibility(!wood || config.optBoolean("islandCount", true) ? VISIBLE : GONE);
-        holding.setVisibility(!wood && config.optBoolean("islandHoldings") ? VISIBLE : GONE);
-        holding.setText(holdingText());
+        boolean showHolding = !wood && config.optBoolean("islandHoldings");
+        holding.setVisibility(showHolding ? VISIBLE : GONE);
+        if (showHolding) holding.setText(holdingText());
         source.setText(wood ? "点击敲击 · 本机计数" : quote == null ? "等待行情" : (quote.source.equals("tencent") ? "腾讯" : "新浪") + " · 获取 " + new SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(new Date(quote.received)));
         if (bull != null) {
             bull.state(motionState);
@@ -334,16 +346,17 @@ final class NativeIslandView extends FrameLayout {
                 high = Math.max(high, sample.price);
             }
             long start = trend.first().at, span = trend.last().at - start;
+            int total = Math.max(2, trend.size());
             float inset = dp(3), width = getWidth() - 2 * inset, height = getHeight() - 2 * inset;
             if (width <= 0 || height <= 0) return;
             float x = 0, y = 0;
-            boolean first = true;
+            int idx = 0;
             line.rewind();
             for (IslandTrend.Sample sample : trend) {
-                x = inset + (span == 0 ? width / 2 : width * (sample.at - start) / span);
+                x = inset + (span == 0 ? width * idx / (total - 1) : width * (sample.at - start) / span);
                 y = inset + (high == low ? height / 2 : (float)(height * (high - sample.price) / (high - low)));
-                if (first) line.moveTo(x, y); else line.lineTo(x, y);
-                first = false;
+                if (idx == 0) line.moveTo(x, y); else line.lineTo(x, y);
+                idx++;
             }
             paint.setColor(error == null ? accent : muted);
             paint.setStrokeWidth(Math.max(1.5f, dp(1)));
@@ -363,7 +376,7 @@ final class NativeIslandView extends FrameLayout {
         org.json.JSONArray stocks = state.optJSONArray("stocks");
         if (stocks != null) for (int i = 0; i < stocks.length(); i++) {
             JSONObject stock = stocks.optJSONObject(i);
-            if (stock != null && quote.code.equals(stock.optString("code")) && stock.optDouble("shares") > 0) {
+            if (stock != null && quote.code.equals(stock.optString("code")) && stock.optDouble("cost") > 0 && stock.optDouble("shares") > 0) {
                 return String.format(Locale.US, "累计 %+.2f %s", (quote.price - stock.optDouble("cost")) * stock.optDouble("shares"), NativeMarket.currency(quote.code));
             }
         }
@@ -379,7 +392,9 @@ final class NativeIslandView extends FrameLayout {
 
     void active(boolean value) {
         active = value;
+        removeCallbacks(staleTick);
         if (!value) feedback.clear();
+        else postDelayed(staleTick, 15000);
         if (miniBull != null) miniBull.configure(value, config.optBoolean("motion", true) && config.optBoolean("islandMotion", true));
         if (bull != null) bull.configure(value, config.optBoolean("motion", true) && config.optBoolean("islandMotion", true));
     }

@@ -57,7 +57,7 @@ export function drawMinuteChart(ctx, width, height, result, selected, color) {
     ctx.fillStyle = gradient; ctx.fill();
   }
   const maxVolume = Math.max(0, ...points.map(point => point.volume || 0));
-  const barWidth = Math.max(1, plotWidth / (end - start) * .74);
+  const barWidth = Math.max(1, plotWidth / Math.max(1, end - start) * .74);
   ctx.fillStyle = muted; ctx.fillText('成交量', left, volumeTop - 9);
   if (maxVolume) {
     ctx.fillText(compactVolume(maxVolume), left + plotWidth + 7, volumeTop);

@@ -51,4 +51,19 @@ final class FramePlayer {
         long time = elapsed % (duration + rest);
         return time >= duration ? count - 1 : Math.min(count - 1, (int)(time * count / duration));
     }
+
+    long nextDelayMs(long now, boolean moving, int count) {
+        if (!moving || count <= 0 || id.equals("muyu") && !knocking) return -1;
+        long elapsed = Math.max(0, (pausedAt >= 0 ? pausedAt : now) - started);
+        if (id.equals("muyu")) {
+            if (elapsed >= duration && !(queuedKnock && elapsed < duration * 2L)) return -1;
+            return Math.max(16, duration / Math.max(1, count));
+        }
+        long cycle = duration + rest;
+        if (cycle <= 0) return -1;
+        long time = elapsed % cycle;
+        if (time >= duration) return Math.max(16, cycle - time);
+        long step = Math.max(16, duration / Math.max(1, count));
+        return Math.min(step, Math.max(16, duration - time));
+    }
 }

@@ -8,16 +8,37 @@ import org.json.JSONObject;
 final class QuoteGateway {
     interface Result { void send(String script); }
     interface RawResult { void send(String id,String text,String error); }
+    private static final class Task implements Runnable {
+        final String id;
+        private final Runnable run;
+        Task(String id, Runnable run) { this.id = id; this.run = run; }
+        @Override public void run() { run.run(); }
+    }
     private volatile boolean active = true;
     private final Result result;
     private final RawResult raw;
-    private final ThreadPoolExecutor pool = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(8), new ThreadPoolExecutor.AbortPolicy());
-    private final ThreadPoolExecutor newsPool = new ThreadPoolExecutor(3, 3, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(16), new ThreadPoolExecutor.AbortPolicy());
-    QuoteGateway(Result result) { this.result = result; this.raw=null; }
-    QuoteGateway(RawResult raw) { this.raw=raw;this.result=null; }
+    private final ThreadPoolExecutor pool;
+    private volatile ThreadPoolExecutor newsPool;
+    QuoteGateway(Result result) { this.result = result; this.raw=null; this.pool = makePool(2, 24); }
+    QuoteGateway(RawResult raw) { this.raw=raw; this.result=null; this.pool = makePool(2, 16); }
+    private static ThreadPoolExecutor makePool(int threads, int capacity) {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(threads, threads, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(capacity), new ThreadPoolExecutor.AbortPolicy());
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
+    private synchronized ThreadPoolExecutor editorialPool() {
+        if (newsPool == null) newsPool = makePool(3, 32);
+        return newsPool;
+    }
+    private void cancelQueued(ThreadPoolExecutor executor) {
+        if (executor == null) return;
+        java.util.ArrayList<Runnable> dropped = new java.util.ArrayList<>();
+        executor.getQueue().drainTo(dropped);
+        for (Runnable item : dropped) if (item instanceof Task) finish(((Task) item).id, null, "刷新已暂停");
+    }
     static boolean symbol(String value) { return NativeMarket.valid(value); }
-    void setActive(boolean enabled) { active = enabled; if (!enabled) { pool.getQueue().clear(); newsPool.getQueue().clear(); } }
-    void close() { active = false; pool.shutdownNow(); newsPool.shutdownNow(); }
+    void setActive(boolean enabled) { active = enabled; if (!enabled) { cancelQueued(pool); cancelQueued(newsPool); } }
+    void close() { active = false; cancelQueued(pool); cancelQueued(newsPool); pool.shutdownNow(); if (newsPool != null) newsPool.shutdownNow(); }
     private void finish(String id, String text, String error) {
         if(raw!=null){raw.send(id,text,error);return;}
         result.send("window.__niulaiResult(" + JSONObject.quote(id) + "," + (text == null ? "null" : JSONObject.quote(text)) + "," + (error == null ? "null" : JSONObject.quote(error)) + ")");
@@ -55,7 +76,7 @@ final class QuoteGateway {
                 endpoint = "https://smartbox.gtimg.cn/s3/?t=all&q=" + URLEncoder.encode(value.trim(), "UTF-8"); referer = "https://gu.qq.com/";
             } else { finish(id, null, "请求参数无效"); return; }
             encoding = editorial || "minutes".equals(kind) ? "UTF-8" : "GBK";
-            (editorial ? newsPool : pool).execute(() -> fetch(id, endpoint, referer, encoding));
+            (editorial ? editorialPool() : pool).execute(new Task(id, () -> fetch(id, endpoint, referer, encoding)));
         } catch (Exception e) { finish(id, null, "请求繁忙，请稍后重试"); }
     }
     private boolean editorialEndpoint(String value, String kind) {
@@ -81,10 +102,10 @@ final class QuoteGateway {
             if (status != 200) throw new IOException("HTTP " + status);
             try (InputStream stream = c.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
                 byte[] chunk = new byte[8192]; int read;
-                while ((read = stream.read(chunk)) != -1) { if (!active || output.size() + read > 512000) throw new IOException("cancelled"); output.write(chunk, 0, read); }
+                while ((read = stream.read(chunk)) != -1) { if (!active || output.size() + read > 1048576) throw new IOException("cancelled"); output.write(chunk, 0, read); }
                 finish(id, new String(output.toByteArray(), Charset.forName(encoding)), null);
             }
-        } catch (Exception e) { finish(id, null, "行情连接失败，请检查网络后重试"); }
+        } catch (Exception e) { finish(id, null, active ? "行情连接失败，请检查网络后重试" : "刷新已暂停"); }
         finally { if (c != null) c.disconnect(); }
     }
 }

@@ -172,6 +172,10 @@ html[data-fold] .topbar, html[data-fold] .bottom-nav {
   margin-left: var(--pane-left);
   margin-right: var(--pane-right);
 }
+html[data-fold="book"] .bottom-nav {
+  border-right: 1px solid var(--line);
+  border-top-right-radius: 14px;
+}
 html[data-fold] #app-content {
   padding-left: calc(var(--pane-left) + var(--page-gutter));
   padding-right: calc(var(--pane-right) + var(--page-gutter));

@@ -30,6 +30,7 @@ export class MobileMarkets {
     this.feeds = new Map();
     this.translations = new Map();
     this.aliases = new Map();
+    this.googleCooldownUntil = 0;
     this.generation = 0;
     this.chart = new MarketChart($('market-chart'), {
       history: value => request('history', value),
@@ -44,7 +45,11 @@ export class MobileMarkets {
       return parseMarketDetails(await request('book', symbol), code, symbol);
     });
     this.news = new MarketNews($('market-news'), {
-      request: (scope, code, force) => this.loadNews(scope === 'market' ? null : this.state.stocks.find(stock => stock.code === code), force),
+      request: (scope, code, force) => {
+        if (scope === 'market') return this.loadNews(null, force);
+        const stock = this.state.stocks.find(item => item.code === code);
+        return stock ? this.loadNews(stock, force) : Promise.reject(new Error('股票不在自选中'));
+      },
       translate: ids => this.translate(ids), save: (operation, value) => this.save(operation, value), select,
       open: id => {
         const article = this.findArticle(id);
@@ -92,12 +97,16 @@ export class MobileMarkets {
     catch { return ''; }
   }
 
-  stockTerms(stock) {
+  stockTerms(stock, skipRemote = false) {
     if (!stock) return Promise.resolve([]);
-    if (!containsHan(stock.name)) return Promise.resolve(stockNewsTerms(stock.code, stock.name));
+    if (!containsHan(stock.name) || skipRemote) return Promise.resolve(stockNewsTerms(stock.code, stock.name));
     if (!this.aliases.has(stock.name)) {
       const name = stock.code.startsWith('gb_') && stock.name.length <= 2 ? stock.name + '公司' : stock.name;
-      this.aliases.set(stock.name, Promise.all(['en', 'ja'].map(language => this.fetchTranslation(name, language))));
+      const promise = Promise.all(['en', 'ja'].map(language => this.fetchTranslation(name, language))).then(aliases => {
+        if (!aliases.some(Boolean)) this.aliases.delete(stock.name);
+        return aliases;
+      });
+      this.aliases.set(stock.name, promise);
       if (this.aliases.size > 24) this.aliases.delete(this.aliases.keys().next().value);
     }
     return this.aliases.get(stock.name).then(aliases => stockNewsTerms(stock.code, stock.name, aliases));
@@ -113,19 +122,64 @@ export class MobileMarkets {
     this.feeds.delete(key);
     this.feeds.set(key, record);
     if (this.feeds.size > 22) this.feeds.delete(this.feeds.keys().next().value);
+    let aborted = false;
     const load = async feed => {
       try { return parseNews(await request('news-feed', feed.url), feed.kind, Date.now(), feed, newsId); }
-      catch { return null; }
+      catch (error) {
+        if (!this.active || /暂停/.test(String(error?.message || ''))) aborted = true;
+        return null;
+      }
     };
+    const buildResult = (local, world, terms) => {
+      const articles = mergeNews([local, ...world].filter(Boolean).map(items => stock ? items.filter(article => newsMatchesStock(article, terms)) : items));
+      const source = [local ? primary.source : '', articles.some(item => item.international) ? 'Google News' : ''].filter(Boolean).join(' / ');
+      return { articles, source, received: Date.now() };
+    };
+    const cooling = !force && Date.now() < this.googleCooldownUntil;
     record.pending = (async () => {
-      const termsPromise = this.stockTerms(stock);
-      const global = termsPromise.then(terms => Promise.all(globalNewsRequests(terms).map(load)));
+      const localPromise = load(primary);
+      const termsPromise = this.stockTerms(stock, cooling);
+      const globalPromise = cooling ? Promise.resolve([]) : termsPromise.then(terms => Promise.all(globalNewsRequests(terms).map(load)));
       try {
-        const [local, world, terms] = await Promise.all([load(primary), global, termsPromise]);
-        if (!local && !world.some(Boolean)) throw new Error('新闻源暂不可用');
-        const articles = mergeNews([local, ...world].filter(Boolean).map(items => stock ? items.filter(article => newsMatchesStock(article, terms)) : items));
-        const source = [local ? primary.source : '', articles.some(item => item.international) ? 'Google News' : ''].filter(Boolean).join(' / ');
-        return (record.data = { articles, source, received: Date.now() });
+        const local = await localPromise;
+        let world = null;
+        if (local && !cooling) {
+          let timer;
+          const settled = await Promise.race([
+            globalPromise.then(items => ({ done: true, items })),
+            new Promise(resolve => { timer = setTimeout(() => resolve({ done: false }), 1500); })
+          ]);
+          clearTimeout(timer);
+          if (settled.done) world = settled.items;
+        } else {
+          world = await globalPromise;
+        }
+        const terms = await (world === null ? Promise.resolve(stock ? stockNewsTerms(stock.code, stock.name) : []) : termsPromise);
+        if (world !== null) {
+          if (!cooling && !aborted && this.active && world.length && !world.some(Boolean)) this.googleCooldownUntil = Date.now() + 300000;
+          else if (world.some(Boolean)) this.googleCooldownUntil = 0;
+          if (!local && !world.some(Boolean)) throw new Error('新闻源暂不可用');
+          return (record.data = buildResult(local, world, terms));
+        }
+        // Local Chinese feed is ready while international feeds are still in flight:
+        // render local news immediately and merge international items when they settle.
+        record.data = buildResult(local, [], terms);
+        Promise.all([globalPromise, termsPromise]).then(([lateWorld, lateTerms]) => {
+          if (lateWorld.length && !lateWorld.some(Boolean)) {
+            if (!aborted && this.active) this.googleCooldownUntil = Date.now() + 300000;
+            return;
+          }
+          if (!lateWorld.some(Boolean)) return;
+          this.googleCooldownUntil = 0;
+          if (this.feeds.get(key) !== record) return;
+          record.data = buildResult(local, lateWorld, lateTerms);
+          const panel = this.news.resource.cache.get(key);
+          if (panel) {
+            panel.result = record.data;
+            if (this.news.active && this.news.resource.key === key) this.news.render(panel);
+          }
+        }).catch(() => {});
+        return record.data;
       } finally { record.pending = null; }
     })();
     return record.pending;
@@ -142,7 +196,11 @@ export class MobileMarkets {
   headline(article) {
     if (article.language === 'zh') return Promise.resolve('');
     if (!this.translations.has(article.id)) {
-      this.translations.set(article.id, this.fetchTranslation(article.title, 'zh-CN'));
+      const promise = this.fetchTranslation(article.title, 'zh-CN').then(translated => {
+        if (!translated) this.translations.delete(article.id);
+        return translated;
+      });
+      this.translations.set(article.id, promise);
       if (this.translations.size > 150) this.translations.delete(this.translations.keys().next().value);
     }
     return this.translations.get(article.id);
@@ -207,26 +265,26 @@ export class MobileMarkets {
   async checkFollowed() {
     if (this.checking) return;
     this.checking = true;
-    const preferences = this.state.news, generation = this.generation;
-    const allowed = () => this.active && preferences.notifications && generation === this.generation;
+    const generation = this.generation;
+    const allowed = () => this.active && this.state.news.notifications && generation === this.generation;
     try {
-      for (const code of [...preferences.followed]) {
+      for (const code of [...this.state.news.followed]) {
         if (!allowed()) break;
         const stock = this.state.stocks.find(item => item.code === code);
         if (!stock) continue;
         const result = await this.loadNews(stock).catch(() => null);
-        if (!allowed() || !preferences.followed.includes(code) || !result) continue;
-        const { cursor, eligible } = newsNotificationBatch(preferences.cursors[code], result.articles, Date.now(), newsId);
+        if (!allowed() || !this.state.news.followed.includes(code) || !result) continue;
+        const { cursor, eligible } = newsNotificationBatch(this.state.news.cursors[code], result.articles, Date.now(), newsId);
         if (eligible.length) {
           if (!native()?.newsPermission?.()) continue;
           const [latest] = eligible;
-          const translated = preferences.autoTranslate ? await this.headline(latest) : '';
-          if (!allowed() || !preferences.followed.includes(code)) continue;
+          const translated = this.state.news.autoTranslate ? await this.headline(latest) : '';
+          if (!allowed() || !this.state.news.followed.includes(code)) continue;
           const extra = eligible.length > 1 ? ' · 另有 ' + (eligible.length - 1) + ' 条' : '';
           const sent = native()?.showStockNews?.(code, stock.name + ' · ' + latest.publisher + extra, translated || latest.title);
           if (!sent) continue;
         }
-        preferences.cursors[code] = cursor;
+        this.state.news.cursors[code] = cursor;
         this.persist();
       }
     } finally {

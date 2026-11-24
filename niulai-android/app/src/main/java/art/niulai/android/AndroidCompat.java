@@ -14,14 +14,16 @@ final class AndroidCompat {
     static int immutableFlag() { return PendingIntent.FLAG_IMMUTABLE; }
     static void startPet(Context c) { c.startForegroundService(new Intent(c,PetService.class)); }
     static void vibrate(Context c) {
-        Vibrator v=(Vibrator)c.getSystemService(Context.VIBRATOR_SERVICE);if(v==null||!v.hasVibrator())return;
-        v.vibrate(VibrationEffect.createOneShot(18,VibrationEffect.DEFAULT_AMPLITUDE));
+        try {
+            Vibrator v=(Vibrator)c.getSystemService(Context.VIBRATOR_SERVICE);if(v==null||!v.hasVibrator())return;
+            v.vibrate(VibrationEffect.createOneShot(18,VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (RuntimeException ignored) {}
     }
     static int webMajor(String userAgent) { Matcher m=Pattern.compile("(?:Chrome|Chromium)/(\\d+)").matcher(userAgent==null?"":userAgent);return m.find()?Integer.parseInt(m.group(1)):0; }
     static void receiver(Context c,BroadcastReceiver receiver,IntentFilter filter){if(Build.VERSION.SDK_INT>=33)c.registerReceiver(receiver,filter,Context.RECEIVER_NOT_EXPORTED);else c.registerReceiver(receiver,filter);}
     static Notification notification(Context c){
         NotificationManager manager=(NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);
-        if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel("pet","牛来桌宠",NotificationManager.IMPORTANCE_LOW);channel.setDescription("桌宠、灵动岛运行与关闭控制");channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);manager.createNotificationChannel(channel);}
+        if(Build.VERSION.SDK_INT>=26&&manager.getNotificationChannel("pet")==null){NotificationChannel channel=new NotificationChannel("pet","牛来桌宠",NotificationManager.IMPORTANCE_LOW);channel.setDescription("桌宠、灵动岛运行与关闭控制");channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);manager.createNotificationChannel(channel);}
         PendingIntent open=PendingIntent.getActivity(c,0,new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),PendingIntent.FLAG_UPDATE_CURRENT|immutableFlag());
         PendingIntent stop=PendingIntent.getService(c,1,new Intent(c,PetService.class).setAction(PetService.STOP),PendingIntent.FLAG_UPDATE_CURRENT|immutableFlag());
         Notification.Builder b=Build.VERSION.SDK_INT>=26?new Notification.Builder(c,"pet"):new Notification.Builder(c);

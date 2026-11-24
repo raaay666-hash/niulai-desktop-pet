@@ -1,9 +1,10 @@
 <resources>
   <style name="Niulai" parent="android:style/Theme.Material.Light.NoActionBar">
     <item name="android:fontFamily">sans</item>
-    <item name="android:colorAccent">#386BFF</item>
-    <item name="android:statusBarColor">#F3F5F8</item>
-    <item name="android:navigationBarColor">#F3F5F8</item>
+    <item name="android:colorAccent">#31594B</item>
+    <item name="android:windowBackground">#F1F2EC</item>
+    <item name="android:statusBarColor">#F1F2EC</item>
+    <item name="android:navigationBarColor">#F1F2EC</item>
     <item name="android:windowLightStatusBar">true</item>
     <item name="android:windowLightNavigationBar">true</item>
     <item name="android:windowActionModeOverlay">true</item>

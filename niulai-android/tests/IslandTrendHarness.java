@@ -33,7 +33,11 @@ public final class IslandTrendHarness {
         trend.select(OTHER);
         require(trend.first() == null, "Changing the symbol clears the chart");
         for (int i = 0; i < 30; i++) trend.record(quote(OTHER, "regular", 190 + i, NOW + i * 1000));
-        require(trend.first().price == 196 && trend.last().price == 219, "Keep the latest 24 samples");
+        require(trend.first().price == 196 && trend.last().price == 219 && trend.size() == 24, "Keep the latest 24 samples");
+        trend.select(STOCK);
+        trend.record(quote(STOCK, "regular", 100, NOW));
+        trend.record(quote(STOCK, "regular", 101, NOW));
+        require(trend.ready() && trend.size() == 2 && trend.last().at == trend.first().at, "Keep distinct prices within minute-precision timestamp");
         require(NativeMarket.priceText(quote(STOCK, "regular", .105, NOW)).equals("0.105"), "Retain HK price precision");
         require(NativeMarket.priceText(quote(OTHER, "regular", .000043, NOW)).equals("0.000043"), "A small price must not become zero");
     }

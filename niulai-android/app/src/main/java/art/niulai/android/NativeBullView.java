@@ -32,9 +32,13 @@ final class NativeBullView extends View {
     private int request;
     private boolean active = true, motion = true, mini;
     private JSONObject hqSpec;
-    private int lastIndex;
+    private int lastIndex, lastPrefetchedPage = -1;
+    private final Runnable repaint = this::invalidate;
 
-    NativeBullView(Context context) { super(context); load(context); state("idle"); }
+    static void trim() { cache.evictAll(); }
+
+    NativeBullView(Context context) { this(context, false); }
+    NativeBullView(Context context, boolean mini) { super(context); this.mini = mini; load(context); state("idle"); }
 
     private static String read(Context context, String name) throws Exception {
         try (InputStream input = context.getAssets().open("web/assets/" + name)) {
@@ -59,7 +63,12 @@ final class NativeBullView extends View {
     }
 
     static String label(Context context, String id) { load(context); return labels.optString(id); }
-    void mini(boolean value) { mini = value; invalidate(); }
+    void mini(boolean value) {
+        if (mini == value) return;
+        mini = value;
+        if (!target.isEmpty() && hqSpec != null) { sheet = null; sheetName = ""; select(target, false); }
+        else invalidate();
+    }
     void state(String id) { if (target.equals(id)) return; select(id, false); }
     void replay(String id) { select(id, true); }
 
@@ -76,11 +85,12 @@ final class NativeBullView extends View {
         Context context = getContext().getApplicationContext();
         JSONObject hq = highQuality.optJSONObject(name);
         if (hq != null) {
+            final int sampleSize = HQFrames.sampleSizeFor(mini);
             final String file = hq.optJSONArray("pages").optString(0);
-            HQFrames.load(context, file, () -> post(() -> {
+            HQFrames.load(context, file, sampleSize, () -> post(() -> {
                 if (ticket != request) return;
-                Bitmap ready = HQFrames.get(file);
-                if (ready != null) { hqSpec = hq; lastIndex = 0; apply(next, clip, spec, ready, name, replay); }
+                Bitmap ready = HQFrames.get(file, sampleSize);
+                if (ready != null) { hqSpec = hq; lastIndex = 0; lastPrefetchedPage = -1; apply(next, clip, spec, ready, name, replay); }
                 else loadOriginal(context, next, clip, spec, name, replay, ticket);
             }));
             return;
@@ -120,17 +130,24 @@ final class NativeBullView extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        removeCallbacks(repaint);
         if (sheet == null) return;
-        int index = player.frame(SystemClock.uptimeMillis(), motion, hqSpec == null ? 24 : hqSpec.optInt("count", 24));
+        long now = SystemClock.uptimeMillis();
+        int count = hqSpec == null ? 24 : hqSpec.optInt("count", 24);
+        int index = player.frame(now, motion, count);
         int columns = hqSpec == null ? 6 : 4;
         if (hqSpec != null) {
             JSONArray files = hqSpec.optJSONArray("pages");
+            int sampleSize = HQFrames.sampleSizeFor(mini);
             int page = index / 16;
             String file = files.optString(page);
-            Bitmap ready = HQFrames.get(file);
+            Bitmap ready = HQFrames.get(file, sampleSize);
             if (ready != null) { sheet = ready; lastIndex = index % 16; }
-            else HQFrames.load(getContext(), file, this::postInvalidate);
-            HQFrames.load(getContext(), files.optString((page + 1) % files.length()), null);
+            else HQFrames.load(getContext(), file, sampleSize, this::postInvalidate);
+            if (page != lastPrefetchedPage) {
+                lastPrefetchedPage = page;
+                HQFrames.load(getContext(), files.optString((page + 1) % files.length()), sampleSize, null);
+            }
             index = lastIndex;
         }
         int width = sheet.getWidth() / columns, height = sheet.getHeight() / 4;
@@ -140,11 +157,19 @@ final class NativeBullView extends View {
         destination.set(x, y, x + size, y + size);
         canvas.drawBitmap(sheet, source, destination, paint);
         if (active && motion && getWindowVisibility() == VISIBLE && isShown()) {
-            if (mini) postInvalidateDelayed(32); else postInvalidateOnAnimation();
+            long delay = player.nextDelayMs(now, motion, count);
+            if (delay >= 0) postDelayed(repaint, mini ? Math.max(32, delay) : delay);
         }
     }
 
-    @Override protected void onVisibilityChanged(View changed, int visibility) { super.onVisibilityChanged(changed, visibility); if (visibility == VISIBLE) invalidate(); }
-    @Override protected void onDetachedFromWindow() { super.onDetachedFromWindow(); request++; }
-    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); if (sheet == null) select(target.isEmpty() ? "idle" : target, false); }
+    @Override protected void onVisibilityChanged(View changed, int visibility) { super.onVisibilityChanged(changed, visibility); if (visibility == VISIBLE) invalidate(); else removeCallbacks(repaint); }
+    @Override protected void onDetachedFromWindow() { super.onDetachedFromWindow(); removeCallbacks(repaint); request++; }
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        String wanted = target.isEmpty() ? "idle" : target;
+        JSONObject clips = animation.optJSONObject("clips");
+        JSONObject clip = clips == null ? null : clips.optJSONObject(wanted);
+        String expectedSheet = clip == null ? "" : clip.optString("sheet");
+        if (sheet == null || !sheetName.equals(expectedSheet)) select(wanted, false);
+    }
 }
